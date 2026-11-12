@@ -19,6 +19,7 @@ use std::ops::{ControlFlow, Range};
 use serde::Deserialize;
 // Aliased: `tree_sitter::Parser` already owns the name `Parser` in this file,
 // and the two parsers are never interchangeable -- see `classify`'s doc.
+use rust_i18n::t;
 use sqlparser::ast::{
     AlterTableOperation, ConditionalStatementBlock, CopySource, CopyTarget, CreateTableOptions,
     Delete, Expr, Insert, Merge, ObjectName, ObjectNamePart, Query, Set, SetExpr, SqlOption,
@@ -2397,11 +2398,12 @@ impl Mode {
         }
     }
 
-    pub(crate) fn label(self) -> &'static str {
+    /// Menu text. `slug` is the profiles.toml spelling and does not move.
+    pub(crate) fn label(self) -> String {
         match self {
-            Mode::ReadOnly => "Read-only",
-            Mode::ReadWrite => "Read-write",
-            Mode::Full => "Full",
+            Mode::ReadOnly => t!("mode.read_only").to_string(),
+            Mode::ReadWrite => t!("mode.read_write").to_string(),
+            Mode::Full => t!("mode.full").to_string(),
         }
     }
 
@@ -2442,12 +2444,14 @@ impl Destructive {
         Destructive::UnfilteredDelete,
     ];
 
-    /// How the confirmation and the picker name a kind.
-    pub(crate) fn label(self) -> &'static str {
+    /// How the confirmation and the picker name a kind. SQL keywords stay
+    /// literal; the delete the mode gate reads as its own sentence is
+    /// translated.
+    pub(crate) fn label(self) -> String {
         match self {
-            Destructive::Drop => "DROP",
-            Destructive::Truncate => "TRUNCATE",
-            Destructive::UnfilteredDelete => "DELETE without WHERE",
+            Destructive::Drop => "DROP".into(),
+            Destructive::Truncate => "TRUNCATE".into(),
+            Destructive::UnfilteredDelete => t!("destructive.unfiltered_delete").to_string(),
             // Unreachable by construction, and the three things that make it so
             // are worth naming because breaking any one of them lands here:
             // `gate` answers RunOnce for an unreadable statement and never

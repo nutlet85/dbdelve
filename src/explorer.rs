@@ -1,9 +1,11 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
 };
 
 use gpui_component::tree::TreeItem;
+use rust_i18n::t;
 
 use crate::db::{
     Catalog, Engine, EngineSpec, ForeignTable, MaterializedViewDrop, RelationKind, Routine,
@@ -1265,22 +1267,22 @@ pub fn relation_copies(
     schema: &str,
     relation: &str,
     kind: RelationKind,
-) -> [Vec<(&'static str, Option<String>)>; 2] {
+) -> [Vec<(Cow<'static, str>, Option<String>)>; 2] {
     let engine = target.engine;
     let mut reads = Vec::new();
     if target.copies_ddl() {
-        reads.push(("Copy DDL", None));
+        reads.push((t!("explorer.copy_ddl"), None));
     }
     if let Some(sql) = select_top_sql(engine, schema, relation) {
-        reads.push(("Copy SELECT (Top 100)", Some(sql)));
+        reads.push((t!("explorer.copy_select"), Some(sql)));
     }
     let mut writes = Vec::new();
     if let Some(sql) = drop_sql(engine, schema, relation, kind) {
-        writes.push(("Copy DROP", Some(sql)));
+        writes.push((t!("explorer.copy_drop"), Some(sql)));
     }
     if matches!(kind, RelationKind::Table | RelationKind::PartitionedTable) {
         writes.push((
-            "Copy TRUNCATE",
+            t!("explorer.copy_truncate"),
             Some(truncate_sql(engine, schema, relation)),
         ));
     }

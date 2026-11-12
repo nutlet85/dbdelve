@@ -1,5 +1,6 @@
 use std::fmt::{self, Write};
 
+use rust_i18n::t;
 use unicode_width::UnicodeWidthStr;
 
 use super::{COPIED_ROWS_TEXT_LIMIT, Format, render};
@@ -23,13 +24,15 @@ impl ClipboardFormat {
         Self::AsciiTable,
     ];
 
-    pub fn label(self) -> &'static str {
+    /// Menu text. Format names stay literal; the two table shapes a reader
+    /// reads as words are translated.
+    pub fn label(self) -> String {
         match self {
-            Self::Tsv => "TSV",
-            Self::Csv => "CSV",
-            Self::Markdown => "Markdown",
-            Self::UnicodeTable => "Unicode Table",
-            Self::AsciiTable => "ASCII Table",
+            Self::Tsv => "TSV".into(),
+            Self::Csv => "CSV".into(),
+            Self::Markdown => "Markdown".into(),
+            Self::UnicodeTable => t!("clipboard.unicode_table").to_string(),
+            Self::AsciiTable => t!("clipboard.ascii_table").to_string(),
         }
     }
 

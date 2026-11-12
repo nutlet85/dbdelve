@@ -2877,7 +2877,7 @@ impl Workspace {
                 };
                 let target = workspace.target();
                 let engine = target.engine;
-                let copy = |label: &'static str, text: String| {
+                let copy = |label: Cow<'static, str>, text: String| {
                     PopupMenuItem::new(label).on_click(move |_, _, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
                     })

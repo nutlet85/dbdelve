@@ -388,6 +388,15 @@ gpui_platform = { version = "=0.3.9", package = "gpui-pre-platform", features = 
     "wayland",
 ] }
 
+# UI 文案用 rust-i18n 读 locales/app.yml；gpui-component 已在图里并共享同一个
+# 进程级 locale（`rust_i18n::set_locale` 是全局的），钉到它解析的同一版本，
+# 避免两份。词条占位符用 rust-i18n v2 格式的 `%{name}`。
+rust-i18n = "=4.2.2"
+
+# 启动时探测系统语言。macOS 从 Finder 启动时环境变量里没有 LANG，
+# 只有 CFLocale 这一条路可靠。已在图里（0.3.2），钉精确版本不加拷贝。
+sys-locale = "=0.3.2"
+
 [dev-dependencies]
 # Headless keyboard regressions exercise GPUI's real focus and action dispatch.
 gpui = { package = "gpui-pre", version = "=0.3.9", features = ["test-support"] }

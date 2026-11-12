@@ -40,6 +40,7 @@ use crate::settings_panel::{SettingMatch, SettingsTab, filter_settings, render_s
 use crate::sql::{Mode, appended_statement, remember_statement, update_batch};
 use crate::theme::{install_fonts, install_theme, restored_fonts, restored_theme};
 use crate::*;
+use rust_i18n::t;
 
 /// What the app is set to, as opposed to what a connection is. The theme and
 /// the fonts stay in their globals -- every view reads those at render time,
@@ -86,6 +87,9 @@ pub(crate) struct Settings {
     pub(crate) verbose_logging: bool,
     /// Whether the first-run greeting has played on the welcome surface.
     pub(crate) welcomed: bool,
+    /// The UI language for the menus, a `locale::SUPPORTED` code; `None`
+    /// follows the system.
+    pub(crate) language: Option<String>,
     /// Keybinding overrides, keyed by action id. Applied to the keymap on
     /// the next launch -- see `src/keybindings.rs`.
     pub(crate) custom_keybindings: HashMap<String, String>,
@@ -125,6 +129,7 @@ impl Default for Settings {
             run_unreadable: false,
             verbose_logging: false,
             welcomed: false,
+            language: None,
             custom_keybindings: HashMap::new(),
         }
     }
@@ -621,6 +626,7 @@ impl Workspace {
                     .custom_keybindings
                     .clone()
                     .unwrap_or_default();
+                workspace.settings.language = stored_settings.language.clone();
                 // Ahead of the restore, which must not prune grids an
                 // unavailable profile under the same id still owns.
                 workspace.unavailable = unavailable;
@@ -1244,6 +1250,21 @@ impl Workspace {
             return;
         }
         self.settings.run_unreadable = run;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    /// The UI language for the menus. The bar has to be rebuilt -- its labels
+    /// were read at construction -- while the context and dropdown menus are
+    /// built fresh each time they open, so the locale change reaches them on
+    /// its own.
+    pub(crate) fn set_language(&mut self, code: Option<String>, cx: &mut Context<Self>) {
+        if self.settings.language == code {
+            return;
+        }
+        self.settings.language = code.clone();
+        crate::locale::apply(code.as_deref());
+        cx.set_menus(crate::app_menus(self.menu_imports_rows));
         self.remember_profiles(cx);
         cx.notify();
     }
@@ -2431,7 +2452,11 @@ impl Render for Workspace {
                         .confirmed
                         .iter()
                         .map(|kind| kind.label())
-                        .chain(profile.confirmed_stale.then_some("stale rows"))
+                        .chain(
+                            profile
+                                .confirmed_stale
+                                .then(|| t!("confirmations.stale_rows").to_string()),
+                        )
                         .collect::<Vec<_>>();
                     ui::mode_pill(t, mode)
                         .dropdown_menu(move |menu, _, _| {
@@ -2451,10 +2476,7 @@ impl Render for Workspace {
                                 menu
                             } else {
                                 menu.separator().menu(
-                                    format!(
-                                        "Reset silenced confirmations ({})",
-                                        silenced.join(", ")
-                                    ),
+                                    t!("confirmations.reset", kinds = silenced.join(", ")),
                                     Box::new(ResetConfirmations),
                                 )
                             }

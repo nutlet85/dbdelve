@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
 
 use gpui::{
     App, AppContext, ClipboardItem, Context, Entity, FontWeight, HighlightStyle,
@@ -12,6 +12,7 @@ use gpui_component::{
     menu::{ContextMenuExt, PopupMenuItem},
     table::{Column, TableDelegate, TableEvent, TableState},
 };
+use rust_i18n::t;
 
 use crate::{
     Workspace,
@@ -502,7 +503,7 @@ impl TableDelegate for StructureGrid {
             // Not the `CopyCell` action the data grid's menu sends: that copies
             // the selection, and a right click here selects nothing.
             .context_menu(move |menu, _, _| {
-                let copy = |label: &'static str, col: Option<usize>| {
+                let copy = |label: Cow<'static, str>, col: Option<usize>| {
                     let grid = grid.clone();
                     PopupMenuItem::new(label).on_click(move |_, _, cx| {
                         let text = grid
@@ -513,8 +514,8 @@ impl TableDelegate for StructureGrid {
                         }
                     })
                 };
-                menu.item(copy("Copy Cell", Some(col_ix)))
-                    .item(copy("Copy Row", None))
+                menu.item(copy(t!("grid.copy_cell"), Some(col_ix)))
+                    .item(copy(t!("grid.copy_row"), None))
             })
     }
 

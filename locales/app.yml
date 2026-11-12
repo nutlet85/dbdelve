@@ -1,0 +1,235 @@
+# rust-i18n v2 格式，同 vendor/gpui-component/locales/ui.yml。只翻菜单层；
+# 占位符是 rust-i18n 的 `%{name}`。本次范围外不翻的字符串（SQL 关键字、
+# 产品名）直接写死在代码里，不进这个文件。
+_version: 2
+menu.app.settings:
+  en: Settings…
+  zh-CN: 设置…
+menu.app.quit:
+  en: Quit dbdelve
+  zh-CN: 退出 dbdelve
+menu.file:
+  en: File
+  zh-CN: 文件
+menu.file.new_query:
+  en: New Query
+  zh-CN: 新建查询
+menu.file.new_connection:
+  en: New Connection
+  zh-CN: 新建连接
+menu.file.new_project:
+  en: New Project
+  zh-CN: 新建项目
+menu.file.import_from:
+  en: Import from %{source}…
+  zh-CN: 从 %{source} 导入…
+menu.file.import_rows:
+  en: Import Rows…
+  zh-CN: 导入行…
+menu.file.import_rows_clipboard:
+  en: Import Rows from Clipboard…
+  zh-CN: 从剪贴板导入行…
+menu.file.save_query:
+  en: Save Query
+  zh-CN: 保存查询
+menu.file.close_tab:
+  en: Close Tab
+  zh-CN: 关闭标签页
+menu.file.disconnect:
+  en: Disconnect
+  zh-CN: 断开连接
+menu.query:
+  en: Query
+  zh-CN: 查询
+menu.query.run:
+  en: Run
+  zh-CN: 运行
+menu.query.cancel:
+  en: Cancel
+  zh-CN: 取消
+menu.view:
+  en: View
+  zh-CN: 视图
+menu.view.toggle_sidebar:
+  en: Toggle Sidebar
+  zh-CN: 切换边栏
+menu.view.toggle_row_panel:
+  en: Toggle Row Panel
+  zh-CN: 切换行面板
+menu.view.toggle_row_panel_edit:
+  en: Toggle Row Panel Edit Mode
+  zh-CN: 切换行面板编辑模式
+menu.view.toggle_data_structure:
+  en: Toggle Data / Structure
+  zh-CN: 切换数据 / 结构
+menu.view.zoom_in:
+  en: Zoom In
+  zh-CN: 放大
+menu.view.zoom_out:
+  en: Zoom Out
+  zh-CN: 缩小
+menu.view.reset_zoom:
+  en: Reset Zoom
+  zh-CN: 重置缩放
+menu.view.select_database:
+  en: Select Database…
+  zh-CN: 选择数据库…
+menu.view.select_theme:
+  en: Select Theme…
+  zh-CN: 选择主题…
+menu.window:
+  en: Window
+  zh-CN: 窗口
+menu.window.minimize:
+  en: Minimize
+  zh-CN: 最小化
+menu.help:
+  en: Help
+  zh-CN: 帮助
+menu.help.copy_diagnostics:
+  en: Copy Diagnostics
+  zh-CN: 复制诊断信息
+menu.help.open_logs_folder:
+  en: Open Logs Folder
+  zh-CN: 打开日志文件夹
+grid.hide_column:
+  en: Hide Column
+  zh-CN: 隐藏列
+grid.hide_column_named:
+  en: Hide Column “%{name}”
+  zh-CN: 隐藏列“%{name}”
+grid.pin_column_left:
+  en: Pin Column to the Left
+  zh-CN: 固定列到左侧
+grid.unpin_column:
+  en: Unpin Column
+  zh-CN: 取消固定列
+grid.pin_column_named_left:
+  en: Pin Column “%{name}” to the Left
+  zh-CN: 将列“%{name}”固定到左侧
+grid.unpin_column_named:
+  en: Unpin Column “%{name}”
+  zh-CN: 取消固定列“%{name}”
+grid.show_all_columns:
+  en: Show All Columns (%{hidden} hidden)
+  zh-CN: 显示所有列（已隐藏 %{hidden} 列）
+grid.set_null:
+  en: Set Value to NULL
+  zh-CN: 将值设为 NULL
+grid.set_empty:
+  en: Set Value to Empty
+  zh-CN: 将值设为空
+grid.set_default:
+  en: Set Value to Default
+  zh-CN: 将值设为 DEFAULT
+grid.open_value:
+  en: Open “%{value}”
+  zh-CN: 打开“%{value}”
+grid.open_value_ellipsized:
+  en: Open “%{value}”…
+  zh-CN: 打开“%{value}”…
+grid.copy:
+  en: Copy
+  zh-CN: 复制
+grid.copy_cell:
+  en: Copy Cell
+  zh-CN: 复制单元格
+grid.copy_row:
+  en: Copy Row
+  zh-CN: 复制行
+grid.copy_row_as:
+  en: Copy Row As
+  zh-CN: 复制行为
+grid.copy_rows_as:
+  en: Copy Rows As
+  zh-CN: 复制多行为
+grid.paste_rows:
+  en: Paste Rows…
+  zh-CN: 粘贴行…
+editor.cut:
+  en: Cut
+  zh-CN: 剪切
+editor.copy:
+  en: Copy
+  zh-CN: 复制
+editor.paste:
+  en: Paste
+  zh-CN: 粘贴
+editor.select_all:
+  en: Select All
+  zh-CN: 全选
+editor.format_query:
+  en: Format Query
+  zh-CN: 格式化查询
+editor.toggle_comment:
+  en: Toggle Line Comment
+  zh-CN: 切换行注释
+explorer.copy_ddl:
+  en: Copy DDL
+  zh-CN: 复制 DDL
+explorer.copy_select:
+  en: Copy SELECT (Top 100)
+  zh-CN: 复制 SELECT（前 100 行）
+explorer.copy_drop:
+  en: Copy DROP
+  zh-CN: 复制 DROP
+explorer.copy_truncate:
+  en: Copy TRUNCATE
+  zh-CN: 复制 TRUNCATE
+export.copy_results:
+  en: Copy Results
+  zh-CN: 复制结果
+export.copy_results_as:
+  en: Copy Results As
+  zh-CN: 结果复制为
+export.csv:
+  en: Export CSV…
+  zh-CN: 导出 CSV…
+export.json:
+  en: Export JSON…
+  zh-CN: 导出 JSON…
+export.sql:
+  en: Export SQL…
+  zh-CN: 导出 SQL…
+rows_as.text:
+  en: Text
+  zh-CN: 文本
+rows_as.csv_header:
+  en: CSV with Header
+  zh-CN: CSV（含表头）
+clipboard.unicode_table:
+  en: Unicode Table
+  zh-CN: Unicode 表格
+clipboard.ascii_table:
+  en: ASCII Table
+  zh-CN: ASCII 表格
+mode.read_only:
+  en: Read-only
+  zh-CN: 只读
+mode.read_write:
+  en: Read-write
+  zh-CN: 读写
+mode.full:
+  en: Full
+  zh-CN: 完全
+mode.explain:
+  en: Explain
+  zh-CN: 解释
+mode.explain_analyze:
+  en: Explain Analyze
+  zh-CN: 解释分析
+destructive.unfiltered_delete:
+  en: DELETE without WHERE
+  zh-CN: 不带 WHERE 的 DELETE
+confirmations.stale_rows:
+  en: stale rows
+  zh-CN: 过期行
+confirmations.reset:
+  en: Reset silenced confirmations (%{kinds})
+  zh-CN: 重置已静默的确认（%{kinds}）
+row_limit.custom:
+  en: Custom…
+  zh-CN: 自定义…
+row_limit.custom_value:
+  en: Custom (%{rows})…
+  zh-CN: 自定义（%{rows}）…

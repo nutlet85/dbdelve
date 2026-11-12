@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::rc::Rc;
 
@@ -13,6 +14,7 @@ use gpui_component::{
     table::TableEvent,
     table::{Column, TableDelegate, TableState},
 };
+use rust_i18n::t;
 
 use crate::{
     ShowReferences, Workspace,
@@ -2409,18 +2411,20 @@ fn column_menu(
         }
     };
     menu.when(drawn > 1, |menu| {
-        menu.item(PopupMenuItem::new("Hide Column").on_click(relay(ResultGrid::hide_column)))
+        menu.item(
+            PopupMenuItem::new(t!("grid.hide_column")).on_click(relay(ResultGrid::hide_column)),
+        )
     })
     .item(
         PopupMenuItem::new(match pinned {
-            true => "Unpin Column",
-            false => "Pin Column to the Left",
+            true => t!("grid.unpin_column"),
+            false => t!("grid.pin_column_left"),
         })
         .on_click(relay(ResultGrid::toggle_pinned)),
     )
     .when(hidden > 0, |menu| {
         menu.item(
-            PopupMenuItem::new(format!("Show All Columns ({hidden} hidden)"))
+            PopupMenuItem::new(t!("grid.show_all_columns", hidden = hidden))
                 .on_click(relay(|grid, _| grid.show_all_columns())),
         )
     })
@@ -2915,15 +2919,16 @@ impl TableDelegate for ResultGrid {
         let Some((row, col)) = self.active else {
             return menu;
         };
-        let stages: Vec<(&str, Box<dyn gpui::Action>)> = match self.editable(row, col) {
+        let stages: Vec<(Cow<'static, str>, Box<dyn gpui::Action>)> = match self.editable(row, col)
+        {
             false => Vec::new(),
             true => [
                 self.offers_null(col)
-                    .then(|| ("Set Value to NULL", Box::new(crate::SetNull) as _)),
+                    .then(|| (t!("grid.set_null"), Box::new(crate::SetNull) as _)),
                 self.offers_empty(col)
-                    .then(|| ("Set Value to Empty", Box::new(crate::SetEmpty) as _)),
+                    .then(|| (t!("grid.set_empty"), Box::new(crate::SetEmpty) as _)),
                 self.offers_default(col)
-                    .then(|| ("Set Value to Default", Box::new(crate::SetDefault) as _)),
+                    .then(|| (t!("grid.set_default"), Box::new(crate::SetDefault) as _)),
             ]
             .into_iter()
             .flatten()
@@ -2953,8 +2958,8 @@ impl TableDelegate for ResultGrid {
         // submenu's own "Text" entry already puts the same TSV on the
         // clipboard.
         let rows_as_label = match self.selected_row_indices().len() {
-            1 => "Copy Row As",
-            _ => "Copy Rows As",
+            1 => t!("grid.copy_row_as"),
+            _ => t!("grid.copy_rows_as"),
         };
         let hidden = self.hidden_columns();
         let name = &self.result.columns[col].name;
@@ -2963,8 +2968,8 @@ impl TableDelegate for ResultGrid {
         let opens = self.opens(row).map(|name| {
             let short: String = name.chars().take(OPEN_LABEL_CHARS).collect();
             match short.len() < name.len() {
-                true => format!("Open \u{201c}{short}\u{2026}\u{201d}"),
-                false => format!("Open \u{201c}{name}\u{201d}"),
+                true => t!("grid.open_value_ellipsized", value = short),
+                false => t!("grid.open_value", value = name),
             }
         });
         let menu = menu
@@ -2973,34 +2978,37 @@ impl TableDelegate for ResultGrid {
                 menu.menu(label, Box::new(crate::FollowForeignKey))
                     .separator()
             })
-            .menu("Copy", Box::new(crate::CopySelection))
+            .menu(t!("grid.copy"), Box::new(crate::CopySelection))
             // "Copy" is the cell itself until rows are picked.
             .when(self.copies_rows(), |menu| {
-                menu.menu("Copy Cell", Box::new(crate::CopyCell))
+                menu.menu(t!("grid.copy_cell"), Box::new(crate::CopyCell))
             })
             .item(PopupMenuItem::submenu(rows_as_label, rows_as))
             .when(self.takes_imports(), |menu| {
-                menu.menu("Paste Rows…", Box::new(crate::ImportRowsFromClipboard))
+                menu.menu(
+                    t!("grid.paste_rows"),
+                    Box::new(crate::ImportRowsFromClipboard),
+                )
             })
             .separator()
             // Named, because the row is what lights up under a right click and
             // the column these act on is only the cell's.
             .when(self.view.len() > 1, |menu| {
                 menu.menu(
-                    format!("Hide Column \u{201c}{name}\u{201d}"),
+                    t!("grid.hide_column_named", name = name),
                     Box::new(crate::HideColumn),
                 )
             })
             .menu(
                 match self.is_pinned(col) {
-                    true => format!("Unpin Column \u{201c}{name}\u{201d}"),
-                    false => format!("Pin Column \u{201c}{name}\u{201d} to the Left"),
+                    true => t!("grid.unpin_column_named", name = name),
+                    false => t!("grid.pin_column_named_left", name = name),
                 },
                 Box::new(crate::TogglePinColumn),
             )
             .when(hidden > 0, |menu| {
                 menu.menu(
-                    format!("Show All Columns ({hidden} hidden)"),
+                    t!("grid.show_all_columns", hidden = hidden),
                     Box::new(crate::ShowAllColumns),
                 )
             })

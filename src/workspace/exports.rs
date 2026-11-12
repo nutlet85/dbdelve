@@ -27,6 +27,7 @@ use crate::export::{FileAs, InsertTarget, Writer};
 use crate::session::{ExportProgress, Exporting, PendingExport, Refetch};
 use crate::sql::Destructive;
 use crate::ui::code_lines;
+use rust_i18n::t;
 
 /// The rows a feed holds for the writer before the statement waits for it: a
 /// few passes' worth, so a fast server is slowed to the disk's pace rather than
@@ -1569,7 +1570,7 @@ impl ExportMenu {
     ) -> PopupMenu {
         let formats = self.workspace.clone();
         let copy = self.workspace.clone();
-        let file = |(label, format): (&'static str, FileAs)| {
+        let file = |(label, format): (String, FileAs)| {
             let workspace = self.workspace.clone();
             PopupMenuItem::new(label).on_click(move |_, _, cx| {
                 _ = workspace.update(cx, |workspace, cx| {
@@ -1579,26 +1580,31 @@ impl ExportMenu {
         };
         let menu = menu
             .item(
-                PopupMenuItem::new("Copy Results").on_click(move |_, _, cx| {
+                PopupMenuItem::new(t!("export.copy_results")).on_click(move |_, _, cx| {
                     _ = copy.update(cx, |workspace, cx| {
                         workspace.copy_results_as(ClipboardFormat::Tsv, cx);
                     });
                 }),
             )
-            .submenu("Copy Results As", window, cx, move |submenu, _, _| {
-                ClipboardFormat::ALL
-                    .into_iter()
-                    .fold(submenu, |submenu, format| {
-                        let workspace = formats.clone();
-                        submenu.item(PopupMenuItem::new(format.label()).on_click(
-                            move |_, _, cx| {
-                                _ = workspace.update(cx, |workspace, cx| {
-                                    workspace.copy_results_as(format, cx);
-                                });
-                            },
-                        ))
-                    })
-            })
+            .submenu(
+                t!("export.copy_results_as"),
+                window,
+                cx,
+                move |submenu, _, _| {
+                    ClipboardFormat::ALL
+                        .into_iter()
+                        .fold(submenu, |submenu, format| {
+                            let workspace = formats.clone();
+                            submenu.item(PopupMenuItem::new(format.label()).on_click(
+                                move |_, _, cx| {
+                                    _ = workspace.update(cx, |workspace, cx| {
+                                        workspace.copy_results_as(format, cx);
+                                    });
+                                },
+                            ))
+                        })
+                },
+            )
             .separator();
         self.file_exports()
             .into_iter()
@@ -1606,13 +1612,13 @@ impl ExportMenu {
             .fold(menu, |menu, item| menu.item(item))
     }
 
-    pub(super) fn file_exports(&self) -> Vec<(&'static str, FileAs)> {
+    pub(super) fn file_exports(&self) -> Vec<(String, FileAs)> {
         let mut exports = vec![
-            ("Export CSV\u{2026}", FileAs::Rows(Format::Csv)),
-            ("Export JSON\u{2026}", FileAs::Rows(Format::Json)),
+            (t!("export.csv").to_string(), FileAs::Rows(Format::Csv)),
+            (t!("export.json").to_string(), FileAs::Rows(Format::Json)),
         ];
         if self.sql {
-            exports.push(("Export SQL\u{2026}", FileAs::Inserts));
+            exports.push((t!("export.sql").to_string(), FileAs::Inserts));
         }
         exports
     }

@@ -535,6 +535,10 @@ pub struct StoredSettings {
     /// below the scalars.
     #[serde(default)]
     pub theme_opacity: Option<HashMap<String, f32>>,
+    /// The UI language for the menus, a `locale::SUPPORTED` code; absent
+    /// follows the system.
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 impl StoredSettings {
@@ -3971,6 +3975,7 @@ open_objects = []
                     "cmd-shift-s".to_string(),
                 )])),
                 theme_opacity: Some(HashMap::from([("Dark".to_string(), 0.6)])),
+                language: Some("zh-CN".to_string()),
             }),
             projects: vec![
                 StoredProject {

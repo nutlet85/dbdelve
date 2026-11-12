@@ -74,6 +74,7 @@ impl Workspace {
             welcomed: Some(self.settings.welcomed),
             custom_keybindings: Some(self.settings.custom_keybindings.clone()),
             theme_opacity: Some(self.settings.theme_opacity.clone()),
+            language: self.settings.language.clone(),
         };
         if let Err(message) = store::save_profiles(&store::ProfileList {
             profiles,

@@ -950,7 +950,7 @@ pub(crate) fn segmented(t: Theme) -> Div {
 /// it and Space or Enter picks it; the caller adds the click.
 pub(crate) fn segmented_choice(
     id: impl Into<gpui::ElementId>,
-    label: &'static str,
+    label: impl Into<SharedString>,
     selected: bool,
     t: Theme,
 ) -> Button {
@@ -976,7 +976,7 @@ pub(crate) fn segmented_choice(
                         segment.text_color(t.text_muted)
                     }
                 })
-                .child(label),
+                .child(label.into()),
         )
 }
 

@@ -11,6 +11,7 @@ use std::{
     path::Path,
 };
 
+use rust_i18n::t;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 
@@ -261,13 +262,15 @@ impl RowsAs {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    /// Menu text. SQL keywords and format names stay literal; the two a
+    /// reader reads as words are translated.
+    pub fn label(self) -> String {
         match self {
-            RowsAs::Text => "Text",
-            RowsAs::Csv => "CSV",
-            RowsAs::CsvWithHeader => "CSV with Header",
-            RowsAs::Json => "JSON",
-            RowsAs::InsertSql => "INSERT SQL",
+            RowsAs::Text => t!("rows_as.text").to_string(),
+            RowsAs::Csv => "CSV".into(),
+            RowsAs::CsvWithHeader => t!("rows_as.csv_header").to_string(),
+            RowsAs::Json => "JSON".into(),
+            RowsAs::InsertSql => "INSERT SQL".into(),
         }
     }
 }

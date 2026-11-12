@@ -35,6 +35,7 @@ use gpui_component::{
     input::{InputEvent, InputState},
     v_virtual_list,
 };
+use rust_i18n::t;
 
 use crate::{
     Workspace,
@@ -3552,8 +3553,12 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 .into_iter()
                 .filter(|mode| engine.explain_prefix(*mode).is_some())
                 .map(|mode| {
-                    let item =
-                        command(mode.label(), icon::PLAN, Command::ExplainQuery(mode), QUERY);
+                    let item = command(
+                        &mode.label(),
+                        icon::PLAN,
+                        Command::ExplainQuery(mode),
+                        QUERY,
+                    );
                     match mode {
                         ExplainMode::Plan => bound(item, "explain_query"),
                         ExplainMode::Analyze => item,
@@ -3828,7 +3833,7 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                         Some(text) => Command::CopyText(text),
                         None => Command::CopyDdl,
                     };
-                    command(label, icon::COPY, copies, TAB).detail(tab.name.clone())
+                    command(&label, icon::COPY, copies, TAB).detail(tab.name.clone())
                 }),
             );
         }
@@ -4254,12 +4259,16 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         .confirmed
         .iter()
         .map(|kind| kind.label())
-        .chain(profile.confirmed_stale.then_some("stale rows"))
+        .chain(
+            profile
+                .confirmed_stale
+                .then(|| t!("confirmations.stale_rows").to_string()),
+        )
         .collect::<Vec<_>>();
     if !silenced.is_empty() {
         items.push(bound(
             command(
-                &format!("Reset silenced confirmations ({})", silenced.join(", ")),
+                &t!("confirmations.reset", kinds = silenced.join(", ")),
                 icon::RESET,
                 Command::ResetConfirmations,
                 CONNECTION,

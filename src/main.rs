@@ -1,6 +1,12 @@
 // Release builds are a GUI app; debug keeps the console for `cargo run` output.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// The generated `_rust_i18n` module and its `_rust_i18n_t` helper are
+// re-exported where this sits, which must be the crate root: `t!` everywhere
+// else reaches them as `$crate::_rust_i18n_t`. Entries live in
+// `locales/app.yml`, keyed by `locale.rs`.
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod actions;
 mod completion;
 mod connection_form;
@@ -32,6 +38,7 @@ mod workspace;
 
 mod icons;
 mod keybindings;
+mod locale;
 mod logging;
 mod theme;
 mod tls;
@@ -53,6 +60,7 @@ use gpui_component::{
     resizable::{ResizableState, h_resizable, resizable_panel},
     tree::tree as render_tree,
 };
+use rust_i18n::t;
 
 use actions::{
     AddFilter, ApplyEdits, CancelQuery, ClearFilter, CloseTab, CollapseAllSchemas, CommandPalette,
@@ -245,6 +253,13 @@ fn main() {
                 .unwrap_or_default();
             cx.bind_keys(keybindings::build_bindings(&overrides));
 
+            // The locale has to be set before the first `set_menus`: the menu
+            // labels are read at construction, not re-rendered per frame.
+            let language = store::peek_profiles(&plugins)
+                .and_then(|list| list.settings)
+                .and_then(|settings| settings.language);
+            crate::locale::apply(language.as_deref());
+
             // An application menu is what actually makes `cmd+q` quit: the menu bar
             // owns the keystroke at the AppKit level, so it fires whatever has
             // focus, including a native text field that swallows the rest. Set
@@ -341,18 +356,18 @@ pub(crate) fn app_menus(imports_rows: bool) -> Vec<Menu> {
             name: "dbdelve".into(),
             disabled: false,
             items: vec![
-                MenuItem::action("Settings…", OpenSettings),
+                MenuItem::action(t!("menu.app.settings"), OpenSettings),
                 MenuItem::separator(),
-                MenuItem::action("Quit dbdelve", Quit),
+                MenuItem::action(t!("menu.app.quit"), Quit),
             ],
         },
         Menu {
-            name: "File".into(),
+            name: t!("menu.file").into(),
             disabled: false,
             items: [
-                MenuItem::action("New Query", NewQuery),
-                MenuItem::action("New Connection", NewConnection),
-                MenuItem::action("New Project", NewProject),
+                MenuItem::action(t!("menu.file.new_query"), NewQuery),
+                MenuItem::action(t!("menu.file.new_connection"), NewConnection),
+                MenuItem::action(t!("menu.file.new_project"), NewProject),
             ]
             .into_iter()
             .chain({
@@ -361,7 +376,7 @@ pub(crate) fn app_menus(imports_rows: bool) -> Vec<Menu> {
                     .filter(|source| source.found())
                     .map(|source| {
                         MenuItem::action(
-                            format!("Import from {}…", source.label()),
+                            t!("menu.file.import_from", source = source.label()),
                             ImportConnections { source },
                         )
                     })
@@ -372,60 +387,63 @@ pub(crate) fn app_menus(imports_rows: bool) -> Vec<Menu> {
             .chain(
                 [
                     MenuItem::separator(),
-                    MenuItem::action("Import Rows…", ImportRows),
-                    MenuItem::action("Import Rows from Clipboard…", MenuImportRowsFromClipboard),
+                    MenuItem::action(t!("menu.file.import_rows"), ImportRows),
+                    MenuItem::action(
+                        t!("menu.file.import_rows_clipboard"),
+                        MenuImportRowsFromClipboard,
+                    ),
                 ]
                 .into_iter()
                 .filter(|_| imports_rows),
             )
             .chain([
                 MenuItem::separator(),
-                MenuItem::action("Save Query", SaveQuery),
+                MenuItem::action(t!("menu.file.save_query"), SaveQuery),
                 MenuItem::separator(),
-                MenuItem::action("Close Tab", CloseTab),
+                MenuItem::action(t!("menu.file.close_tab"), CloseTab),
                 MenuItem::separator(),
-                MenuItem::action("Disconnect", Disconnect),
+                MenuItem::action(t!("menu.file.disconnect"), Disconnect),
             ])
             .collect(),
         },
         Menu {
-            name: "Query".into(),
+            name: t!("menu.query").into(),
             disabled: false,
             items: vec![
-                MenuItem::action("Run", RunQuery),
-                MenuItem::action("Cancel", CancelQuery),
+                MenuItem::action(t!("menu.query.run"), RunQuery),
+                MenuItem::action(t!("menu.query.cancel"), CancelQuery),
             ],
         },
         Menu {
-            name: "View".into(),
+            name: t!("menu.view").into(),
             disabled: false,
             items: vec![
-                MenuItem::action("Toggle Sidebar", ToggleSidebar),
-                MenuItem::action("Toggle Row Panel", ToggleRowPanel),
-                MenuItem::action("Toggle Row Panel Edit Mode", ToggleRowEdit),
-                MenuItem::action("Toggle Data / Structure", ToggleStructure),
+                MenuItem::action(t!("menu.view.toggle_sidebar"), ToggleSidebar),
+                MenuItem::action(t!("menu.view.toggle_row_panel"), ToggleRowPanel),
+                MenuItem::action(t!("menu.view.toggle_row_panel_edit"), ToggleRowEdit),
+                MenuItem::action(t!("menu.view.toggle_data_structure"), ToggleStructure),
                 MenuItem::separator(),
-                MenuItem::action("Zoom In", ZoomEditorIn),
-                MenuItem::action("Zoom Out", ZoomEditorOut),
-                MenuItem::action("Reset Zoom", ResetEditorZoom),
+                MenuItem::action(t!("menu.view.zoom_in"), ZoomEditorIn),
+                MenuItem::action(t!("menu.view.zoom_out"), ZoomEditorOut),
+                MenuItem::action(t!("menu.view.reset_zoom"), ResetEditorZoom),
                 MenuItem::separator(),
-                MenuItem::action("Select Database…", SelectDatabase),
-                MenuItem::action("Select Theme…", SelectTheme),
+                MenuItem::action(t!("menu.view.select_database"), SelectDatabase),
+                MenuItem::action(t!("menu.view.select_theme"), SelectTheme),
             ],
         },
     ]
     .into_iter()
     .chain(cfg!(target_os = "macos").then(|| Menu {
-        name: "Window".into(),
+        name: t!("menu.window").into(),
         disabled: false,
-        items: vec![MenuItem::action("Minimize", Minimize)],
+        items: vec![MenuItem::action(t!("menu.window.minimize"), Minimize)],
     }))
     .chain([Menu {
-        name: "Help".into(),
+        name: t!("menu.help").into(),
         disabled: false,
         items: vec![
-            MenuItem::action("Copy Diagnostics", CopyDiagnostics),
-            MenuItem::action("Open Logs Folder", OpenLogsFolder),
+            MenuItem::action(t!("menu.help.copy_diagnostics"), CopyDiagnostics),
+            MenuItem::action(t!("menu.help.open_logs_folder"), OpenLogsFolder),
         ],
     }])
     .collect()
@@ -436,6 +454,23 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{MenuImportRowsFromClipboard, connection_config_from, keybindings};
+    use rust_i18n::t;
+
+    // The fallback locale is `en` and nothing in the test process sets another,
+    // so this reads the English entry. It fails on a misspelled key or a
+    // dropped one, both of which would otherwise render the key itself.
+    #[test]
+    fn the_file_menu_key_resolves() {
+        assert_eq!(t!("menu.file"), "File");
+    }
+
+    // Read in the Chinese table directly, so the zh-CN entries are exercised
+    // without `set_locale` making the process global for other tests.
+    #[test]
+    fn the_file_menu_key_resolves_in_chinese() {
+        assert_eq!(t!("menu.file", locale = "zh-CN"), "文件");
+        assert_eq!(t!("menu.app.settings", locale = "zh-CN"), "设置…");
+    }
 
     #[test]
     fn the_menus_paste_import_has_no_key_equivalent() {

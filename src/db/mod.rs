@@ -16,6 +16,7 @@
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+use rust_i18n::t;
 use serde::{Deserialize, Serialize};
 
 pub use crate::tls::SslMode;
@@ -221,10 +222,10 @@ pub enum ExplainMode {
 impl ExplainMode {
     pub const ALL: [Self; 2] = [Self::Plan, Self::Analyze];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Plan => "Explain",
-            Self::Analyze => "Explain Analyze",
+            Self::Plan => t!("mode.explain").to_string(),
+            Self::Analyze => t!("mode.explain_analyze").to_string(),
         }
     }
 
