@@ -7,6 +7,7 @@
 //! control calls the same `Workspace` method a keystroke or the palette does,
 //! which applies the change and writes it to disk at once; there is no Save.
 
+use std::borrow::Cow;
 use std::{collections::HashMap, ops::Range};
 
 use gpui::{
@@ -14,6 +15,8 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, relative,
 };
 use gpui_component::{Disableable, Sizable, input::Input, tooltip::Tooltip};
+
+use rust_i18n::t;
 
 use crate::{
     Workspace,
@@ -51,12 +54,12 @@ pub(crate) enum SettingsTab {
 impl SettingsTab {
     const ALL: [Self; 4] = [Self::General, Self::Appearance, Self::Fonts, Self::Keyboard];
 
-    fn name(self) -> &'static str {
+    fn name(self) -> String {
         match self {
-            Self::General => "General",
-            Self::Appearance => "Appearance",
-            Self::Fonts => "Fonts",
-            Self::Keyboard => "Keyboard",
+            Self::General => t!("settings.tab.general.name").to_string(),
+            Self::Appearance => t!("settings.tab.appearance.name").to_string(),
+            Self::Fonts => t!("settings.tab.fonts.name").to_string(),
+            Self::Keyboard => t!("settings.tab.keyboard.name").to_string(),
         }
     }
 
@@ -69,30 +72,21 @@ impl SettingsTab {
         }
     }
 
-    fn title(self) -> &'static str {
+    fn title(self) -> String {
         match self {
-            Self::General => "Results, sorting and updates",
-            Self::Appearance => "Theme, glass and titlebar",
-            Self::Fonts => "Faces and sizes",
-            Self::Keyboard => "Shortcuts",
+            Self::General => t!("settings.tab.general.title").to_string(),
+            Self::Appearance => t!("settings.tab.appearance.title").to_string(),
+            Self::Fonts => t!("settings.tab.fonts.title").to_string(),
+            Self::Keyboard => t!("settings.tab.keyboard.title").to_string(),
         }
     }
 
-    fn description(self) -> &'static str {
+    fn description(self) -> String {
         match self {
-            Self::General => {
-                "How much a query brings back, how a header click sorts, \
-                 whether DBDelve looks for a new release, and how much it logs."
-            }
-            Self::Appearance => {
-                "What DBDelve looks like, and how much of the desktop shows \
-                 through it."
-            }
-            Self::Fonts => "The chrome, the editor and the grid each have their own face and size.",
-            Self::Keyboard => {
-                "Every action you can bind. A change takes effect the next \
-                 time DBDelve starts."
-            }
+            Self::General => t!("settings.tab.general.description").to_string(),
+            Self::Appearance => t!("settings.tab.appearance.description").to_string(),
+            Self::Fonts => t!("settings.tab.fonts.description").to_string(),
+            Self::Keyboard => t!("settings.tab.keyboard.description").to_string(),
         }
     }
 
@@ -111,6 +105,7 @@ enum SettingId {
     QualifyCompletions,
     AliasCompletions,
     RunUnreadable,
+    Language,
     CheckForUpdates,
     VerboseLogging,
     MatchSystemAppearance,
@@ -132,15 +127,17 @@ pub(crate) struct SettingMatch {
 struct SettingRow {
     id: SettingId,
     tab: SettingsTab,
-    group: &'static str,
-    title: &'static str,
-    description: Option<&'static str>,
+    group: Cow<'static, str>,
+    title: Cow<'static, str>,
+    description: Option<Cow<'static, str>>,
     /// Words someone looking for this row might type that its title does not
     /// hold.
     keywords: &'static [&'static str],
 }
 
-const FONT_KEYWORDS: &[&str] = &["font", "family", "face", "typeface", "size"];
+const FONT_KEYWORDS: &[&str] = &[
+    "font", "family", "face", "typeface", "size", "字体", "字号", "字形",
+];
 
 /// Every row the panel can show, in the order it shows them: by category,
 /// then by group, then as listed.
@@ -157,36 +154,51 @@ fn setting_rows() -> Vec<SettingRow> {
         row(
             SettingId::RowLimit,
             SettingsTab::General,
-            "Results",
-            "Row limit",
-            "The most rows a new tab keeps from one statement. Tabs already \
-             open keep theirs.",
-            &["rows", "limit", "default", "page"],
+            t!("settings.group.results"),
+            t!("settings.row.row_limit.title"),
+            t!("settings.row.row_limit.description"),
+            &["rows", "limit", "default", "page", "行数", "上限", "默认"],
         ),
         row(
             SettingId::DefaultSorting,
             SettingsTab::General,
-            "Results",
-            "Default sorting",
-            "How a new tab sorts on a header click. Server runs the query \
-             again, sorted by the database; Client reorders the rows already \
-             loaded, so a table sorts only the page on screen. Tabs already \
-             open keep theirs; each can be switched from its status bar.",
-            &["sort", "order", "server", "client"],
+            t!("settings.group.results"),
+            t!("settings.row.default_sorting.title"),
+            t!("settings.row.default_sorting.description"),
+            &[
+                "sort",
+                "order",
+                "server",
+                "client",
+                "排序",
+                "服务器",
+                "客户端",
+            ],
+        ),
+        row(
+            SettingId::Language,
+            SettingsTab::General,
+            t!("settings.group.language"),
+            t!("settings.row.language.title"),
+            t!("settings.row.language.description"),
+            &["language", "中文", "chinese", "locale"],
         ),
         row(
             SettingId::QualifyCompletions,
             SettingsTab::General,
-            "Editor",
-            "Qualify table names",
-            "Completing a table name inserts it with its schema, as \
-             schema.table.",
+            t!("settings.group.editor"),
+            t!("settings.row.qualify_completions.title"),
+            t!("settings.row.qualify_completions.description"),
             &[
                 "autocomplete",
                 "completion",
                 "schema",
                 "prefix",
                 "qualified",
+                "自动补全",
+                "补全",
+                "模式",
+                "前缀",
             ],
         ),
         row(
@@ -222,22 +234,17 @@ fn setting_rows() -> Vec<SettingRow> {
         row(
             SettingId::CheckForUpdates,
             SettingsTab::General,
-            "Updates",
-            "Check for updates",
-            "One request to GitHub at launch to see whether a newer release \
-             exists. Nothing is sent about you or your databases.",
-            &["update", "release", "version", "github"],
+            t!("settings.group.updates"),
+            t!("settings.row.check_for_updates.title"),
+            t!("settings.row.check_for_updates.description"),
+            &["update", "release", "version", "github", "更新", "版本"],
         ),
         row(
             SettingId::VerboseLogging,
             SettingsTab::General,
-            "Diagnostics",
-            "Verbose logging",
-            "Adds hostnames, database names, connection errors (which \
-             can include the username) and database drivers' own messages \
-             to the log, from the moment it is switched on. Driver messages \
-             aren't filtered and can contain anything the server sends. \
-             Open Logs Folder in the Help menu shows the files.",
+            t!("settings.group.diagnostics"),
+            t!("settings.row.verbose_logging.title"),
+            t!("settings.row.verbose_logging.description"),
             &[
                 "log",
                 "logs",
@@ -246,80 +253,113 @@ fn setting_rows() -> Vec<SettingRow> {
                 "bug",
                 "report",
                 "verbose",
+                "日志",
+                "调试",
+                "诊断",
+                "错误报告",
             ],
         ),
         row(
             SettingId::MatchSystemAppearance,
             SettingsTab::Appearance,
-            "Theme",
-            "Match system appearance",
-            "Switch themes when the system turns light or dark.",
-            &["auto", "automatic", "follow", "mode", "dark", "light", "os"],
+            t!("settings.group.theme"),
+            t!("settings.row.match_system_appearance.title"),
+            t!("settings.row.match_system_appearance.description"),
+            &[
+                "auto",
+                "automatic",
+                "follow",
+                "mode",
+                "dark",
+                "light",
+                "os",
+                "自动",
+                "跟随",
+                "深色",
+                "浅色",
+                "系统",
+            ],
         ),
         row(
             SettingId::Theme,
             SettingsTab::Appearance,
-            "Theme",
-            "Theme",
-            "Moving through the list previews each theme.",
-            &["color", "colour", "dark", "light"],
+            t!("settings.group.theme"),
+            t!("settings.row.theme.title"),
+            t!("settings.row.theme.description"),
+            &["color", "colour", "dark", "light", "颜色", "深色", "浅色"],
         ),
         row(
             SettingId::SystemTheme(Appearance::Light),
             SettingsTab::Appearance,
-            "Theme",
-            Appearance::Light.theme_label(),
-            "Used while the system is light.",
-            &["color", "colour", "system", "appearance"],
+            t!("settings.group.theme"),
+            t!("settings.row.light_theme.title"),
+            t!("settings.row.light_theme.description"),
+            &["color", "colour", "system", "appearance", "系统", "外观"],
         ),
         row(
             SettingId::SystemTheme(Appearance::Dark),
             SettingsTab::Appearance,
-            "Theme",
-            Appearance::Dark.theme_label(),
-            "Used while the system is dark.",
-            &["color", "colour", "system", "appearance"],
+            t!("settings.group.theme"),
+            t!("settings.row.dark_theme.title"),
+            t!("settings.row.dark_theme.description"),
+            &["color", "colour", "system", "appearance", "系统", "外观"],
         ),
         row(
             SettingId::Opacity,
             SettingsTab::Appearance,
-            "Theme",
-            "Opacity",
-            "Everything else is relative to this. The chrome, the editor and \
-             the results grid are tints over the frost set here, so they move \
-             with it rather than being set apiece.",
-            &["transparency", "translucent", "glass", "frost", "blur"],
+            t!("settings.group.theme"),
+            t!("settings.row.opacity.title"),
+            t!("settings.row.opacity.description"),
+            &[
+                "transparency",
+                "translucent",
+                "glass",
+                "frost",
+                "blur",
+                "透明",
+                "毛玻璃",
+                "模糊",
+            ],
         ),
         row(
             SettingId::ColorTitlebar,
             SettingsTab::Appearance,
-            "Window",
-            "Color the titlebar",
-            "Paint the titlebar in the connection's color.",
-            &["colour", "connection", "band", "tint"],
+            t!("settings.group.window"),
+            t!("settings.row.color_titlebar.title"),
+            t!("settings.row.color_titlebar.description"),
+            &[
+                "colour",
+                "connection",
+                "band",
+                "tint",
+                "连接",
+                "色带",
+                "着色",
+                "标题栏",
+            ],
         ),
         row(
             SettingId::Font(FontSlot::Chrome),
             SettingsTab::Fonts,
-            "Faces",
-            "Chrome",
-            "Sidebar, tabs, titlebar and status bar.",
+            t!("settings.group.faces"),
+            t!("settings.row.fonts.chrome.title"),
+            t!("settings.row.fonts.chrome.description"),
             FONT_KEYWORDS,
         ),
         row(
             SettingId::Font(FontSlot::Editor),
             SettingsTab::Fonts,
-            "Faces",
-            "Editor",
-            "The query buffer and the other views that show code.",
+            t!("settings.group.faces"),
+            t!("settings.row.fonts.editor.title"),
+            t!("settings.row.fonts.editor.description"),
             FONT_KEYWORDS,
         ),
         row(
             SettingId::Font(FontSlot::Grid),
             SettingsTab::Fonts,
-            "Faces",
-            "Grid",
-            "Result cells, their headers and the row inspector.",
+            t!("settings.group.faces"),
+            t!("settings.row.fonts.grid.title"),
+            t!("settings.row.fonts.grid.description"),
             FONT_KEYWORDS,
         ),
     ];
@@ -340,8 +380,8 @@ fn setting_rows() -> Vec<SettingRow> {
                 .map(|spec| SettingRow {
                     id: SettingId::Keybinding(spec.id),
                     tab: SettingsTab::Keyboard,
-                    group,
-                    title: spec.label,
+                    group: keyboard_group_label(group),
+                    title: keybindings::label_of(spec).into(),
                     description: None,
                     keywords: &[],
                 }),
@@ -360,6 +400,21 @@ fn keyboard_group(context: Option<&'static str>) -> &'static str {
         Some("ConnectionForm") => "Connection form",
         Some("Dialog") => "Dialogs",
         Some(other) => other,
+    }
+}
+
+/// A group's id in words. Ids come from `keyboard_group` and stay stable;
+/// only the label is translated.
+fn keyboard_group_label(group: &'static str) -> Cow<'static, str> {
+    match group {
+        "Everywhere" => t!("settings.group.everywhere"),
+        "Palette" => t!("settings.group.palette"),
+        "Results grid" => t!("settings.group.results_grid"),
+        "Editor" => t!("settings.group.editor"),
+        "Connection form" => t!("settings.group.connection_form"),
+        "Dialogs" => t!("settings.group.dialogs"),
+        "Explorer" => t!("settings.group.explorer"),
+        other => Cow::Borrowed(other),
     }
 }
 
@@ -393,11 +448,11 @@ pub(crate) fn filter_settings(
     let mut fuzzy = Fuzzy::new();
     let mut found = Vec::new();
     for row in setting_rows() {
-        let mut fields: Vec<String> = [row.title, row.group, row.tab.name()]
-            .into_iter()
-            .chain(row.keywords.iter().copied())
-            .map(str::to_string)
-            .collect();
+        let mut fields: Vec<String> =
+            [row.title.to_string(), row.group.to_string(), row.tab.name()]
+                .into_iter()
+                .chain(row.keywords.iter().copied().map(str::to_string))
+                .collect();
         if let SettingId::Keybinding(id) = row.id
             && let Some(spec) = keybinding(id)
         {
@@ -421,7 +476,7 @@ pub(crate) fn filter_settings(
         let title = words
             .iter()
             .filter(|(_, excludes)| !excludes)
-            .flat_map(|(word, _)| fuzzy.highlights(word, row.title))
+            .flat_map(|(word, _)| fuzzy.highlights(word, &row.title))
             .collect();
         found.push(SettingMatch {
             id: row.id,
@@ -572,8 +627,8 @@ pub(crate) fn render_settings_panel(
 fn render_header(workspace: &Workspace, t: Theme, cx: &mut Context<Workspace>) -> impl IntoElement {
     let tile = layout::chrome(layout::PALETTE_TILE_SIZE);
     let close = match chord_hint("show_editor", &workspace.settings.custom_keybindings) {
-        hint if hint.is_empty() => "Close".to_string(),
-        hint => format!("Close ({hint})"),
+        hint if hint.is_empty() => t!("settings.close").to_string(),
+        hint => t!("settings.close_hint", hint = hint).to_string(),
     };
     div()
         .flex_shrink_0()
@@ -602,7 +657,7 @@ fn render_header(workspace: &Workspace, t: Theme, cx: &mut Context<Workspace>) -
                 .flex_1()
                 .text_size(px(layout::chrome(layout::TEXT_LG)))
                 .font_weight(FontWeight::MEDIUM)
-                .child("Settings"),
+                .child(t!("settings.title").to_string()),
         )
         .child(
             icon_button(
@@ -681,12 +736,12 @@ fn render_no_match(t: Theme) -> impl IntoElement {
         .flex_col()
         .items_center()
         .gap(px(layout::SPACE_XS))
-        .child("No settings match")
+        .child(t!("settings.no_match").to_string())
         .child(
             div()
                 .text_size(px(layout::chrome(layout::TEXT_SM)))
                 .text_color(t.text_muted)
-                .child("Try another word."),
+                .child(t!("settings.try_another").to_string()),
         )
 }
 
@@ -741,7 +796,7 @@ fn render_section(
 /// A group's label over a well of its rows.
 fn render_group(workspace: &Workspace, rows: &[Shown], cx: &mut Context<Workspace>) -> AnyElement {
     let t = popup_theme(cx);
-    let label = rows[0].row.group;
+    let label = rows[0].row.group.clone();
     let rows: Vec<AnyElement> = rows
         .iter()
         .map(|row| render_row(workspace, row.row, row.matched, cx))
@@ -755,7 +810,7 @@ fn render_group(workspace: &Workspace, rows: &[Shown], cx: &mut Context<Workspac
                 .text_size(px(layout::chrome(layout::TEXT_XS)))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(t.text_muted)
-                .child(label),
+                .child(label.to_string()),
         )
         .child(well(t, rows))
         .into_any_element()
@@ -769,14 +824,14 @@ fn render_row(
 ) -> AnyElement {
     let t = popup_theme(cx);
     let glass_only = row.id == SettingId::Opacity && !t.is_glass;
-    let description = row.description.map(|description| {
+    let description = row.description.as_ref().map(|description| {
         if glass_only {
-            SharedString::from(format!("{description} Glass themes only."))
+            SharedString::from(format!("{description}{}", t!("settings.glass_only")))
         } else {
-            SharedString::from(description)
+            SharedString::from(description.to_string())
         }
     });
-    let title = highlighted(row.title, matched, t);
+    let title = highlighted(row.title.to_string(), matched, t);
     let control = render_control(workspace, row.id, t, cx);
     if matches!(row.id, SettingId::Font(_)) {
         stacked_option_row(title, description, control, t).into_any_element()
@@ -807,10 +862,14 @@ fn render_control(
             let client_sort = settings.client_sort;
             segmented(t)
                 .children(
-                    [(false, "Server"), (true, "Client")].map(|(client, label)| {
+                    [
+                        (false, t!("settings.sorting.server")),
+                        (true, t!("settings.sorting.client")),
+                    ]
+                    .map(|(client, label)| {
                         segmented_choice(
                             ("default-sorting", client as usize),
-                            label,
+                            label.to_string(),
                             client == client_sort,
                             t,
                         )
@@ -821,6 +880,29 @@ fn render_control(
                         ))
                     }),
                 )
+                .into_any_element()
+        }
+        SettingId::Language => {
+            let current = settings.language.as_deref();
+            // "System" is the locale's word, the language names are already
+            // written in their own language, and the rest comes from
+            // `locale::SUPPORTED`, so the choices here cannot drift from what
+            // the app resolves.
+            let choices = std::iter::once((0, None, t!("settings.language.system").to_string()))
+                .chain(
+                    crate::locale::SUPPORTED
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (code, name))| (index + 1, Some(*code), name.to_string())),
+                );
+            segmented(t)
+                .children(choices.map(|(index, code, label)| {
+                    segmented_choice(("language", index), label, code == current, t).on_click(
+                        cx.listener(move |workspace, _: &ClickEvent, _, cx| {
+                            workspace.set_language(code.map(str::to_string), cx);
+                        }),
+                    )
+                }))
                 .into_any_element()
         }
         SettingId::CheckForUpdates => switch("check-for-updates", settings.check_for_updates, t)
@@ -943,11 +1025,17 @@ fn render_opacity(workspace: &Workspace, t: Theme, cx: &mut Context<Workspace>) 
                 })),
         )
         .child(
-            button("opacity-reset", "Reset", Tone::Quiet, Control::Compact, t)
-                .disabled(!t.is_glass)
-                .on_click(cx.listener(move |workspace, _: &ClickEvent, window, cx| {
-                    workspace.set_opacity(default_opacity, window, cx);
-                })),
+            button(
+                "opacity-reset",
+                t!("settings.reset").to_string(),
+                Tone::Quiet,
+                Control::Compact,
+                t,
+            )
+            .disabled(!t.is_glass)
+            .on_click(cx.listener(move |workspace, _: &ClickEvent, window, cx| {
+                workspace.set_opacity(default_opacity, window, cx);
+            })),
         )
         .into_any_element()
 }
@@ -1016,7 +1104,7 @@ fn render_font(
         t,
     )
     .disabled(size == default)
-    .tooltip(format!("Reset to {default}"))
+    .tooltip(t!("settings.reset_to", default = default).to_string())
     .on_click(cx.listener(move |workspace, _: &ClickEvent, _, cx| {
         workspace.set_font_size(slot, default, cx);
     }));
@@ -1053,7 +1141,7 @@ fn render_keybinding(
         return div()
             .text_size(px(layout::chrome(layout::TEXT_SM)))
             .text_color(t.accent)
-            .child("Press any key… (Esc to cancel)")
+            .child(t!("settings.press_any_key").to_string())
             .into_any_element();
     }
     let overrides = &workspace.settings.custom_keybindings;
@@ -1062,7 +1150,7 @@ fn render_keybinding(
         div()
             .text_size(px(layout::chrome(layout::TEXT_SM)))
             .text_color(t.text_faint)
-            .child("Unbound")
+            .child(t!("settings.unbound").to_string())
     } else {
         div()
             .flex()
@@ -1078,7 +1166,7 @@ fn render_keybinding(
         .child(
             button(
                 SharedString::from(format!("keybind-edit-{id}")),
-                "Edit",
+                t!("settings.edit").to_string(),
                 Tone::Quiet,
                 Control::Compact,
                 t,
@@ -1090,7 +1178,7 @@ fn render_keybinding(
         .children(overrides.contains_key(id).then(|| {
             button(
                 SharedString::from(format!("keybind-reset-{id}")),
-                "Reset",
+                t!("settings.reset").to_string(),
                 Tone::Quiet,
                 Control::Compact,
                 t,
@@ -1179,7 +1267,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 16);
+        assert_eq!(found("!keyboard").len(), 17);
     }
 
     #[test]
@@ -1212,6 +1300,27 @@ mod tests {
     #[test]
     fn nonsense_finds_nothing() {
         assert!(found("qzxv").is_empty());
+    }
+
+    #[test]
+    fn every_row_carries_real_text_not_its_key() {
+        // `t!` falls back to the key itself when an entry is missing, in either
+        // locale; a row built on one would show the key on screen and search
+        // on it too.
+        for row in setting_rows() {
+            for field in [&row.title, &row.group] {
+                assert!(!field.starts_with("settings."), "{:?}: {}", row.id, field);
+                assert!(!field.starts_with("key."), "{:?}: {}", row.id, field);
+            }
+            if let Some(description) = &row.description {
+                assert!(
+                    !description.starts_with("settings."),
+                    "{:?}: {}",
+                    row.id,
+                    description
+                );
+            }
+        }
     }
 
     #[test]

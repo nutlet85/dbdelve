@@ -32,6 +32,7 @@ use gpui_component::{
     spinner::Spinner,
     table::{DataTable, TableDelegate, TableState},
 };
+use rust_i18n::t;
 
 use crate::{
     InsertForm, TabKey, Workspace,
@@ -261,18 +262,18 @@ fn render_editor_surface(
                 // editor drew permanently greyed -- dbdelve registers neither
                 // provider, and no language server is coming.
                 .context_menu(|menu, _, cx| {
-                    menu.menu("Cut", Box::new(input::Cut))
-                        .menu("Copy", Box::new(input::Copy))
+                    menu.menu(t!("editor.cut"), Box::new(input::Cut))
+                        .menu(t!("editor.copy"), Box::new(input::Copy))
                         .menu_with_disabled(
-                            "Paste",
+                            t!("editor.paste"),
                             cx.read_from_clipboard().is_none(),
                             Box::new(input::Paste),
                         )
                         .separator()
-                        .menu("Select All", Box::new(input::SelectAll))
+                        .menu(t!("editor.select_all"), Box::new(input::SelectAll))
                         .separator()
-                        .menu("Format Query", Box::new(FormatQuery))
-                        .menu("Toggle Line Comment", Box::new(ToggleComment))
+                        .menu(t!("editor.format_query"), Box::new(FormatQuery))
+                        .menu(t!("editor.toggle_comment"), Box::new(ToggleComment))
                 }),
         );
     let top = div()
@@ -2614,8 +2615,9 @@ pub(crate) fn row_limit_menu(
             )
             .into_any_element();
     }
-    let rows_label = |rows: usize| format!("{} rows", group_thousands(rows as u64));
-    let label = limit.map_or_else(|| "No limit".to_string(), rows_label);
+    let rows_label =
+        |rows: usize| t!("row_limit.rows", rows = group_thousands(rows as u64)).to_string();
+    let label = limit.map_or_else(|| t!("row_limit.none").to_string(), rows_label);
     let pick = move |rows: Option<usize>| -> Box<dyn gpui::Action> {
         match target {
             LimitTarget::Query(_) => Box::new(SetQueryLimit { rows }),
@@ -2636,7 +2638,11 @@ pub(crate) fn row_limit_menu(
         )
         .dropdown_menu(move |menu, _, _| {
             let menu = menu
-                .menu_with_check("No limit", limit.is_none(), pick(None))
+                .menu_with_check(
+                    t!("row_limit.none").to_string(),
+                    limit.is_none(),
+                    pick(None),
+                )
                 .separator();
             let custom = limit.filter(|rows| !ROW_LIMITS.contains(rows));
             ROW_LIMITS
@@ -2647,8 +2653,13 @@ pub(crate) fn row_limit_menu(
                 .separator()
                 .menu_with_check(
                     match custom {
-                        Some(rows) => format!("Custom ({})…", group_thousands(rows as u64)),
-                        None => "Custom…".to_string(),
+                        Some(rows) => {
+                            t!(
+                                "row_limit.custom_value",
+                                rows = group_thousands(rows as u64)
+                            )
+                        }
+                        None => t!("row_limit.custom"),
                     },
                     custom.is_some(),
                     Box::new(CustomRowLimit { target }),
@@ -3048,10 +3059,14 @@ pub(crate) fn render_view_sorting(
                     .child("Sort"),
             )
             .children(
-                [(false, "Server"), (true, "Client")].map(|(choice, label)| {
+                [
+                    (false, t!("settings.sorting.server")),
+                    (true, t!("settings.sorting.client")),
+                ]
+                .map(|(choice, label)| {
                     choice_chip(
                         ("view-sorting", choice as usize),
-                        label,
+                        label.to_string(),
                         choice == client,
                         cx,
                         move |workspace, window, cx| workspace.set_view_sorting(choice, window, cx),

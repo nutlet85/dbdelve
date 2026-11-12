@@ -24,6 +24,8 @@ use gpui::{KeyBinding, Keystroke};
 
 use gpui_component::input::ShowCompletions;
 
+use rust_i18n::t;
+
 use crate::{
     actions::{
         AcceptCompletion, AddFilter, ApplyEdits, CancelQuery, ClearFilter, CloseTab,
@@ -54,7 +56,6 @@ pub(crate) struct KeybindingSpec {
     /// Stable storage key. Never shown; changing it would orphan anyone's
     /// override, so treat it as append-only.
     pub(crate) id: &'static str,
-    pub(crate) label: &'static str,
     /// `None` means global. Scoped bindings can still share a focus path --
     /// see [`contexts_overlap`].
     pub(crate) context: Option<&'static str>,
@@ -88,10 +89,11 @@ pub(crate) fn is_parseable(chord: &str) -> bool {
 // carrying a field can be bound too: `expr` cannot be followed by the closing
 // paren of the row, and every action is spelled here as a literal value.
 macro_rules! registry_spec {
+    // The second literal was the English label; the locale files carry the
+    // names now, so it is matched and dropped.
     (($id:literal, $label:literal, $context:expr, [$($default:literal),*], @macos, $($action:tt)+)) => {
         KeybindingSpec {
             id: $id,
-            label: $label,
             context: $context,
             defaults: &[$($default),*],
             macos_only: true,
@@ -100,7 +102,6 @@ macro_rules! registry_spec {
     (($id:literal, $label:literal, $context:expr, [$($default:literal),*], $($action:tt)+)) => {
         KeybindingSpec {
             id: $id,
-            label: $label,
             context: $context,
             defaults: &[$($default),*],
             macos_only: false,
@@ -367,7 +368,7 @@ pub(crate) fn conflict(
     context: Option<&str>,
     exclude_id: &str,
     overrides: &HashMap<String, String>,
-) -> Option<&'static str> {
+) -> Option<String> {
     available_registry()
         .find(|spec| {
             spec.id != exclude_id
@@ -378,7 +379,13 @@ pub(crate) fn conflict(
                     .iter()
                     .any(|bound| same_chord(bound, chord))
         })
-        .map(|spec| spec.label)
+        .map(label_of)
+}
+
+/// The action's name in the current locale. The registry keeps the English
+/// label; the entry keyed by the id carries the translation.
+pub(crate) fn label_of(spec: &KeybindingSpec) -> String {
+    t!(format!("key.{}", spec.id)).to_string()
 }
 
 #[cfg(test)]
@@ -390,7 +397,7 @@ mod tests {
         let overrides = HashMap::new();
         assert_eq!(
             conflict("secondary-enter", None, "quit", &overrides),
-            Some("Run Query")
+            Some("Run Query".to_string())
         );
     }
 
@@ -420,12 +427,12 @@ mod tests {
         let overrides = HashMap::from([(comment.id.to_string(), "tab".to_string())]);
         assert_eq!(
             conflict("tab", completion.context, completion.id, &overrides),
-            Some(comment.label)
+            Some(label_of(comment))
         );
         let overrides = HashMap::from([(completion.id.to_string(), "secondary-/".to_string())]);
         assert_eq!(
             conflict("secondary-/", comment.context, comment.id, &overrides),
-            Some(completion.label)
+            Some(label_of(completion))
         );
     }
 
@@ -435,7 +442,7 @@ mod tests {
         overrides.insert("quit".to_string(), "cmd-enter".to_string());
         assert_eq!(
             conflict("cmd-enter", None, "run_query", &overrides),
-            Some("Quit dbdelve")
+            Some("Quit dbdelve".to_string())
         );
     }
 
@@ -471,6 +478,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_action_name_translates_in_both_locales() {
+        for spec in available_registry() {
+            let key = format!("key.{}", spec.id);
+            for locale in ["en", "zh-CN"] {
+                let text = t!(key.clone(), locale = locale).to_string();
+                assert_ne!(text, key, "{key} missing in {locale}");
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn configured_cmd_m_override_keeps_its_chord_until_removed() {
@@ -487,7 +505,7 @@ mod tests {
             assert_eq!(conflict("cmd-m", None, "run_query", &overrides), None);
             assert_eq!(
                 conflict("cmd-m", None, "new_query", &overrides),
-                Some("Run Query")
+                Some("Run Query".to_string())
             );
 
             overrides.remove("run_query");
@@ -498,7 +516,7 @@ mod tests {
             assert_eq!(chords_for(minimize, &overrides), vec!["cmd-m"]);
             assert_eq!(
                 conflict("secondary-m", None, "run_query", &overrides),
-                Some("Minimize Window")
+                Some("Minimize Window".to_string())
             );
         }
     }
@@ -547,7 +565,7 @@ mod tests {
         overrides.insert("run_query".to_string(), "secondary-k r".to_string());
         assert_eq!(
             conflict("secondary-enter", None, "quit", &overrides),
-            Some("Connect or Save Connection")
+            Some("Connect or Save Connection".to_string())
         );
     }
 

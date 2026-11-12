@@ -8,6 +8,8 @@ use crate::actions::{CopyDiagnostics, FocusSidebar, OpenLogsFolder, ToggleResult
 use crate::keybindings;
 use crate::ui::Status;
 
+use rust_i18n::t;
+
 impl Workspace {
     /// Help > Open Logs Folder: the diagnostic log and `panic.log`, in the
     /// system's file manager.
@@ -656,7 +658,10 @@ impl Workspace {
         if let Some(owner) =
             keybindings::conflict(&chord, context, id, &self.settings.custom_keybindings)
         {
-            self.note(format!("\"{chord}\" is already bound to {owner}."), cx);
+            self.note(
+                t!("settings.rebind_conflict", chord = chord, owner = owner).to_string(),
+                cx,
+            );
             return;
         }
         self.settings

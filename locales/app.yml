@@ -233,3 +233,194 @@ row_limit.custom:
 row_limit.custom_value:
   en: Custom (%{rows})…
   zh-CN: 自定义（%{rows}）…
+
+# —— 设置页：框架 ——
+settings.title:            { en: "Settings", zh-CN: "设置" }
+settings.close:            { en: "Close", zh-CN: "关闭" }
+settings.close_hint:       { en: "Close (%{hint})", zh-CN: "关闭（%{hint}）" }
+settings.search:           { en: "Search settings", zh-CN: "搜索设置" }
+settings.no_match:         { en: "No settings match", zh-CN: "没有匹配的设置" }
+settings.try_another:      { en: "Try another word.", zh-CN: "换个词试试。" }
+
+# —— 设置页：标签页（name / title / description）——
+settings.tab.general.name:             { en: "General", zh-CN: "常规" }
+settings.tab.general.title:            { en: "Results, sorting and updates", zh-CN: "结果、排序与更新" }
+settings.tab.general.description:      { en: "How much a query brings back, how a header click sorts, whether DBDelve looks for a new release, and how much it logs.", zh-CN: "一次查询取回多少行、表头点击如何排序、是否检查新版本，以及记录多少日志。" }
+settings.tab.appearance.name:          { en: "Appearance", zh-CN: "外观" }
+settings.tab.appearance.title:         { en: "Theme, glass and titlebar", zh-CN: "主题、毛玻璃与标题栏" }
+settings.tab.appearance.description:   { en: "What DBDelve looks like, and how much of the desktop shows through it.", zh-CN: "DBDelve 的外观，以及桌面透出多少。" }
+settings.tab.fonts.name:               { en: "Fonts", zh-CN: "字体" }
+settings.tab.fonts.title:              { en: "Faces and sizes", zh-CN: "字形与字号" }
+settings.tab.fonts.description:        { en: "The chrome, the editor and the grid each have their own face and size.", zh-CN: "界面、编辑器与表格网格各自拥有独立的字形与字号。" }
+settings.tab.keyboard.name:            { en: "Keyboard", zh-CN: "快捷键" }
+settings.tab.keyboard.title:           { en: "Shortcuts", zh-CN: "快捷键" }
+settings.tab.keyboard.description:     { en: "Every action you can bind. A change takes effect the next time DBDelve starts.", zh-CN: "所有可绑定的动作。更改在下次启动 DBDelve 时生效。" }
+
+# —— 设置页：分组 ——
+settings.group.results:         { en: "Results", zh-CN: "结果" }
+settings.group.language:        { en: "Language", zh-CN: "语言" }
+settings.group.editor:          { en: "Editor", zh-CN: "编辑器" }
+settings.group.updates:         { en: "Updates", zh-CN: "更新" }
+settings.group.diagnostics:     { en: "Diagnostics", zh-CN: "诊断" }
+settings.group.theme:           { en: "Theme", zh-CN: "主题" }
+settings.group.window:          { en: "Window", zh-CN: "窗口" }
+settings.group.faces:           { en: "Faces", zh-CN: "字形" }
+settings.group.everywhere:      { en: "Everywhere", zh-CN: "任意位置" }
+settings.group.palette:         { en: "Palette", zh-CN: "命令面板" }
+settings.group.results_grid:    { en: "Results grid", zh-CN: "结果表格" }
+settings.group.connection_form: { en: "Connection form", zh-CN: "连接表单" }
+settings.group.dialogs:         { en: "Dialogs", zh-CN: "对话框" }
+settings.group.explorer:        { en: "Sidebar", zh-CN: "边栏" }
+
+# —— 设置页：行标题与描述 ——
+settings.row.row_limit.title:                 { en: "Row limit", zh-CN: "行数上限" }
+settings.row.row_limit.description:           { en: "The most rows a new tab keeps from one statement. Tabs already open keep theirs.", zh-CN: "一个新标签页从单条语句保留的最多行数。已打开的标签页保持各自的上限。" }
+settings.row.default_sorting.title:           { en: "Default sorting", zh-CN: "默认排序" }
+settings.row.default_sorting.description:     { en: "How a new tab sorts on a header click. Server runs the query again, sorted by the database; Client reorders the rows already loaded, so a table sorts only the page on screen. Tabs already open keep theirs; each can be switched from its status bar.", zh-CN: "新标签页在表头点击时如何排序。服务器：重新向数据库请求排序后的结果；客户端：只重排已加载的行，因此表格只对屏幕上这一页排序。已打开的标签页保持各自的设置；可在各自的状态栏切换。" }
+settings.row.language.title:                  { en: "Language", zh-CN: "语言" }
+settings.row.language.description:            { en: "Interface language; takes effect immediately.", zh-CN: "界面语言；立即生效。" }
+settings.row.qualify_completions.title:       { en: "Qualify table names", zh-CN: "表名带模式" }
+settings.row.qualify_completions.description: { en: "Completing a table name inserts it with its schema, as schema.table.", zh-CN: "补全表名时连同模式一起插入，形如 schema.table。" }
+settings.row.check_for_updates.title:         { en: "Check for updates", zh-CN: "检查更新" }
+settings.row.check_for_updates.description:   { en: "One request to GitHub at launch to see whether a newer release exists. Nothing is sent about you or your databases.", zh-CN: "启动时向 GitHub 发一次请求，检查是否有新版本。不会发送关于你或你的数据库的任何信息。" }
+settings.row.verbose_logging.title:           { en: "Verbose logging", zh-CN: "详细日志" }
+settings.row.verbose_logging.description:     { en: "Adds hostnames, database names, connection errors (which can include the username) and database drivers' own messages to the log, from the moment it is switched on. Driver messages aren't filtered and can contain anything the server sends. Open Logs Folder in the Help menu shows the files.", zh-CN: "开启那一刻起，向日志追加主机名、数据库名、连接错误（可能包含用户名）以及数据库驱动自身的消息。驱动消息不经过滤，可能包含服务器发来的任何内容。帮助菜单里的打开日志文件夹可查看这些文件。" }
+settings.row.match_system_appearance.title:   { en: "Match system appearance", zh-CN: "跟随系统外观" }
+settings.row.match_system_appearance.description: { en: "Switch themes when the system turns light or dark.", zh-CN: "系统切换浅色或深色时切换主题。" }
+settings.row.theme.title:                     { en: "Theme", zh-CN: "主题" }
+settings.row.theme.description:               { en: "Moving through the list previews each theme.", zh-CN: "在列表中移动时会预览各个主题。" }
+settings.row.dark_theme.title:                { en: "Dark theme", zh-CN: "深色主题" }
+settings.row.dark_theme.description:          { en: "Used while the system is dark.", zh-CN: "系统处于深色时使用。" }
+settings.row.light_theme.title:               { en: "Light theme", zh-CN: "浅色主题" }
+settings.row.light_theme.description:         { en: "Used while the system is light.", zh-CN: "系统处于浅色时使用。" }
+settings.row.opacity.title:                   { en: "Opacity", zh-CN: "透明度" }
+settings.row.opacity.description:             { en: "Everything else is relative to this. The chrome, the editor and the results grid are tints over the frost set here, so they move with it rather than being set apiece.", zh-CN: "其余一切都相对此值。界面、编辑器与结果表格都是盖在毛玻璃上的色层，在这里设定，随它一起移动，而非各自为政。" }
+settings.row.color_titlebar.title:            { en: "Color the titlebar", zh-CN: "标题栏着色" }
+settings.row.color_titlebar.description:      { en: "Paint the titlebar in the connection's color.", zh-CN: "用连接的颜色为标题栏上色。" }
+settings.row.fonts.chrome.title:              { en: "Chrome", zh-CN: "界面" }
+settings.row.fonts.chrome.description:        { en: "Sidebar, tabs, titlebar and status bar.", zh-CN: "边栏、标签页、标题栏与状态栏。" }
+settings.row.fonts.editor.title:              { en: "Editor", zh-CN: "编辑器" }
+settings.row.fonts.editor.description:        { en: "The query buffer and the other views that show code.", zh-CN: "查询缓冲区与其他显示代码的视图。" }
+settings.row.fonts.grid.title:                { en: "Grid", zh-CN: "表格" }
+settings.row.fonts.grid.description:          { en: "Result cells, their headers and the row inspector.", zh-CN: "结果单元格、表头与行检查器。" }
+
+# —— 设置页：控件 ——
+settings.sorting.server:      { en: "Server", zh-CN: "服务器" }
+settings.sorting.client:      { en: "Client", zh-CN: "客户端" }
+settings.language.system:     { en: "System", zh-CN: "跟随系统" }
+settings.reset:               { en: "Reset", zh-CN: "重置" }
+settings.reset_to:            { en: "Reset to %{default}", zh-CN: "重置为 %{default}" }
+settings.glass_only:          { en: " Glass themes only.", zh-CN: "仅毛玻璃主题。" }
+settings.press_any_key:       { en: "Press any key… (Esc to cancel)", zh-CN: "按下任意键…（Esc 取消）" }
+settings.unbound:             { en: "Unbound", zh-CN: "未绑定" }
+settings.edit:                { en: "Edit", zh-CN: "编辑" }
+settings.rebind_conflict:     { en: "\"%{chord}\" is already bound to %{owner}.", zh-CN: "\"%{chord}\" 已被 %{owner} 占用。" }
+
+# —— 行数菜单（与网格状态栏共享）——
+row_limit.none:               { en: "No limit", zh-CN: "不限制" }
+row_limit.rows:               { en: "%{rows} rows", zh-CN: "%{rows} 行" }
+
+# —— 快捷键动作名（key.<注册表 id>，id 见 src/keybindings.rs REGISTRY）——
+key.run_query:                 { en: "Run Query", zh-CN: "运行查询" }
+key.explain_query:             { en: "Explain Query", zh-CN: "解释查询" }
+key.format_query:              { en: "Format Query", zh-CN: "格式化查询" }
+key.apply_edits:               { en: "Apply Edits", zh-CN: "应用修改" }
+key.rename_query_tab:          { en: "Rename Query Tab", zh-CN: "重命名查询标签页" }
+key.new_query:                 { en: "New Query Tab", zh-CN: "新建查询标签页" }
+key.new_connection:            { en: "New Connection", zh-CN: "新建连接" }
+key.new_project:               { en: "New Project", zh-CN: "新建项目" }
+key.close_tab:                 { en: "Close Tab", zh-CN: "关闭标签页" }
+key.refresh_relation:          { en: "Refresh Rows", zh-CN: "刷新行" }
+key.refresh_connection:        { en: "Refresh Schema", zh-CN: "刷新 Schema" }
+key.next_tab:                  { en: "Next Tab", zh-CN: "下一个标签页" }
+key.previous_tab:              { en: "Previous Tab", zh-CN: "上一个标签页" }
+key.next_profile:              { en: "Next Connection", zh-CN: "下一个连接" }
+key.previous_profile:          { en: "Previous Connection", zh-CN: "上一个连接" }
+key.show_editor:               { en: "Dismiss", zh-CN: "关闭当前视图" }
+key.cycle_theme:               { en: "Select Theme", zh-CN: "选择主题" }
+key.select_database:           { en: "Select Database", zh-CN: "选择数据库" }
+key.open_settings:             { en: "Open Settings", zh-CN: "打开设置" }
+key.fuzzy_open:                { en: "Go to Object", zh-CN: "跳转到对象" }
+key.go_to_column:              { en: "Go to Column", zh-CN: "跳转到列" }
+key.command_palette:           { en: "Command Palette", zh-CN: "命令面板" }
+key.switch_connection:         { en: "Switch Connection", zh-CN: "切换连接" }
+key.disconnect:                { en: "Disconnect", zh-CN: "断开连接" }
+key.search_everything:         { en: "Search Everything", zh-CN: "搜索全部" }
+key.cycle_mode:                { en: "Cycle Access Level", zh-CN: "切换访问级别" }
+key.palette_previous:          { en: "Palette: Previous Row", zh-CN: "命令面板：上一行" }
+key.palette_next:              { en: "Palette: Next Row", zh-CN: "命令面板：下一行" }
+key.palette_next_scope:        { en: "Palette: Next Scope", zh-CN: "命令面板：下一范围" }
+key.palette_previous_scope:    { en: "Palette: Previous Scope", zh-CN: "命令面板：上一范围" }
+key.palette_scope_left:        { en: "Palette: Arrow to Previous Scope", zh-CN: "命令面板：箭头到上一范围" }
+key.palette_scope_right:       { en: "Palette: Arrow to Next Scope", zh-CN: "命令面板：箭头到下一范围" }
+key.palette_row_actions:       { en: "Palette: Row Actions", zh-CN: "命令面板：行操作" }
+key.palette_history_filter:    { en: "Palette: Cycle History Status", zh-CN: "命令面板：切换历史状态" }
+key.palette_history_sort:      { en: "Palette: Cycle History Sort", zh-CN: "命令面板：切换历史排序" }
+key.zoom_editor_in:            { en: "Zoom In", zh-CN: "放大" }
+key.zoom_editor_out:           { en: "Zoom Out", zh-CN: "缩小" }
+key.reset_editor_zoom:         { en: "Reset Zoom", zh-CN: "重置缩放" }
+key.edit_cell:                 { en: "Edit Cell", zh-CN: "编辑单元格" }
+key.copy:                      { en: "Copy", zh-CN: "复制" }
+key.copy_cell:                 { en: "Copy Cell", zh-CN: "复制单元格" }
+key.set_null:                  { en: "Set Cell to NULL", zh-CN: "将单元格设为 NULL" }
+key.accept_completion:         { en: "Accept Completion", zh-CN: "接受补全" }
+key.toggle_comment:            { en: "Toggle Line Comment", zh-CN: "切换行注释" }
+key.submit_connection:         { en: "Connect or Save Connection", zh-CN: "连接或保存连接" }
+key.confirm_dialog:            { en: "Dialog: Press Selected Button", zh-CN: "对话框：按下所选按钮" }
+key.tick_dialog_box:           { en: "Dialog: Tick Selected Box", zh-CN: "对话框：勾选所选复选框" }
+key.previous_dialog_button:    { en: "Dialog: Previous Button", zh-CN: "对话框：上一个按钮" }
+key.next_dialog_button:        { en: "Dialog: Next Button", zh-CN: "对话框：下一个按钮" }
+key.toggle_sidebar:            { en: "Toggle Sidebar", zh-CN: "切换边栏" }
+key.toggle_row_panel:          { en: "Toggle Row Panel", zh-CN: "切换行面板" }
+key.toggle_row_edit:           { en: "Toggle Row Panel Edit Mode", zh-CN: "切换行面板编辑模式" }
+key.toggle_structure:          { en: "Toggle Data / Structure", zh-CN: "切换数据 / 结构" }
+key.toggle_results_focus:      { en: "Toggle Editor / Results Focus", zh-CN: "切换编辑器 / 结果焦点" }
+key.focus_sidebar:             { en: "Focus Sidebar", zh-CN: "聚焦边栏" }
+key.collapse_all_schemas:      { en: "Collapse All Schemas", zh-CN: "全部折叠模式" }
+key.expand_all_schemas:        { en: "Expand All Schemas", zh-CN: "全部展开模式" }
+key.open_sidebar_item:         { en: "Sidebar: Open Selected", zh-CN: "边栏：打开所选" }
+key.quit:                      { en: "Quit dbdelve", zh-CN: "退出 dbdelve" }
+key.minimize:                  { en: "Minimize Window", zh-CN: "最小化窗口" }
+key.cancel_query:              { en: "Cancel Query", zh-CN: "取消查询" }
+key.move_tab_left:             { en: "Move Tab Left", zh-CN: "左移标签页" }
+key.move_tab_right:            { en: "Move Tab Right", zh-CN: "右移标签页" }
+key.show_completions:          { en: "Show Completions", zh-CN: "显示补全" }
+key.set_mode_read_only:        { en: "Access Level: Read-only", zh-CN: "访问级别：只读" }
+key.set_mode_read_write:       { en: "Access Level: Read-write", zh-CN: "访问级别：读写" }
+key.set_mode_full:             { en: "Access Level: Full", zh-CN: "访问级别：完全" }
+key.reset_confirmations:       { en: "Reset Silenced Confirmations", zh-CN: "重置已静默的确认" }
+key.open_logs_folder:          { en: "Open Logs Folder", zh-CN: "打开日志文件夹" }
+key.copy_diagnostics:          { en: "Copy Diagnostics", zh-CN: "复制诊断信息" }
+key.next_result:               { en: "Next Result", zh-CN: "下一个结果" }
+key.previous_result:           { en: "Previous Result", zh-CN: "上一个结果" }
+key.show_messages:             { en: "Toggle Messages", zh-CN: "切换消息" }
+key.copy_plan:                 { en: "Copy Plan", zh-CN: "复制执行计划" }
+key.next_page:                 { en: "Next Page", zh-CN: "下一页" }
+key.previous_page:             { en: "Previous Page", zh-CN: "上一页" }
+key.clear_filter:              { en: "Clear Filter", zh-CN: "清除筛选" }
+key.add_filter:                { en: "Add Filter", zh-CN: "添加筛选" }
+key.toggle_next_join:          { en: "Toggle Join Type", zh-CN: "切换联接类型" }
+key.new_row:                   { en: "Insert", zh-CN: "插入行" }
+key.import_rows:               { en: "Import Rows", zh-CN: "导入行" }
+key.import_rows_from_clipboard: { en: "Import Rows from Clipboard", zh-CN: "从剪贴板导入行" }
+key.set_empty:                 { en: "Set Cell to Empty", zh-CN: "将单元格设为空" }
+key.set_default:               { en: "Set Cell to Default", zh-CN: "将单元格设为 DEFAULT" }
+key.copy_row:                  { en: "Copy Row", zh-CN: "复制行" }
+key.copy_results:              { en: "Copy Results", zh-CN: "复制结果" }
+key.copy_rows_text:            { en: "Copy Row as Text", zh-CN: "将行复制为文本" }
+key.copy_rows_csv:             { en: "Copy Row as CSV", zh-CN: "将行复制为 CSV" }
+key.copy_rows_csv_header:      { en: "Copy Row as CSV with Header", zh-CN: "将行复制为 CSV（含表头）" }
+key.copy_rows_json:            { en: "Copy Row as JSON", zh-CN: "将行复制为 JSON" }
+key.copy_rows_insert:          { en: "Copy Row as INSERT SQL", zh-CN: "将行复制为 INSERT SQL" }
+key.hide_column:               { en: "Hide Column", zh-CN: "隐藏列" }
+key.toggle_pin_column:         { en: "Pin or Unpin Column", zh-CN: "固定或取消固定列" }
+key.show_all_columns:          { en: "Show All Columns", zh-CN: "显示所有列" }
+key.sort_active_column:        { en: "Sort by Column", zh-CN: "按列排序" }
+key.follow_foreign_key:        { en: "Follow Foreign Key", zh-CN: "跟随外键" }
+key.show_references:           { en: "Show References", zh-CN: "显示引用" }
+key.delete_row:                { en: "Delete Row", zh-CN: "删除行" }
+key.discard_edits:             { en: "Discard Edits", zh-CN: "放弃修改" }
+key.next_edit:                 { en: "Next Edit", zh-CN: "下一条修改" }
+key.previous_edit:             { en: "Previous Edit", zh-CN: "上一条修改" }
+key.import_dbeaver:            { en: "Import Connections from DBeaver", zh-CN: "从 DBeaver 导入连接" }
+key.import_tableplus:          { en: "Import Connections from TablePlus", zh-CN: "从 TablePlus 导入连接" }
