@@ -51,7 +51,7 @@
 
 #define MyAppName "DBDelve"
 #define MyAppPublisher "Shayan Abbas"
-#define MyAppURL "https://github.com/ShayanAbbas1/dbdelve"
+#define MyAppURL "https://github.com/nutlet85/dbdelve"
 #define MyAppExeName "dbdelve.exe"
 
 [Setup]

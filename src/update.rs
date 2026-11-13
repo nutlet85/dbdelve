@@ -38,7 +38,7 @@ pub(crate) use macos::{Installer, install};
 #[cfg(windows)]
 pub(crate) use windows::{Installer, install};
 
-const LATEST: &str = "https://api.github.com/repos/ShayanAbbas1/dbdelve/releases/latest";
+const LATEST: &str = "https://api.github.com/repos/nutlet85/dbdelve/releases/latest";
 
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 

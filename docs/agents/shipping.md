@@ -1,5 +1,10 @@
 # Bundling and releasing
 
+> **This fork ships Windows only.** Its `.github/workflows/release.yml` carries
+> the version, windows, sign and release jobs and nothing else; the macOS and
+> Linux packaging below describes what an upstream checkout builds, and is kept
+> because `dev/bundle.sh` and `dev/package-linux.sh` still work here.
+
 ## Bundling (macOS)
 
 `dev/bundle.sh` builds `--release`, copies in the icon, writes `Info.plist`
@@ -316,29 +321,27 @@ the entry and its icon. For `dbdelve_dbdelve.desktop`, set
 A release is cut from the Actions tab: run `.github/workflows/release.yml` with
 **publish** ticked. The version comes from `Cargo.toml`, so bump it first: a
 version that is already tagged fails before anything builds, and a stable
-version must run from main. It builds, in parallel:
+version must run from main. It builds the Windows zip and installer
+(`dev/package-windows.ps1`), unsigned. The installer is Inno Setup: per-user it
+writes `%LOCALAPPDATA%\Programs\DBDelve`, all-users `Program Files\DBDelve`.
+AppId `{300CEAF2-D7A2-4D97-B94B-20ED16631AF4}` is how upgrades find the
+previous copy; changing it stacks a second install. SmartScreen warns because
+nothing is signed, the same trade as the macOS ad-hoc signature.
 
-- Linux x86_64 and aarch64 tarballs and AppImages (`dev/package-linux.sh`,
-  `dev/package-appimage.sh`) on Ubuntu 22.04, never `ubuntu-latest`: glibc is
-  forward-compatible only, so the oldest runner is the oldest system the
-  release runs on. libstdc++ and libgcc_s come from the host too, and
-  `dev/check-linux-floor.sh` fails the build if either binary needs symbol
-  versions newer than 22.04 ships;
-- the macOS DMG: `dev/bundle.sh` with `DBDELVE_CHANNEL=release DBDELVE_SIGN_ID=-`,
-  plus an `/Applications` symlink;
-- the Windows zip and installer (`dev/package-windows.ps1`), unsigned. The
-  installer is Inno Setup: per-user it writes `%LOCALAPPDATA%\Programs\DBDelve`,
-  all-users `Program Files\DBDelve`. AppId
-  `{300CEAF2-D7A2-4D97-B94B-20ED16631AF4}` is how upgrades find the previous
-  copy; changing it stacks a second install. SmartScreen warns because nothing
-  is signed, the same trade as the macOS ad-hoc signature.
+Only once every asset exists does it tag the commit `v$VERSION` and publish. A
+version with a hyphen (`0.1.0-rc.1`) is a pre-release and may run from any
+branch. Unticked, the workflow builds the assets, signs them and publishes
+nothing, which is how to check `UPDATE_SIGNING_KEY` against the app's key
+without releasing.
 
-Only once every asset exists does it tag the commit `v$VERSION` and publish,
-then it rewrites `Casks/dbdelve.rb` in the `ShayanAbbas1/homebrew-dbdelve` tap
-through the `TAP_TOKEN` secret. A version with a hyphen (`0.2.0-rc.1`) is a
-pre-release, may run from any branch and leaves the cask alone. Unticked, the
-workflow builds everything, signs it and publishes nothing, which is how to
-check `UPDATE_SIGNING_KEY` against the app's key without releasing.
+**The key is this fork's own.** `src/update/download.rs` holds its public half
+and `install.sh` repeats it; the sign job refuses to run while either still
+holds the placeholder, and refuses again if `minisign -V` against that public
+key does not accept what the secret signed. Generate the pair once with
+`minisign -G -p update.pub -s update.key -W`, put the base64 line of
+`update.pub` in both places, and the whole file of `update.key` in the
+`UPDATE_SIGNING_KEY` secret. `-W` matters: the workflow feeds the secret to
+`minisign -S` with no terminal, so an encrypted key cannot be unlocked there.
 
 **There is no notarization and no Developer ID.** A release signs ad-hoc rather
 than with `dev/identity.sh`'s certificate: that certificate is trusted only on

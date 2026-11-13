@@ -2,7 +2,7 @@
 #
 # Installs the latest DBDelve release on macOS or Linux:
 #
-#   curl -fsSL https://raw.githubusercontent.com/ShayanAbbas1/dbdelve/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/nutlet85/dbdelve/main/install.sh | sh
 #
 # DBDelve is signed ad-hoc and not notarized, so a .dmg downloaded with a
 # browser is quarantined and Gatekeeper refuses the app until that is cleared
@@ -15,11 +15,11 @@
 # is /Applications, or ~/Applications when that is not writable.
 set -eu
 
-REPO="ShayanAbbas1/dbdelve"
+REPO="nutlet85/dbdelve"
 IDENTIFIER="com.shayanabbas.dbdelve"
 # The key src/update/download.rs trusts; the release workflow fails if the two
 # ever differ.
-PUBLIC_KEY="RWS7Oo2qbLFxuFuw9Ygz9Ew/UX5XomznTQHGTHGNRfmLqWPa3RqbChNw"
+PUBLIC_KEY="RWRguEdmxhPDYPCPXxyHqIWXQPlI0W2jb7Hl5Hiz1IZeDvF8ktyrXLAx"
 
 fail() {
   echo "install.sh: $*" >&2

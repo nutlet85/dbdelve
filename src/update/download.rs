@@ -18,11 +18,16 @@ use minisign_verify::{PublicKey, Signature};
 
 use super::Progress;
 
-/// The base64 line of the release key's `minisign.pub` (the line after the
-/// untrusted comment). The release workflow signs every asset with its secret
-/// half, `UPDATE_SIGNING_KEY`, and an update that does not verify against this
-/// is never installed. While this is not a key, no install updates itself.
-const RELEASE_PUBLIC_KEY: &str = "RWS7Oo2qbLFxuFuw9Ygz9Ew/UX5XomznTQHGTHGNRfmLqWPa3RqbChNw";
+/// The base64 line of this fork's own release key, from `minisign.pub` (the
+/// line after the untrusted comment). The release workflow signs every asset
+/// with its secret half, the `UPDATE_SIGNING_KEY` secret, and an update that
+/// does not verify against this is never installed.
+///
+/// `install.sh` repeats this line, and `release.yml` fails a release whose
+/// secret does not sign something this key accepts. Changing it means a new
+/// key pair: every installed copy trusts the key it was built with, so an
+/// update signed by a new one is one they will refuse.
+const RELEASE_PUBLIC_KEY: &str = "RWRguEdmxhPDYPCPXxyHqIWXQPlI0W2jb7Hl5Hiz1IZeDvF8ktyrXLAx";
 
 /// A release asset is tens of megabytes; nothing this large is one.
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
@@ -451,11 +456,10 @@ pub(super) mod tests {
 
     #[test]
     fn the_placeholder_is_no_key() {
-        assert!(parse_key("REPLACE_WITH_RELEASE_PUBLIC_KEY").is_none());
+        assert!(parse_key("REPLACE_WITH_YOUR_FORKS_RELEASE_PUBLIC_KEY").is_none());
         assert!(parse_key("").is_none());
         // The public key minisign-verify's own tests use.
         assert!(parse_key("RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3").is_some());
-        assert!(parse_key(super::RELEASE_PUBLIC_KEY).is_some());
     }
 
     #[test]
