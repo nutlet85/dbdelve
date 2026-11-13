@@ -500,6 +500,9 @@ impl Workspace {
                     verdict,
                     dont_ask: false,
                     commit_cell: false,
+                    // dbdelve's own batch, not a statement the user ran: the
+                    // opt-in to run what cannot be parsed is not about it.
+                    own_run: false,
                 });
             }
             cx.notify();
