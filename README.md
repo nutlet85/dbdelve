@@ -1,5 +1,7 @@
 # <img src="assets/icon/dbdelve.svg" alt="" width="48" align="absmiddle"> DBDelve
 
+**English** · [简体中文](README.zh-CN.md)
+
 A fast, native, cross-platform, multi-engine database client. Written in Rust
 with GPUI, no Electron and no JVM: instant startup, friendly on your memory,
 and smooth scrolling through large tables where other clients crash or
