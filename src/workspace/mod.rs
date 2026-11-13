@@ -396,7 +396,7 @@ impl Workspace {
     ) -> Self {
         let row_panel_search = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Filter columns and values…")
+                .placeholder(t!("grid.filter_placeholder"))
                 .clean_on_escape()
         });
         cx.subscribe(

@@ -3,6 +3,7 @@
 //! These were methods on `Workspace` in main.rs. Rust lets one inherent
 //! impl live in as many modules as it has concerns; they moved out whole.
 
+use std::borrow::Cow;
 use std::time::Duration;
 
 use gpui::{Animation, AnimationExt, Div, PathPromptOptions, StyledText, ease_out_quint};
@@ -27,6 +28,8 @@ use crate::scroller::{SmoothScrollable, smooth_scoped};
 use crate::session::PendingDelete;
 use crate::sql::{Destructive, Stop};
 use crate::ui::{Status, code_lines, dot, raised_card, row_icon_tinted};
+
+use rust_i18n::t;
 
 impl Workspace {
     pub(crate) fn render_connection_form(
@@ -2808,7 +2811,7 @@ impl Workspace {
                 }
                 if id.as_ref() == PINNED_GROUP {
                     let workspace = menu_workspace.clone();
-                    return menu.item(PopupMenuItem::new("New Folder…").on_click(
+                    return menu.item(PopupMenuItem::new(t!("explorer.new_folder")).on_click(
                         move |_, window, cx| {
                             _ = workspace.update(cx, |workspace, cx| {
                                 workspace.new_folder(None, window, cx);
@@ -2839,7 +2842,7 @@ impl Workspace {
                     let workspace = menu_workspace.clone();
                     let schema = entry.item().label.to_string();
                     return menu.item(
-                        PopupMenuItem::new("Set as Active Schema")
+                        PopupMenuItem::new(t!("explorer.set_active_schema"))
                             .checked(menu_schema.as_ref() == Some(&entry.item().label))
                             .on_click(move |_, _, cx| {
                                 let schema = schema.clone();
@@ -2884,7 +2887,7 @@ impl Workspace {
                 };
                 let ddl_workspace = menu_workspace.clone();
                 let ddl_names = (schema.clone(), relation.clone());
-                let open = |label: &'static str, structure: bool| {
+                let open = |label: Cow<'static, str>, structure: bool| {
                     let workspace = menu_workspace.clone();
                     let (schema, relation) = (schema.clone(), relation.clone());
                     PopupMenuItem::new(label).on_click(move |_, window, cx| {
@@ -2922,10 +2925,10 @@ impl Workspace {
                     }
                 });
                 let mut menu = menu
-                    .item(open("Open Data", false))
-                    .item(open("Open Structure", true));
+                    .item(open(t!("explorer.open_data"), false))
+                    .item(open(t!("explorer.open_structure"), true));
                 if target.takes_imports(kind) {
-                    menu = menu.item(PopupMenuItem::new("Import Rows…").on_click(
+                    menu = menu.item(PopupMenuItem::new(t!("explorer.import_rows")).on_click(
                         move |_, window, cx| {
                             let (schema, relation) = import_names.clone();
                             _ = import_workspace.update(cx, |workspace, cx| {
@@ -2934,7 +2937,7 @@ impl Workspace {
                         },
                     ));
                 }
-                menu = menu.item(PopupMenuItem::submenu("Export", exports));
+                menu = menu.item(PopupMenuItem::submenu(t!("explorer.export"), exports));
                 let menu = relation_copies(target, &schema, &relation, kind)
                     .into_iter()
                     .fold(menu, |menu, group| {
@@ -3059,7 +3062,7 @@ fn saved_query_menu(
     workspace: &gpui::WeakEntity<Workspace>,
 ) -> PopupMenu {
     let action =
-        |label: &'static str,
+        |label: Cow<'static, str>,
          act: fn(&mut Workspace, String, &mut Window, &mut Context<Workspace>)| {
             let workspace = workspace.clone();
             let name = name.to_string();
@@ -3067,22 +3070,24 @@ fn saved_query_menu(
                 _ = workspace.update(cx, |workspace, cx| act(workspace, name.clone(), window, cx));
             })
         };
-    menu.item(action("Open", |workspace, name, window, cx| {
-        workspace.open_saved_query(name, window, cx)
-    }))
+    menu.item(action(
+        t!("explorer.query_open"),
+        |workspace, name, window, cx| workspace.open_saved_query(name, window, cx),
+    ))
     .item({
         let workspace = workspace.clone();
         let name = name.to_string();
-        PopupMenuItem::new("Rename…").on_click(move |_, window, cx| {
+        PopupMenuItem::new(t!("explorer.query_rename")).on_click(move |_, window, cx| {
             _ = workspace.update(cx, |workspace, cx| {
                 workspace.start_query_rename(name.clone(), row.clone(), window, cx)
             });
         })
     })
     .separator()
-    .item(action("Delete…", |workspace, name, _, cx| {
-        workspace.ask_delete_saved_query(name, cx)
-    }))
+    .item(action(
+        t!("explorer.query_delete"),
+        |workspace, name, _, cx| workspace.ask_delete_saved_query(name, cx),
+    ))
 }
 
 /// What a folder's row offers.
@@ -3096,7 +3101,7 @@ fn folder_menu(
     let (rename, name) = ((workspace.clone(), name.to_string()), name.to_string());
     let delete = (workspace.clone(), name.clone());
     menu.item(
-        PopupMenuItem::new("Rename…").on_click(move |_, window, cx| {
+        PopupMenuItem::new(t!("explorer.rename")).on_click(move |_, window, cx| {
             let (workspace, name) = &rename;
             _ = workspace.update(cx, |workspace, cx| {
                 workspace.start_rename(name.clone(), true, row.clone(), window, cx)
@@ -3105,12 +3110,14 @@ fn folder_menu(
     )
     .item(pin_item(pinned, Pin::Folder(name), workspace))
     .separator()
-    .item(PopupMenuItem::new("Delete…").on_click(move |_, _, cx| {
-        let (workspace, name) = &delete;
-        _ = workspace.update(cx, |workspace, cx| {
-            workspace.ask_delete_folder(name.clone(), cx)
-        });
-    }))
+    .item(
+        PopupMenuItem::new(t!("explorer.delete")).on_click(move |_, _, cx| {
+            let (workspace, name) = &delete;
+            _ = workspace.update(cx, |workspace, cx| {
+                workspace.ask_delete_folder(name.clone(), cx)
+            });
+        }),
+    )
 }
 
 /// What every object's and saved query's row offers for folders and pins,
@@ -3155,18 +3162,21 @@ fn shortcut_menu(
             true => submenu,
             false => submenu.separator(),
         };
-        submenu.item(
-            PopupMenuItem::new("New Folder…").on_click(move |_, window, cx| {
+        submenu.item(PopupMenuItem::new(t!("explorer.new_folder")).on_click(
+            move |_, window, cx| {
                 _ = submenu_workspace.update(cx, |workspace, cx| {
                     workspace.new_folder(Some(submenu_member.clone()), window, cx)
                 });
-            }),
-        )
+            },
+        ))
     });
     let pin = Pin::Member(member.clone());
     let menu = menu
         .separator()
-        .item(PopupMenuItem::submenu("Add to Folder", submenu))
+        .item(PopupMenuItem::submenu(
+            t!("explorer.add_to_folder"),
+            submenu,
+        ))
         .item(pin_item(shortcuts.pinned(&pin), pin, workspace));
     match held_in {
         Some(folder) => menu.item(remove_item(folder, member, workspace)),
@@ -3178,9 +3188,9 @@ fn shortcut_menu(
 /// a shortcut made without it would open the same name in any database.
 fn unknown_database_items(menu: PopupMenu) -> PopupMenu {
     menu.separator()
-        .item(PopupMenuItem::new("Add to Folder").disabled(true))
-        .item(PopupMenuItem::new("Pin").disabled(true))
-        .label("The database is not known yet.")
+        .item(PopupMenuItem::new(t!("explorer.add_to_folder")).disabled(true))
+        .item(PopupMenuItem::new(t!("explorer.pin")).disabled(true))
+        .label(t!("explorer.unknown_database"))
 }
 
 /// All a missing member's row offers: taking it out of where it is listed.
@@ -3266,7 +3276,12 @@ fn drop_target(
 
 fn pin_item(pinned: bool, pin: Pin, workspace: &gpui::WeakEntity<Workspace>) -> PopupMenuItem {
     let workspace = workspace.clone();
-    PopupMenuItem::new(if pinned { "Unpin" } else { "Pin" }).on_click(move |_, _, cx| {
+    PopupMenuItem::new(if pinned {
+        t!("explorer.unpin")
+    } else {
+        t!("explorer.pin")
+    })
+    .on_click(move |_, _, cx| {
         _ = workspace.update(cx, |workspace, cx| workspace.toggle_pin(pin.clone(), cx));
     })
 }
@@ -3277,7 +3292,7 @@ fn remove_item(
     workspace: &gpui::WeakEntity<Workspace>,
 ) -> PopupMenuItem {
     let workspace = workspace.clone();
-    PopupMenuItem::new("Remove from Folder").on_click(move |_, _, cx| {
+    PopupMenuItem::new(t!("explorer.remove_from_folder")).on_click(move |_, _, cx| {
         _ = workspace.update(cx, |workspace, cx| {
             workspace.toggle_in_folder(folder.clone(), member.clone(), cx)
         });

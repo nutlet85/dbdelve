@@ -7,6 +7,7 @@
 //! `render_main_content` is the only way in. Everything else is a part of the
 //! surface it assembles, which is why the rest of the module is private.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use gpui::{
@@ -331,7 +332,7 @@ fn render_query_surface(
             .justify_center()
             .text_size(px(layout::chrome(layout::TEXT_SM)))
             .text_color(t.text_faint)
-            .child("Open a table from the sidebar, or start a new query.")
+            .child(t!("empty.open_a_table"))
             .into_any_element();
     };
     // Scopes this tab's scroll state (plan, grid, row panel) to its own id, so
@@ -631,7 +632,7 @@ fn render_plan(
                         )
                         .into_any_element(),
                     false => icon_button("copy-plan", icon::COPY, Tone::Quiet, Control::Compact, t)
-                        .tooltip("Copy plan")
+                        .tooltip(t!("tooltip.copy_plan"))
                         .on_click(cx.listener(|workspace, _, _, cx| workspace.copy_plan(cx)))
                         .into_any_element(),
                 }),
@@ -989,7 +990,7 @@ fn render_filter_bar(
                         Control::Compact,
                         t,
                     )
-                    .tooltip("Remove filter")
+                    .tooltip(t!("tooltip.remove_filter"))
                     .on_click(move |_, window, cx| {
                         window.dispatch_action(Box::new(RemoveFilter { row }), cx);
                     }),
@@ -1005,11 +1006,16 @@ fn render_filter_bar(
                     })
                 }))
                 .child(
-                    button("add-filter", "Add filter", Tone::Quiet, Control::Compact, t).on_click(
-                        |_, window, cx| {
-                            window.dispatch_action(Box::new(AddFilter), cx);
-                        },
-                    ),
+                    button(
+                        "add-filter",
+                        t!("button.add_filter"),
+                        Tone::Quiet,
+                        Control::Compact,
+                        t,
+                    )
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(AddFilter), cx);
+                    }),
                 )
                 .child(div().flex_1())
                 .child(controls),
@@ -1020,7 +1026,7 @@ fn render_filter_bar(
 /// `AND` or `OR`, as the two-state button it is. A dropdown of two rows is a
 /// menu to open for something a click already says.
 fn join_button(id: impl Into<gpui::ElementId>, conjunction: Conjunction, t: Theme) -> Button {
-    button(id, conjunction.as_str(), Tone::Quiet, Control::Compact, t).tooltip("AND or OR")
+    button(id, conjunction.as_str(), Tone::Quiet, Control::Compact, t).tooltip(t!("tooltip.and_or"))
 }
 
 /// A filter bar's value box: a code editor, dressed as the small one-line
@@ -1083,15 +1089,15 @@ impl RenderOnce for FilterValue {
                     })
                     // The query editor's menu, less what a filter has no use for.
                     .context_menu(|menu, _, cx| {
-                        menu.menu("Cut", Box::new(input::Cut))
-                            .menu("Copy", Box::new(input::Copy))
+                        menu.menu(t!("filter_menu.cut"), Box::new(input::Cut))
+                            .menu(t!("filter_menu.copy"), Box::new(input::Copy))
                             .menu_with_disabled(
-                                "Paste",
+                                t!("filter_menu.paste"),
                                 cx.read_from_clipboard().is_none(),
                                 Box::new(input::Paste),
                             )
                             .separator()
-                            .menu("Select All", Box::new(input::SelectAll))
+                            .menu(t!("filter_menu.select_all"), Box::new(input::SelectAll))
                     }),
             )
     }
@@ -1202,7 +1208,7 @@ fn render_new_row_panel(
         .flex_col()
         .gap(px(layout::SPACE_MD))
         .p(px(layout::SPACE_MD))
-        .child(section_label(t, "Insert"))
+        .child(section_label(t, &t!("editor.section_insert")))
         // The one line that says what an empty field means, because the
         // three-way rule is invisible otherwise.
         .child(
@@ -1231,7 +1237,7 @@ fn render_new_row_panel(
                 .child(
                     button(
                         "cancel-new-row",
-                        "Cancel",
+                        t!("button.cancel"),
                         Tone::Quiet,
                         Control::Standard,
                         t,
@@ -2229,7 +2235,7 @@ fn render_row_inspector(
                                     Control::Compact,
                                     t,
                                 )
-                                .tooltip("Close the row panel")
+                                .tooltip(t!("tooltip.close_row_panel"))
                                 .on_click(move |_, _, cx| {
                                     table.update(cx, |table, cx| table.clear_selection(cx));
                                 }),
@@ -2310,7 +2316,7 @@ fn render_row_inspector(
                                         Control::Compact,
                                         t,
                                     )
-                                    .tooltip("Copy value")
+                                    .tooltip(t!("tooltip.copy_value"))
                                     .on_click(cx.listener(
                                         move |workspace, _, _, cx| {
                                             workspace.copy_row_field(row_ix, col_ix, cx);
@@ -2546,7 +2552,7 @@ fn json_highlights(
 /// toggles now -- an object tab's data and structure, and a query tab's rows
 /// and plan -- and a label is not what tells them apart.
 fn preview_tab(
-    label: &'static str,
+    label: Cow<'static, str>,
     path: &'static str,
     selected: bool,
     command: Command,
@@ -2554,7 +2560,7 @@ fn preview_tab(
 ) -> impl IntoElement {
     let t = *theme(cx);
     div()
-        .id(label)
+        .id(SharedString::from(label.to_string()))
         .flex()
         .items_center()
         .gap(px(layout::SPACE_XS))
@@ -2930,7 +2936,7 @@ pub(crate) fn render_paging(
                             Control::Compact,
                             t,
                         )
-                        .tooltip("Previous page")
+                        .tooltip(t!("tooltip.previous_page"))
                         .on_click(move |_, window, cx| {
                             window.dispatch_action(Box::new(PreviousPage), cx);
                         })
@@ -2970,7 +2976,7 @@ pub(crate) fn render_paging(
                             Control::Compact,
                             t,
                         )
-                        .tooltip("Next page")
+                        .tooltip(t!("tooltip.next_page"))
                         .on_click(move |_, window, cx| {
                             window.dispatch_action(Box::new(NextPage), cx);
                         })
@@ -3006,10 +3012,12 @@ pub(crate) fn render_hidden_columns(
         let t = *theme(cx);
         button(
             "show-hidden-columns",
-            format!(
-                "{hidden} hidden {} · Show",
-                if hidden == 1 { "column" } else { "columns" }
-            ),
+            t!(
+                "grid.hidden_columns",
+                hidden = hidden,
+                plural = if hidden == 1 { "column" } else { "columns" }
+            )
+            .to_string(),
             Tone::Quiet,
             Control::Compact,
             t,
@@ -3213,7 +3221,7 @@ fn render_tab_strip(
                                 Control::Inline,
                                 t,
                             )
-                            .tooltip("Close tab")
+                            .tooltip(t!("tooltip.close_tab"))
                             .on_click(move |_, window, cx| {
                                 // Or the chip underneath activates the tab
                                 // this just closed, in the same click.
@@ -3269,7 +3277,7 @@ fn render_tab_strip(
                                 Control::Inline,
                                 t,
                             )
-                            .tooltip("Close tab")
+                            .tooltip(t!("tooltip.close_tab"))
                             .on_click(move |_, window, cx| {
                                 // Or the chip underneath activates the tab
                                 // this just closed, in the same click.
@@ -3341,7 +3349,7 @@ fn render_tab_strip(
                             Control::Inline,
                             t,
                         )
-                        .tooltip("Close tab")
+                        .tooltip(t!("tooltip.close_tab"))
                         .on_click(move |_, window, cx| {
                             // Or the chip underneath activates the tab
                             // this just closed, in the same click.
@@ -3444,7 +3452,7 @@ fn render_tab_strip(
                     Control::Compact,
                     t,
                 )
-                .tooltip_with_action("New query", &NewQuery, None)
+                .tooltip_with_action(t!("tooltip.new_query"), &NewQuery, None)
                 .on_click(move |_, window, cx| {
                     _ = new_workspace.update(cx, |workspace, cx| {
                         workspace.new_query(&NewQuery, window, cx);
@@ -3524,14 +3532,14 @@ fn render_query_toolbar(
                 .flex()
                 .gap(px(layout::SPACE_XS))
                 .child(preview_tab(
-                    "Data",
+                    t!("view.data"),
                     icon::TABLE,
                     tab.plan_shown().is_none() && !tab.messages_shown(),
                     Command::ShowPlan(false),
                     cx,
                 ))
                 .child(preview_tab(
-                    "Plan",
+                    t!("view.plan"),
                     icon::PLAN,
                     tab.plan_shown().is_some(),
                     Command::ShowPlan(true),
@@ -3545,7 +3553,13 @@ fn render_query_toolbar(
     let new_row = (!session.naming)
         .then(|| session.query_insert_target(target, cx))
         .flatten()
-        .map(|(_, table, _)| insert_button("new-row", format!("Insert in {table}"), t));
+        .map(|(_, table, _)| {
+            insert_button(
+                "new-row",
+                t!("button.insert_in", table = table).to_string(),
+                t,
+            )
+        });
 
     let named = session.open_query().is_some();
     let save_workspace = workspace.clone();
@@ -3573,7 +3587,7 @@ fn render_query_toolbar(
                 Control::Compact,
                 t,
             )
-            .tooltip("Rename query")
+            .tooltip(t!("tooltip.rename_query"))
             .on_click(move |_, window, cx| {
                 _ = rename_workspace.update(cx, |workspace, cx| {
                     workspace.rename_query(window, cx);
@@ -3582,7 +3596,7 @@ fn render_query_toolbar(
         }))
         .children((!session.naming && !named).then(|| {
             icon_button("save-query", icon::SAVE, Tone::Quiet, Control::Compact, t)
-                .tooltip_with_action("Save query", &SaveQuery, None)
+                .tooltip_with_action(t!("tooltip.save_query"), &SaveQuery, None)
                 .on_click(move |_, window, cx| {
                     _ = save_workspace.update(cx, |workspace, cx| {
                         workspace.save_query(&SaveQuery, window, cx);
@@ -3606,6 +3620,42 @@ fn render_query_toolbar(
         // statement is executed, and a single button would have to pick one of
         // those on the user's behalf. Absent on an engine with no mode at all,
         // rather than a menu with nothing in it.
+        .children({
+            let format_workspace = workspace.clone();
+            (!session.naming).then(move || {
+                icon_button(
+                    "format-query",
+                    icon::FORMAT,
+                    Tone::Quiet,
+                    Control::Compact,
+                    t,
+                )
+                .tooltip_with_action(t!("tooltip.format_query"), &FormatQuery, None)
+                .on_click(move |_, window, cx| {
+                    _ = format_workspace.update(cx, |workspace, cx| {
+                        workspace.format_query(&FormatQuery, window, cx);
+                    });
+                })
+            })
+        })
+        .children({
+            let comment_workspace = workspace.clone();
+            (!session.naming).then(move || {
+                icon_button(
+                    "toggle-comment",
+                    icon::COMMENT,
+                    Tone::Quiet,
+                    Control::Compact,
+                    t,
+                )
+                .tooltip_with_action(t!("tooltip.toggle_comment"), &ToggleComment, None)
+                .on_click(move |_, window, cx| {
+                    _ = comment_workspace.update(cx, |workspace, cx| {
+                        workspace.toggle_comment(&ToggleComment, window, cx);
+                    });
+                })
+            })
+        })
         .children(
             (!session.naming
                 && ExplainMode::ALL
@@ -3620,7 +3670,7 @@ fn render_query_toolbar(
                     t,
                 )
                 .tooltip_with_action(
-                    "Explain",
+                    t!("tooltip.explain"),
                     &ExplainQuery {
                         mode: ExplainMode::Plan,
                     },
@@ -3646,7 +3696,7 @@ fn render_query_toolbar(
             // what the surface is for, and the fill is the only hierarchy
             // available without spending a colour on it.
             icon_button("run-query", icon::RUN, Tone::Primary, Control::Compact, t)
-                .tooltip_with_action("Run", &RunQuery, None)
+                .tooltip_with_action(t!("tooltip.run"), &RunQuery, None)
                 .on_click(move |_, window, cx| {
                     _ = run_workspace.update(cx, |workspace, cx| {
                         workspace.run_query(&RunQuery, window, cx);
@@ -3675,21 +3725,23 @@ fn relation_controls(
                 .flex()
                 .gap(px(layout::SPACE_XS))
                 .child(preview_tab(
-                    "Data",
+                    t!("view.data"),
                     icon::TABLE,
                     !structure,
                     Command::ShowStructure(false),
                     cx,
                 ))
                 .child(preview_tab(
-                    "Structure",
+                    t!("view.structure"),
                     icon::STRUCTURE,
                     structure,
                     Command::ShowStructure(true),
                     cx,
                 )),
         )
-        .children(takes_inserts.then(|| insert_button("new-row", "Insert".into(), t)))
+        .children(
+            takes_inserts.then(|| insert_button("new-row", t!("button.insert").to_string(), t)),
+        )
 }
 
 /// Insert reads as an action, not a third view beside Data and Plan: a plus

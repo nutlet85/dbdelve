@@ -3276,11 +3276,16 @@ fn row_limit_items(session: &Session) -> Vec<Item> {
     let current = |rows: Option<usize>| if limit == rows { "current" } else { "" };
     let custom = limit.filter(|rows| !ROW_LIMITS.contains(rows));
     let custom_label = match custom {
-        Some(rows) => format!("Custom ({})…", group_thousands(rows as u64)),
-        None => "Custom…".to_string(),
+        Some(rows) => t!("palette.custom_value", rows = group_thousands(rows as u64)).to_string(),
+        None => t!("palette.custom").to_string(),
     };
     std::iter::once(
-        Item::new("No limit", icon::TABLE, Command::SetRowLimit(None)).hint(current(None)),
+        Item::new(
+            t!("palette.no_limit").to_string(),
+            icon::TABLE,
+            Command::SetRowLimit(None),
+        )
+        .hint(current(None)),
     )
     .chain(ROW_LIMITS.into_iter().map(|rows| {
         Item::new(
@@ -3846,7 +3851,7 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     if let Some((_, limit)) = row_limit_target(session) {
         items.push(
             command("Set row limit…", icon::TABLE, Command::PickRowLimit, ROWS)
-                .hint(limit.map_or_else(|| "No limit".to_string(), rows_label)),
+                .hint(limit.map_or_else(|| t!("palette.no_limit").to_string(), rows_label)),
         );
     }
 

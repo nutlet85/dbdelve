@@ -232,10 +232,10 @@ impl ExplainMode {
     /// Said in front of the choice, because the cost of picking wrong is a
     /// write the user did not mean to make. What each one *does*, in the
     /// server's own vocabulary -- not a sentence about it.
-    pub fn caption(self) -> &'static str {
+    pub fn caption(self) -> String {
         match self {
-            Self::Plan => "print query plan",
-            Self::Analyze => "run query and print query plan",
+            Self::Plan => t!("explain.caption_plan").to_string(),
+            Self::Analyze => t!("explain.caption_analyze").to_string(),
         }
     }
 }
@@ -651,11 +651,11 @@ impl Engine {
     }
 
     /// The column dropdown's entry that swaps the bar for the user's own filter.
-    pub fn raw_filter_label(self) -> &'static str {
+    pub fn raw_filter_label(self) -> String {
         match self.syntax() {
-            Syntax::Sql => "Raw SQL",
-            Syntax::Mongo => "Raw filter",
-            Syntax::Redis => "MATCH pattern",
+            Syntax::Sql => t!("mode.raw_sql").to_string(),
+            Syntax::Mongo => t!("mode.raw_filter").to_string(),
+            Syntax::Redis => t!("mode.match_pattern").to_string(),
         }
     }
 

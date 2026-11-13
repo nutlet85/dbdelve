@@ -173,7 +173,7 @@ fn engine_answers_per_engine() {
             &mut out,
             engine,
             "raw_filter_label",
-            Some(engine.raw_filter_label()),
+            Some(engine.raw_filter_label().as_str()),
         );
         fragment(
             &mut out,

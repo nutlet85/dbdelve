@@ -24,7 +24,7 @@ use crate::db::Syntax;
 /// The gpui-component widgets ask for their own paths — those are Lucide names
 /// too, so they resolve here as well. Add a row when something asks for one;
 /// an unlisted path simply draws nothing.
-const ICONS: [(&str, &IconData); 81] = [
+const ICONS: [(&str, &IconData); 83] = [
     ("icons/git-fork.svg", icondata_lu::LuGitFork),
     ("icons/chevron-down.svg", icondata_lu::LuChevronDown),
     ("icons/chevron-right.svg", icondata_lu::LuChevronRight),
@@ -112,6 +112,11 @@ const ICONS: [(&str, &IconData); 81] = [
     ("icons/engine-generic.svg", icondata_lu::LuDatabase),
     ("icons/plugin.svg", icondata_lu::LuPlug),
     ("icons/unplug.svg", icondata_lu::LuUnplug),
+    ("icons/wand-sparkles.svg", icondata_lu::LuWandSparkles),
+    (
+        "icons/message-square-quote.svg",
+        icondata_lu::LuMessageSquareQuote,
+    ),
 ];
 
 /// The Queries group's icon for a connection's query language.
@@ -228,6 +233,10 @@ pub mod icon {
     pub const IMPORT: &str = "icons/import.svg";
     /// Back to the default: a font's family or size.
     pub const RESET: &str = "icons/rotate-ccw.svg";
+    /// Format Query: sqlformat's one-step tidy of the buffer.
+    pub const FORMAT: &str = "icons/wand-sparkles.svg";
+    /// Toggle Line Comment: the quote a comment reads as.
+    pub const COMMENT: &str = "icons/message-square-quote.svg";
 }
 
 pub fn icon(path: &'static str) -> Icon {

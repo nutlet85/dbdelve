@@ -424,3 +424,65 @@ key.next_edit:                 { en: "Next Edit", zh-CN: "下一条修改" }
 key.previous_edit:             { en: "Previous Edit", zh-CN: "上一条修改" }
 key.import_dbeaver:            { en: "Import Connections from DBeaver", zh-CN: "从 DBeaver 导入连接" }
 key.import_tableplus:          { en: "Import Connections from TablePlus", zh-CN: "从 TablePlus 导入连接" }
+
+# —— 侧栏右键菜单 ——
+explorer.open_data:            { en: "Open Data", zh-CN: "打开数据" }
+explorer.open_structure:       { en: "Open Structure", zh-CN: "打开结构" }
+explorer.import_rows:          { en: "Import Rows…", zh-CN: "导入行…" }
+explorer.export:               { en: "Export", zh-CN: "导出" }
+explorer.set_active_schema:    { en: "Set as Active Schema", zh-CN: "设为活动模式" }
+explorer.new_folder:           { en: "New Folder…", zh-CN: "新建文件夹…" }
+explorer.query_open:           { en: "Open", zh-CN: "打开" }
+explorer.query_rename:         { en: "Rename…", zh-CN: "重命名…" }
+explorer.query_delete:         { en: "Delete…", zh-CN: "删除…" }
+explorer.rename:               { en: "Rename…", zh-CN: "重命名…" }
+explorer.delete:               { en: "Delete…", zh-CN: "删除…" }
+explorer.add_to_folder:        { en: "Add to Folder", zh-CN: "添加到文件夹" }
+explorer.pin:                  { en: "Pin", zh-CN: "固定" }
+explorer.unpin:                { en: "Unpin", zh-CN: "取消固定" }
+explorer.remove_from_folder:   { en: "Remove from Folder", zh-CN: "从文件夹移除" }
+explorer.unknown_database:     { en: "The database is not known yet.", zh-CN: "尚未知道数据库。" }
+
+# —— filter bar 值框右键菜单 ——
+filter_menu.cut:               { en: "Cut", zh-CN: "剪切" }
+filter_menu.copy:              { en: "Copy", zh-CN: "复制" }
+filter_menu.paste:             { en: "Paste", zh-CN: "粘贴" }
+filter_menu.select_all:        { en: "Select All", zh-CN: "全选" }
+
+# —— 视图切换片与 tooltip ——
+view.data:                     { en: "Data", zh-CN: "数据" }
+view.structure:                { en: "Structure", zh-CN: "结构" }
+view.plan:                     { en: "Plan", zh-CN: "计划" }
+tooltip.copy_plan:             { en: "Copy plan", zh-CN: "复制执行计划" }
+tooltip.remove_filter:         { en: "Remove filter", zh-CN: "移除筛选" }
+tooltip.and_or:                { en: "AND or OR", zh-CN: "AND 或 OR" }
+tooltip.close_row_panel:       { en: "Close the row panel", zh-CN: "关闭行面板" }
+tooltip.copy_value:            { en: "Copy value", zh-CN: "复制值" }
+tooltip.previous_page:         { en: "Previous page", zh-CN: "上一页" }
+tooltip.next_page:             { en: "Next page", zh-CN: "下一页" }
+tooltip.close_tab:             { en: "Close tab", zh-CN: "关闭标签页" }
+tooltip.rename_query:          { en: "Rename query", zh-CN: "重命名查询" }
+tooltip.save_query:            { en: "Save query", zh-CN: "保存查询" }
+tooltip.new_query:             { en: "New query", zh-CN: "新建查询" }
+tooltip.run:                   { en: "Run", zh-CN: "运行" }
+tooltip.explain:               { en: "Explain", zh-CN: "解释" }
+tooltip.format_query:          { en: "Format query", zh-CN: "格式化查询" }
+tooltip.toggle_comment:        { en: "Toggle line comment", zh-CN: "切换行注释" }
+
+# —— 按钮与杂项 ——
+button.add_filter:             { en: "Add filter", zh-CN: "添加筛选" }
+button.cancel:                 { en: "Cancel", zh-CN: "取消" }
+button.insert:                 { en: "Insert", zh-CN: "插入" }
+button.insert_in:              { en: "Insert in %{table}", zh-CN: "插入到 %{table}" }
+empty.open_a_table:            { en: "Open a table from the sidebar, or start a new query.", zh-CN: "从边栏打开一张表，或新建一个查询。" }
+editor.section_insert:         { en: "Insert", zh-CN: "插入" }
+grid.hidden_columns:           { en: "%{hidden} hidden %{plural} · Show", zh-CN: "%{hidden} 个隐藏列 · 显示" }
+explain.caption_plan:          { en: "print query plan", zh-CN: "打印查询计划" }
+explain.caption_analyze:       { en: "run query and print query plan", zh-CN: "执行查询并打印查询计划" }
+mode.raw_sql:                  { en: "Raw SQL", zh-CN: "原生 SQL" }
+mode.raw_filter:               { en: "Raw filter", zh-CN: "原生筛选" }
+mode.match_pattern:            { en: "MATCH pattern", zh-CN: "MATCH 模式" }
+palette.no_limit:              { en: "No limit", zh-CN: "不限制" }
+palette.custom:                { en: "Custom…", zh-CN: "自定义…" }
+palette.custom_value:          { en: "Custom (%{rows})…", zh-CN: "自定义（%{rows}）…" }
+grid.filter_placeholder:        { en: "Filter columns and values…", zh-CN: "筛选列与值…" }
