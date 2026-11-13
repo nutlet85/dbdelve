@@ -204,23 +204,17 @@ fn setting_rows() -> Vec<SettingRow> {
         row(
             SettingId::AliasCompletions,
             SettingsTab::General,
-            "Editor",
-            "Alias tables and suggest joins",
-            "Completing a table after FROM or JOIN adds a short alias, and \
-             after JOIN offers the condition its foreign keys imply.",
+            t!("settings.group.editor"),
+            t!("settings.row.alias_completions.title"),
+            t!("settings.row.alias_completions.description"),
             &["autocomplete", "completion", "alias", "join", "foreign key"],
         ),
         row(
             SettingId::RunUnreadable,
             SettingsTab::General,
-            "Queries",
-            "Run statements DBDelve can't parse",
-            "Runs a statement DBDelve can't parse without asking first. \
-             DBDelve can't tell whether such a statement reads, writes or \
-             drops, so it can't check it against the connection's mode: in \
-             Read-write or Full, that includes writes and drops. Where nothing \
-             on the server holds a connection to Read-only, it still asks to \
-             switch to Read-write.",
+            t!("settings.group.queries"),
+            t!("settings.row.run_unreadable.title"),
+            t!("settings.row.run_unreadable.description"),
             &[
                 "parse",
                 "unparseable",

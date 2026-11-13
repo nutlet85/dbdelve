@@ -261,6 +261,7 @@ settings.tab.keyboard.description:     { en: "Every action you can bind. A chang
 settings.group.results:         { en: "Results", zh-CN: "结果" }
 settings.group.language:        { en: "Language", zh-CN: "语言" }
 settings.group.editor:          { en: "Editor", zh-CN: "编辑器" }
+settings.group.queries:         { en: "Queries", zh-CN: "查询" }
 settings.group.updates:         { en: "Updates", zh-CN: "更新" }
 settings.group.diagnostics:     { en: "Diagnostics", zh-CN: "诊断" }
 settings.group.theme:           { en: "Theme", zh-CN: "主题" }
@@ -280,6 +281,10 @@ settings.row.default_sorting.title:           { en: "Default sorting", zh-CN: "�
 settings.row.default_sorting.description:     { en: "How a new tab sorts on a header click. Server runs the query again, sorted by the database; Client reorders the rows already loaded, so a table sorts only the page on screen. Tabs already open keep theirs; each can be switched from its status bar.", zh-CN: "新标签页在表头点击时如何排序。服务器：重新向数据库请求排序后的结果；客户端：只重排已加载的行，因此表格只对屏幕上这一页排序。已打开的标签页保持各自的设置；可在各自的状态栏切换。" }
 settings.row.language.title:                  { en: "Language", zh-CN: "语言" }
 settings.row.language.description:            { en: "Interface language; takes effect immediately.", zh-CN: "界面语言；立即生效。" }
+settings.row.alias_completions.title:         { en: "Alias tables and suggest joins", zh-CN: "表名带别名，并提示 JOIN 条件" }
+settings.row.alias_completions.description:   { en: "Completing a table after FROM or JOIN adds a short alias, and after JOIN offers the condition its foreign keys imply.", zh-CN: "在 FROM 或 JOIN 之后补全表名时会带上简短别名，在 JOIN 之后还会提示外键隐含的连接条件。" }
+settings.row.run_unreadable.title:            { en: "Run statements DBDelve can't parse", zh-CN: "执行 DBDelve 无法解析的语句" }
+settings.row.run_unreadable.description:      { en: "Runs a statement DBDelve can't parse without asking first. DBDelve can't tell whether such a statement reads, writes or drops, so it can't check it against the connection's mode: in Read-write or Full, that includes writes and drops. Where nothing on the server holds a connection to Read-only, it still asks to switch to Read-write.", zh-CN: "不再先询问就直接执行 DBDelve 无法解析的语句。这类语句究竟是读、写还是删除，DBDelve 判断不出来，因此也无法按连接的模式检查：在读写或完全模式下，其中就包含写入和删除。如果服务器侧没有任何东西把连接限制为只读，它仍会先询问是否切换到读写模式。" }
 settings.row.qualify_completions.title:       { en: "Qualify table names", zh-CN: "表名带模式" }
 settings.row.qualify_completions.description: { en: "Completing a table name inserts it with its schema, as schema.table.", zh-CN: "补全表名时连同模式一起插入，形如 schema.table。" }
 settings.row.check_for_updates.title:         { en: "Check for updates", zh-CN: "检查更新" }
