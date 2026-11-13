@@ -5,13 +5,21 @@ with GPUI, no Electron and no JVM: instant startup, friendly on your memory,
 and smooth scrolling through large tables where other clients crash or
 introduce limits.
 
+> **This is a fork.** It is maintained here, at
+> [nutlet85/dbdelve](https://github.com/nutlet85/dbdelve), and publishes its
+> own Windows builds. DBDelve itself is
+> [ShayanAbbas1/dbdelve](https://github.com/ShayanAbbas1/dbdelve),
+> written by Shayan Abbas: the macOS and Linux builds, the Homebrew cask, the
+> AUR package, the Discord and the project's funding are his, not this fork's.
+> The code here is GPL-3.0-only, as it was upstream.
 
 ## Community
 
-Ideas and discussion on [Discord](https://discord.gg/7PegWzwqCm).
-
-Like DBDelve? [Support its development](https://www.patreon.com/cw/ShayanAbbas1).
-Support is voluntary and does not provide any additional benefits.
+Upstream's community is the one to ask about DBDelve itself:
+[Discord](https://discord.gg/7PegWzwqCm), and the
+[upstream repository](https://github.com/ShayanAbbas1/dbdelve) for issues
+and discussion. This fork's own changes are tracked in its
+[issues](https://github.com/nutlet85/dbdelve/issues).
 
 
 ![DBDelve in Gruvbox Dark Glass: a SELECT on the events table in the editor and its result grid below](assets/screenshots/query-dark.png)
@@ -32,31 +40,20 @@ I wanted something which is performant, modern and consumes little ram. The exis
 
 ## Install
 
-**macOS** (Apple Silicon, macOS 12 or later):
+**Windows** (x86_64) is what this fork builds: run the installer from
+[this fork's latest release][releases], or unzip the zip and run `dbdelve.exe`.
+The installer asks for AppData (just for you) or Program Files (all users).
+The app updates itself from this repository's releases, signed with this
+fork's own key.
 
-```sh
-brew install --cask ShayanAbbas1/dbdelve/dbdelve
-```
+**macOS and Linux** are not built here. Install those from
+[upstream's releases](https://github.com/ShayanAbbas1/dbdelve/releases/latest),
+knowing that an upstream build updates itself from upstream.
 
-The app isn't notarized, so the cask clears the quarantine flag macOS would
-otherwise refuse it over. Without Homebrew:
+Building from source, where your data lives, and the rest are in
+[docs/install.md](docs/install.md).
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/ShayanAbbas1/dbdelve/main/install.sh | sh
-```
-
-**Linux** (x86_64 or aarch64): the same one-liner installs it under `~/.local`
-with no root, or `yay -S dbdelve-bin` from the AUR, or the tarball or AppImage
-from [the latest release][releases].
-
-**Windows** (x86_64): run the installer from [the latest release][releases],
-or unzip the zip and run `dbdelve.exe`. The installer asks for AppData (just
-for you) or Program Files (all users).
-
-Updating, the `.dmg`, Linux requirements, building from source and where your
-data lives are all in [docs/install.md](docs/install.md).
-
-[releases]: https://github.com/ShayanAbbas1/dbdelve/releases/latest
+[releases]: https://github.com/nutlet85/dbdelve/releases/latest
 
 ## Supported databases
 

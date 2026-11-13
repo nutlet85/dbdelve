@@ -1,6 +1,12 @@
 # Installing DBDelve
 
-## macOS
+> **This is a fork.** It publishes **Windows builds only**, from
+> [this fork's releases][releases], and its app updates itself from those. The
+> macOS and Linux sections below describe builds made upstream, which is where
+> the Homebrew cask and the `install.sh` they mention live: installing that way
+> gets you upstream's app, which updates itself from upstream.
+
+## macOS (upstream builds)
 
 Apple Silicon, macOS 12 or later — that's what it's built and tested on. Intel
 and older macOS aren't blocked by anything in the code, they're just untested.
@@ -52,7 +58,7 @@ To build it yourself instead, `DBDELVE_CHANNEL=release dev/bundle.sh` produces
 `target/DBDelve.app` with the release build, icon and signature. Drag that to
 Applications; the quarantine step doesn't apply here.
 
-## Linux
+## Linux (upstream builds)
 
 One line installs the latest release for your architecture under `~/.local`,
 with no root:
@@ -143,7 +149,7 @@ to `$XDG_DATA_HOME/dbdelve`, or `~/.local/share/dbdelve`.
 
 ## Windows
 
-x86_64, from [the latest release][releases]. The installer is the
+x86_64, from [this fork's latest release][releases]. The installer is the
 recommended way. It asks whether to put DBDelve in AppData (just for you, no
 administrator) or Program Files (all users). Connections and query history
 stay in `%APPDATA%\dbdelve` either way, and uninstall leaves them there.
@@ -223,5 +229,5 @@ GitHub, to check for a newer release at startup and every six hours after,
 which you can turn off in Settings, and to download the release you asked to
 update to.
 
-[releases]: https://github.com/ShayanAbbas1/dbdelve/releases/latest
+[releases]: https://github.com/nutlet85/dbdelve/releases/latest
 [Inno Setup]: https://jrsoftware.org/isinfo.php
