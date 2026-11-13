@@ -21,7 +21,7 @@ use crate::actions::{ConfirmDialog, NextDialogButton, PreviousDialogButton, Tick
 use crate::connection_form::{ConnectionTest, Reported, dialects, suggested_dialect};
 use crate::explorer::{
     Landing, Member, PINNED_GROUP, Pin, QUERIES_GROUP, Shortcut, ShortcutDatabase, Shortcuts,
-    is_schema_row, landing, relation_copies, saved_query,
+    is_argument_row, is_schema_row, landing, relation_copies, saved_query,
 };
 use crate::icons::{queries_group_icon, saved_query_icon};
 use crate::scroller::{SmoothScrollable, smooth_scoped};
@@ -943,7 +943,21 @@ impl Workspace {
         // a dialog another has just gone up over, or come down off with the
         // focused button in it.
         if self.palette.is_none() && (raised || !self.dialog_focus.contains_focused(window, cx)) {
-            self.dialog_focus.focus(window, cx);
+            match window.focused(cx) {
+                // A menu that opens from a field in the dialog moves the
+                // keyboard to a popup drawn at the end of the frame, so until
+                // that frame nothing inside the dialog is focused. It gets the
+                // frame to arrive: this reclaim is what is left if it does
+                // not.
+                Some(_) => cx.on_next_frame(window, |workspace, window, cx| {
+                    if workspace.palette.is_none()
+                        && !workspace.dialog_focus.contains_focused(window, cx)
+                    {
+                        workspace.dialog_focus.focus(window, cx);
+                    }
+                }),
+                None => self.dialog_focus.focus(window, cx),
+            }
         }
         Some(
             div()
@@ -1013,6 +1027,7 @@ impl Workspace {
                 if editing { 3 + checkbox } else { 2 }
             }
             Some("import-choice") => 3,
+            Some("structure-editor") => 3,
             Some("pending-export") => {
                 let all = self
                     .profile()
@@ -1139,6 +1154,13 @@ impl Workspace {
                 self.pending_import = None;
                 cx.notify();
             }
+            ("structure-editor", 0) => self.apply_structure_edit(cx),
+            ("structure-editor", 1) => self.cancel_structure_editor(cx),
+            ("structure-editor", _) => self.structure_edit_in_query(window, cx),
+            ("definition-editor", 0) => self.apply_definition(cx),
+            ("definition-editor", _) => self.cancel_definition_editor(cx),
+            ("routine-call", 0) => self.run_routine_call(window, cx),
+            ("routine-call", _) => self.cancel_routine_call(cx),
             ("stale-edit", 3) if editing => self.toggle_stale_dont_ask(cx),
             ("stale-edit", 0) if editing => self.edit_stale_anyway(window, cx),
             ("stale-edit", 0) => self.refresh_stale(window, cx),
@@ -2510,6 +2532,36 @@ impl Workspace {
                     let t = *theme(cx);
                     let id = entry.item().id.as_str();
                     let leaf = leaves.get(id).copied();
+                    // An argument under a routine: a line of text the routine
+                    // row was opened to show, so it carries no icon, opens
+                    // nothing and takes no drops.
+                    if is_argument_row(id) {
+                        return ListItem::new(index)
+                            .text_color(t.text_faint)
+                            .text_size(px(layout::chrome(layout::TEXT_XS)))
+                            .pl(px(
+                                layout::SPACE_SM + entry.depth() as f32 * layout::SPACE_MD
+                            ))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(layout::SPACE_SM))
+                                    .min_w_0()
+                                    .flex_1()
+                                    .child(dot(t.text_faint))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .overflow_hidden()
+                                            .text_ellipsis()
+                                            .whitespace_nowrap()
+                                            .child(entry.item().label.clone()),
+                                    ),
+                            )
+                            .debug_selector(move || format!("explorer-row-{index}"));
+                    }
                     let shortcut = shortcuts.get(id);
                     let missing = matches!(shortcut, Some(Shortcut::Member { missing: true, .. }));
                     let query = saved_query(id)
@@ -2874,8 +2926,17 @@ impl Workspace {
                         None if unknown => unknown_database_items(menu),
                         None => menu,
                     };
-                // A routine offers what a folder or a pin does, and no more.
+                // A routine offers what a folder or a pin does, and what can be
+                // done to the routine itself: run it, or take its definition
+                // somewhere it can be changed.
                 let Some((schema, relation, kind)) = workspace.relation_at(leaf.target) else {
+                    let target = workspace.target();
+                    let menu = match workspace.routine_at(leaf.target) {
+                        Some((schema, routine)) => {
+                            routine_items(menu, &menu_workspace, target, schema, routine)
+                        }
+                        None => menu,
+                    };
                     return with_shortcuts(menu, window, cx);
                 };
                 let target = workspace.target();
@@ -2927,6 +2988,60 @@ impl Workspace {
                 let mut menu = menu
                     .item(open(t!("explorer.open_data"), false))
                     .item(open(t!("explorer.open_structure"), true));
+                if target.edits_structure(kind) {
+                    let workspace = menu_workspace.clone();
+                    let (schema, relation) = (schema.clone(), relation.clone());
+                    menu = menu.item(PopupMenuItem::new(t!("explorer.edit_table")).on_click(
+                        move |_, window, cx| {
+                            let (schema, relation) = (schema.clone(), relation.clone());
+                            _ = workspace.update(cx, |workspace, cx| {
+                                workspace.edit_structure(schema, relation, kind, window, cx);
+                            });
+                        },
+                    ));
+                }
+                // A view's own `CREATE`, rewritten into a replacement. A
+                // materialized view has no such spelling on any engine here.
+                if kind == RelationKind::View {
+                    match target.view_definition() {
+                        db::DefinitionEditing::Unsafe => {}
+                        db::DefinitionEditing::InPlace => {
+                            let workspace = menu_workspace.clone();
+                            let (schema, name) = (schema.clone(), relation.clone());
+                            menu =
+                                menu.item(PopupMenuItem::new(t!("explorer.edit_view")).on_click(
+                                    move |_, _, cx| {
+                                        let target = DefinitionTarget::Relation {
+                                            schema: schema.clone(),
+                                            name: name.clone(),
+                                            kind: RelationKind::View,
+                                        };
+                                        _ = workspace.update(cx, |workspace, cx| {
+                                            workspace.edit_definition(target, cx);
+                                        });
+                                    },
+                                ));
+                        }
+                        db::DefinitionEditing::QueryTab => {
+                            let workspace = menu_workspace.clone();
+                            let (schema, name) = (schema.clone(), relation.clone());
+                            menu = menu.item(
+                                PopupMenuItem::new(t!("explorer.definition_query")).on_click(
+                                    move |_, window, cx| {
+                                        let target = DefinitionTarget::Relation {
+                                            schema: schema.clone(),
+                                            name: name.clone(),
+                                            kind: RelationKind::View,
+                                        };
+                                        _ = workspace.update(cx, |workspace, cx| {
+                                            workspace.define_in_query(target, window, cx);
+                                        });
+                                    },
+                                ),
+                            );
+                        }
+                    }
+                }
                 if target.takes_imports(kind) {
                     menu = menu.item(PopupMenuItem::new(t!("explorer.import_rows")).on_click(
                         move |_, window, cx| {
@@ -3051,6 +3166,66 @@ impl Workspace {
                 false => window.dispatch_action(Box::new(CollapseAllSchemas), cx),
             })
     }
+}
+
+/// What a routine's row offers beside the shortcuts: Run, and its definition
+/// wherever this target can take one.
+fn routine_items(
+    menu: PopupMenu,
+    workspace: &gpui::WeakEntity<Workspace>,
+    target: crate::db::Target,
+    schema: String,
+    routine: crate::db::Routine,
+) -> PopupMenu {
+    let mut menu = menu;
+    if target.executes_routines() {
+        let workspace = workspace.clone();
+        let (schema, asking) = (schema.clone(), routine.clone());
+        menu = menu.item(PopupMenuItem::new(t!("explorer.routine_run")).on_click(
+            move |_, _, cx| {
+                let (schema, asking) = (schema.clone(), asking.clone());
+                _ = workspace.update(cx, |workspace, cx| {
+                    workspace.call_routine(schema, asking, cx);
+                });
+            },
+        ));
+    }
+    match target.routine_definition() {
+        db::DefinitionEditing::Unsafe => {}
+        db::DefinitionEditing::InPlace => {
+            let workspace = workspace.clone();
+            let (schema, asking) = (schema.clone(), routine.clone());
+            menu = menu.item(PopupMenuItem::new(t!("explorer.edit_definition")).on_click(
+                move |_, _, cx| {
+                    let target = DefinitionTarget::Routine {
+                        schema: schema.clone(),
+                        routine: asking.clone(),
+                    };
+                    _ = workspace.update(cx, |workspace, cx| {
+                        workspace.edit_definition(target, cx);
+                    });
+                },
+            ));
+        }
+        db::DefinitionEditing::QueryTab => {
+            let workspace = workspace.clone();
+            let (schema, asking) = (schema, routine);
+            menu = menu.item(
+                PopupMenuItem::new(t!("explorer.definition_query")).on_click(
+                    move |_, window, cx| {
+                        let target = DefinitionTarget::Routine {
+                            schema: schema.clone(),
+                            routine: asking.clone(),
+                        };
+                        _ = workspace.update(cx, |workspace, cx| {
+                            workspace.define_in_query(target, window, cx);
+                        });
+                    },
+                ),
+            );
+        }
+    }
+    menu
 }
 
 /// What a saved query's row offers on a right click: what its tab offers, for

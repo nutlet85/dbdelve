@@ -1,6 +1,7 @@
-# rust-i18n v2 格式，同 vendor/gpui-component/locales/ui.yml。只翻菜单层；
-# 占位符是 rust-i18n 的 `%{name}`。本次范围外不翻的字符串（SQL 关键字、
-# 产品名）直接写死在代码里，不进这个文件。
+# rust-i18n v2 格式，同 vendor/gpui-component/locales/ui.yml。翻的是菜单层、
+# 设置页、命令面板，以及写 DDL 的三个弹窗和 db/alter.rs 的拒绝句子。
+# 占位符是 rust-i18n 的 `%{name}`。不翻服务器自己说的话，也不翻 SQL 关键字和
+# 产品名：它们直接写死在代码里，不进这个文件。
 _version: 2
 menu.app.settings:
   en: Settings…
@@ -442,6 +443,69 @@ explorer.pin:                  { en: "Pin", zh-CN: "固定" }
 explorer.unpin:                { en: "Unpin", zh-CN: "取消固定" }
 explorer.remove_from_folder:   { en: "Remove from Folder", zh-CN: "从文件夹移除" }
 explorer.unknown_database:     { en: "The database is not known yet.", zh-CN: "尚未知道数据库。" }
+explorer.edit_table:           { en: "Edit Table…", zh-CN: "编辑表…" }
+explorer.edit_view:            { en: "Edit View…", zh-CN: "编辑视图…" }
+explorer.routine_run:          { en: "Run…", zh-CN: "执行…" }
+explorer.edit_definition:      { en: "Edit Definition…", zh-CN: "编辑定义…" }
+explorer.definition_query:     { en: "Edit Definition in New Query", zh-CN: "在新查询中编辑定义" }
+explorer.reading_arguments:    { en: "Reading the arguments…", zh-CN: "正在读取参数…" }
+explorer.no_arguments:         { en: "No arguments.", zh-CN: "没有参数。" }
+
+# —— 表结构编辑器 ——
+structure_editor.title:        { en: "Edit Table", zh-CN: "编辑表" }
+structure_editor.columns:      { en: "Columns", zh-CN: "列" }
+structure_editor.indexes:      { en: "Indexes", zh-CN: "索引" }
+structure_editor.add_column:   { en: "Add column", zh-CN: "添加列" }
+structure_editor.add_index:    { en: "Add index", zh-CN: "添加索引" }
+structure_editor.restore:      { en: "Restore", zh-CN: "恢复" }
+structure_editor.fold:         { en: "Remove", zh-CN: "删除" }
+structure_editor.nullable:     { en: "Nullable", zh-CN: "可空" }
+structure_editor.unique:       { en: "Unique", zh-CN: "唯一" }
+structure_editor.default:      { en: "Default", zh-CN: "默认值" }
+structure_editor.open_query:   { en: "Open in New Query", zh-CN: "在新查询中打开" }
+structure_editor.apply:        { en: "Apply", zh-CN: "应用" }
+structure_editor.reading:      { en: "Reading the table's definition…", zh-CN: "正在读取表结构…" }
+structure_editor.tab_closed:   { en: "The structure tab is no longer open.", zh-CN: "结构标签页已关闭。" }
+structure_editor.mode_note:    { en: "%{profile} is in %{mode} mode. Every statement below is shown before it runs.", zh-CN: "%{profile} 当前为 %{mode} 模式。下面每条语句执行前都会显示。" }
+structure_editor.name:         { en: "Name", zh-CN: "名称" }
+structure_editor.type:         { en: "Type", zh-CN: "类型" }
+structure_editor.params:       { en: "Parameters", zh-CN: "参数" }
+structure_editor.using:        { en: "USING", zh-CN: "USING" }
+structure_editor.refused:      { en: "dbdelve refused to run a statement it wrote itself.", zh-CN: "dbdelve 拒绝执行它自己写出的语句。" }
+
+# —— 结构编辑被拒绝的理由，与整批提交的含义 ——
+structure.refuse_not_sql:      { en: "This engine's structure is not edited with SQL.", zh-CN: "这个引擎的表结构不能用 SQL 修改。" }
+structure.refuse_not_table:    { en: "Only a table's structure is edited here.", zh-CN: "这里只能编辑表的结构。" }
+structure.refuse_columns:      { en: "This engine's columns are not changed here.", zh-CN: "这个引擎的列不能在这里修改。" }
+structure.refuse_partial:      { en: "This engine has no partial indexes.", zh-CN: "这个引擎不支持部分索引。" }
+structure.refuse_partial_mysql: { en: "MySQL has no partial indexes.", zh-CN: "MySQL 不支持部分索引。" }
+structure.refuse_index_create: { en: "This engine has no indexes to create.", zh-CN: "这个引擎不能创建索引。" }
+structure.refuse_index_drop:   { en: "This engine has no indexes to drop.", zh-CN: "这个引擎不能删除索引。" }
+structure.refuse_index_rename: { en: "This engine's indexes are not renamed here.", zh-CN: "这个引擎的索引不能在这里改名。" }
+structure.refuse_index_change: { en: "This engine's indexes are not changed here.", zh-CN: "这个引擎的索引不能在这里修改。" }
+structure.refuse_sqlite_add:   { en: "SQLite cannot add a NOT NULL column without a default.", zh-CN: "SQLite 不能新增没有默认值的 NOT NULL 列。" }
+structure.refuse_sqlite_change: { en: "SQLite cannot change a column's type, nullability or default in place.", zh-CN: "SQLite 不能就地修改列的类型、可空性或默认值。" }
+structure.refuse_mssql_default: { en: "SQL Server keeps a default as a named constraint, and its name is not read here.", zh-CN: "SQL Server 的默认值是一个具名约束，这里没有读到它的名字。" }
+structure.refuse_clickhouse:   { en: "ClickHouse spells nullability in the type; edit the type to Nullable(…).", zh-CN: "ClickHouse 的可空性写在类型里；请把类型改为 Nullable(…)。" }
+structure.refuse_primary:      { en: "A primary key's index is the key itself, which this editor does not change.", zh-CN: "主键索引就是主键本身，这个编辑器不修改它。" }
+structure.note_atomic:         { en: "Runs as one submission, so a failure leaves nothing changed.", zh-CN: "整批作为一次提交执行，失败则什么都没改。" }
+structure.note_separate:       { en: "Each statement commits on its own; a failure part way leaves the earlier ones applied.", zh-CN: "每条语句各自提交，中途失败时前面的已经生效。" }
+
+# —— 定义编辑器与例程执行 ——
+definition_editor.note:        { en: "This text is the statement that will run.", zh-CN: "下面这段文本就是将要执行的语句。" }
+definition_editor.title_view:  { en: "Edit View", zh-CN: "编辑视图" }
+definition_editor.title_function: { en: "Edit Function", zh-CN: "编辑函数" }
+definition_editor.title_procedure: { en: "Edit Procedure", zh-CN: "编辑存储过程" }
+routine_call.note:             { en: "Leave a value empty to pass NULL.", zh-CN: "留空即传入 NULL。" }
+routine_call.run:              { en: "Run", zh-CN: "执行" }
+routine_call.reading:          { en: "Reading the arguments…", zh-CN: "正在读取参数…" }
+routine_call.title:            { en: "Run Routine", zh-CN: "执行例程" }
+definition_editor.reading:     { en: "Reading the definition…", zh-CN: "正在读取定义…" }
+definition_editor.nothing:     { en: "There is nothing to run.", zh-CN: "没有可执行的语句。" }
+definition_editor.unsafe:      { en: "dbdelve could not derive a safe replacement for this object.", zh-CN: "dbdelve 无法为这个对象推导出安全的替换语句。" }
+
+# —— 服务器自己说的话：不加翻译，只标明是谁说的 ——
+error.server:                  { en: "The server said:", zh-CN: "服务器返回：" }
 
 # —— filter bar 值框右键菜单 ——
 filter_menu.cut:               { en: "Cut", zh-CN: "剪切" }
@@ -471,6 +535,7 @@ tooltip.toggle_comment:        { en: "Toggle line comment", zh-CN: "切换行注
 
 # —— 按钮与杂项 ——
 button.add_filter:             { en: "Add filter", zh-CN: "添加筛选" }
+button.apply:                  { en: "Apply", zh-CN: "应用" }
 button.cancel:                 { en: "Cancel", zh-CN: "取消" }
 button.insert:                 { en: "Insert", zh-CN: "插入" }
 button.insert_in:              { en: "Insert in %{table}", zh-CN: "插入到 %{table}" }

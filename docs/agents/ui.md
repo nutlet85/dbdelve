@@ -8,11 +8,20 @@ IME, line numbers, tree-sitter highlighting), `DataTable` over a `TableDelegate`
 virtualized at their two heights, header and row), `PopupMenu` and the `DropdownMenu`
 trait (an anchored menu whose open state the library owns, which is the answer
 to the "GPUI drops view state" hazard under "Animation hazards" below rather than a dropdown of ours),
-`Root` dialog layers, resizable panels, `Spinner`, and the completion popup.
+`Root` dialog layers, resizable panels, `Spinner`, the completion popup, and
+`Select` for a searchable pick of one name (the table editor's column type).
 
 Popup menus use the component theme's chrome font, even when opened from an
 editor or grid. The vendored `PopupMenu` resets the inherited family at its root
 so labels and submenus do not pick up the triggering surface's monospace font.
+
+**A menu that takes the keyboard inside a dialog is drawn at the end of the
+frame that opened it**, so for that frame nothing the dialog contains is
+focused. `Workspace::dialog_layer` therefore hands its reclaim of the keyboard
+to the next frame when something else holds it, and takes it at once when
+nothing does: reclaiming immediately closed a `Select`'s menu in the frame it
+opened. A dialog's own fields never need the grace — they are focused before
+the frame is drawn.
 
 **Completion is the library's.** `CompletionProvider` is the trait and the
 editor's `lsp.completion_provider` is a public field. No language server is

@@ -475,6 +475,17 @@ The shape a change to the main pane has to fit (`session.rs`, with the
   Category folds are kept across a refresh but not saved. Stale ids are left
   in `folds`: harmless, and a dropped schema may come back. A duplicate takes
   the folds with the folders.
+- **A routine row reads its name, and opens to show its arguments.** The
+  signature is not in the label: a one-line `name(args)` crowds the column
+  every row is read down. Opening the row reads them
+  (`Connection::routine_signature`, which keeps the `OUT` parameters
+  `routine_parameters` drops for the call dialog) and lists name, type and
+  mode, one disabled child row each; an engine whose `Target::executes_routines`
+  is false gets a routine row with no children and so no arrow. One at a time:
+  `Session::explorer_arguments` holds the open routine and its
+  `ArgumentsState`, so opening another closes it, and the rebuild the read
+  finishes with is what puts the rows in place (`Workspace::explorer_event`).
+  The click still opens the routine's tab, as it did before.
 - **A named buffer persists to its query file, an unnamed one to its own
   `.scratch-{id}.sql`.** Edits stay in memory until Save, a connection switch,
   opening another query, or normal quit/window close persists the buffers.
@@ -520,6 +531,50 @@ The shape a change to the main pane has to fit (`session.rs`, with the
   flattening and stops one character past the limit. The cost follows the
   number of cells drawn, not their size.
 
+
+## The object editors
+
+Three surfaces write DDL, each opened from the explorer's row menu where the
+target offers it (`Target::edits_structure`, `view_definition`,
+`routine_definition`, `executes_routines`), and each a dialog over the
+workspace while its profile is in front:
+
+- **The table editor** (`workspace/structure_editor.rs`) opens the relation's
+  structure tab and edits the columns and indexes as fields, with the batch an
+  Apply would run written underneath them and recomputed from the fields every
+  frame. Removed rows stay on screen greyed until Apply. The batch is what
+  `db::alter` writes and what `sql::is_generated_structure` admits; a batch the
+  gate refuses is a bug in DBDelve, and the dialog says so rather than running
+  it. A column's type is two fields: a searchable picker over the engine's own
+  names (`Target::data_types`, one list per dialect in `db/types.rs`) and the
+  parameter list beside it, joined by `alter::join_type` (`varchar` + `(80)`).
+  The picker is seeded with the type the column already has when the list does
+  not name it, so opening the editor never rewrites a type nobody touched.
+- **The definition editor** (`workspace/definition_editor.rs`) loads the
+  object's own `CREATE` (`Connection::ddl` / `routine_ddl`) and rewrites its
+  first keyword; the buffer is the statement that runs, read back on Apply.
+- **The routine call form** (`workspace/routine_call.rs`) asks
+  `Connection::routine_parameters` for the arguments and writes the call into a
+  new query tab, which runs it — so the mode gate, history and Cancel are the
+  query tab's own.
+
+`Workspace::run_ddl` is how their statements run: it classifies and gates them
+exactly as `execute_and_then` does (a stopped one waits on `pending_run` with a
+`Destination::Ddl` resume, and the same prompt answers it), then runs the batch
+through `Connection::run_ddl` on the profile's connection rather than in a tab,
+because DDL has no rows to land in — and because SQL Server sends a DDL batch's
+session options on their own (`docs/agents/engines.md`). One batch at a time per profile
+(`Session::ddl_in_flight`). A success closes the dialog and refreshes what its
+`AfterDdl` names — the structure tab, or the catalog, which is also what
+re-resolves an open routine tab (`Workspace::refresh_routine_tabs`); a failure
+keeps the dialog open with the server's words.
+
+The dialogs hold no `EditorState`/`InputState` of their own until their data
+lands: creating one needs a window, and a definition or a parameter list
+arrives on a task that has none, so each is built at the first frame after.
+While one is open the workspace stops listening for Run, Explain, Format and
+the other buffer actions, so a `cmd-enter` aimed at a definition cannot run the
+query tab behind it.
 
 ## Completion
 

@@ -4,7 +4,7 @@
 //! dialect DBDelve knows has few of them, whatever that dialect could do.
 
 use super::plugin::Plugin;
-use super::spec::Abilities;
+use super::spec::{Abilities, DefinitionEditing};
 use super::{
     DbError, Engine, Fields, RelationKind, ServerConfig, Syntax, clickhouse, duckdb, external,
     mssql, postgres, redis, turso,
@@ -247,6 +247,58 @@ impl Target {
     /// than the statistics' estimate.
     pub fn exact_row_estimates(self) -> bool {
         self.abilities().exact_row_estimates
+    }
+
+    /// Whether the table editor may change `kind`'s structure. An ordinary or
+    /// partitioned table and nothing else -- a view's columns are its
+    /// statement's -- and only through a driver DBDelve opens itself.
+    pub fn edits_structure(self, kind: RelationKind) -> bool {
+        self.driver == Driver::BuiltIn
+            && self.abilities().edits_structure
+            && matches!(kind, RelationKind::Table | RelationKind::PartitionedTable)
+    }
+
+    /// Whether the structure editor draws its index section at all.
+    pub fn edits_indexes(self) -> bool {
+        self.driver == Driver::BuiltIn && self.abilities().edits_indexes
+    }
+
+    /// How a view's definition is rewritten, or [`DefinitionEditing::Unsafe`]
+    /// where none is. A plugin's definition is its own driver's, whatever
+    /// dialect it speaks, so it is never rewritten here.
+    pub fn view_definition(self) -> DefinitionEditing {
+        match self.driver {
+            Driver::BuiltIn => self.abilities().view_definition,
+            Driver::Plugin(_) => DefinitionEditing::Unsafe,
+        }
+    }
+
+    /// [`Self::view_definition`] for a routine.
+    pub fn routine_definition(self) -> DefinitionEditing {
+        match self.driver {
+            Driver::BuiltIn => self.abilities().routine_definition,
+            Driver::Plugin(_) => DefinitionEditing::Unsafe,
+        }
+    }
+
+    /// Whether the structure editor offers a `USING` expression beside a type
+    /// change, which only the engines that read one have.
+    pub fn alters_type_using(self) -> bool {
+        self.driver == Driver::BuiltIn && self.abilities().alters_type_using
+    }
+
+    /// The type names the table editor offers, which is a built-in driver's
+    /// dialect only: a plugin's types are its own driver's to prove.
+    pub fn data_types(self) -> &'static [&'static str] {
+        match self.driver {
+            Driver::BuiltIn => self.engine.data_types(),
+            Driver::Plugin(_) => &[],
+        }
+    }
+
+    /// Whether a routine can be called with arguments from the Run dialog.
+    pub fn executes_routines(self) -> bool {
+        self.driver == Driver::BuiltIn && self.abilities().executes_routines
     }
 }
 

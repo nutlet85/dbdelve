@@ -5,8 +5,8 @@
 
 use super::*;
 
-use crate::db::{ColumnDefinition, Structure};
-use crate::session::{Explained, Finished, Queue, TabKey};
+use crate::db::{ColumnDefinition, Routine, Structure};
+use crate::session::{Explained, Finished, PendingRun, Queue, Resume, TabKey};
 
 impl Workspace {
     pub(crate) fn open_explorer_target(
@@ -467,6 +467,140 @@ impl Workspace {
         .detach();
     }
 
+    /// Run a statement dbdelve wrote itself -- a structure edit or a replaced
+    /// definition -- once the mode gate has had its say.
+    ///
+    /// There is no tab for its result: a structure or definition dialog writes
+    /// DDL, and DDL has no rows. So it goes through the same two gates a user's
+    /// run does (the mode check here, and the connection's own hold), under the
+    /// same history, and answers into the dialog that asked, which is what
+    /// `after` names. A statement the gate stops is held on `pending_run`
+    /// exactly as a typed one is, and arrives back here once it is allowed.
+    pub(crate) fn run_ddl(
+        &mut self,
+        sql: String,
+        after: crate::session::AfterDdl,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_notice();
+        let verdict = sql::classify(self.engine(), &sql);
+        let stopped = self
+            .profile()
+            .and_then(|profile| sql::gate(&verdict, profile.mode, &profile.confirmed));
+        if stopped.is_some() {
+            if let Some(profile) = self.profile_mut() {
+                profile.session.pending_run = Some(PendingRun {
+                    resume: Some(Resume {
+                        sql,
+                        destination: crate::session::Destination::Ddl(after),
+                        refresh: None,
+                        keep_rows: false,
+                        explain: None,
+                    }),
+                    verdict,
+                    dont_ask: false,
+                    commit_cell: false,
+                });
+            }
+            cx.notify();
+            return;
+        }
+        self.run_ddl_now(sql, after, cx);
+    }
+
+    /// [`Self::run_ddl`] without the gate: the arm the prompt's own answer
+    /// takes, and the one a statement the gate allowed takes.
+    pub(crate) fn run_ddl_now(
+        &mut self,
+        sql: String,
+        after: crate::session::AfterDdl,
+        cx: &mut Context<Self>,
+    ) {
+        let target = self.target();
+        let busy = self
+            .profile()
+            .is_some_and(|profile| profile.session.ddl_in_flight || profile.connection().is_none());
+        if busy {
+            // The dialog that asked is still up and waiting, and nothing is
+            // going to run: it gets its buttons back rather than sitting
+            // disabled for good.
+            self.ddl_apply_cancelled(cx);
+            return;
+        }
+        let Some(profile) = self.profile_mut() else {
+            return;
+        };
+        let Some(connection) = profile.connection() else {
+            return;
+        };
+        let (profile_id, generation) = (profile.id.clone(), profile.generation);
+        profile.session.ddl_in_flight = true;
+        let started = std::time::Instant::now();
+        let recorded = store::HistoryEntry::started(sql.as_str());
+        let _ = store::append_history(&profile_id, &recorded);
+        remember_statement(&mut profile.session.history, recorded.clone());
+        cx.notify();
+
+        let statement = sql.clone();
+        let task = spawn_blocking(cx.background_executor(), move || {
+            connection.run_ddl(&statement, &CancelToken::default())
+        });
+        cx.spawn(async move |workspace, cx| {
+            let result = task.await;
+            let landed =
+                super::queries::answered(&recorded, &result, false, started.elapsed(), target);
+            let _ = store::append_history(&profile_id, &landed);
+            _ = workspace.update(cx, |workspace, cx| {
+                workspace.remember_run(&profile_id, landed);
+                if let Some(profile) = workspace
+                    .profiles
+                    .iter_mut()
+                    .find(|profile| profile.id == profile_id)
+                {
+                    profile.session.ddl_in_flight = false;
+                }
+                let error = match result {
+                    Ok(_) => None,
+                    Err(error) => Some(super::server_said(&error.message)),
+                };
+                match after {
+                    crate::session::AfterDdl::Structure {
+                        tab,
+                        schema,
+                        relation,
+                    } => {
+                        workspace.structure_ddl_landed(error.clone(), cx);
+                        if error.is_none() {
+                            workspace.load_structure(tab, schema, relation, cx);
+                        }
+                    }
+                    crate::session::AfterDdl::Catalog => {
+                        workspace.definition_ddl_landed(error.clone(), cx);
+                        if error.is_none() {
+                            workspace.load_catalog(&profile_id, generation, cx);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// The prompt behind an Apply was declined: the dialog that wrote the
+    /// statement is still up, and nothing ran.
+    pub(crate) fn ddl_apply_cancelled(&mut self, cx: &mut Context<Self>) {
+        if let Some(profile) = self.profile_mut() {
+            if let Some(editor) = profile.session.structure_editor.as_mut() {
+                editor.applying = false;
+            }
+            if let Some(editor) = profile.session.definition_editor.as_mut() {
+                editor.applying = false;
+            }
+        }
+        cx.notify();
+    }
+
     /// Stop a relation tab's count. Like Cancel on a run, it records only that
     /// the request went out; the count's own answer says what happened.
     pub(crate) fn cancel_count(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -541,6 +675,21 @@ impl Workspace {
         let schema = self.catalog()?.schemas.get(schema_index)?;
         let relation = schema.relations.get(relation_index)?;
         Some((schema.name.clone(), relation.name.clone(), relation.kind))
+    }
+
+    /// The routine a leaf names, with the schema it lives in: the explorer row a
+    /// Run or an Edit Definition is asked from.
+    pub(crate) fn routine_at(&self, target: ExplorerTarget) -> Option<(String, Routine)> {
+        let ExplorerTarget::Routine {
+            schema_index,
+            routine_index,
+        } = target
+        else {
+            return None;
+        };
+        let schema = self.catalog()?.schemas.get(schema_index)?;
+        let routine = schema.routines.get(routine_index)?;
+        Some((schema.name.clone(), routine.clone()))
     }
 
     pub(crate) fn copy_ddl(

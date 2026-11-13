@@ -8,7 +8,7 @@
 
 use super::{
     Builtin, ColumnDefinition, Fields, RelationKind, Syntax, builtins, clickhouse, duckdb, mongo,
-    mssql, mysql, postgres, redis,
+    mssql, mysql, postgres, redis, types,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -322,6 +322,9 @@ pub struct SqlSpec {
     /// What completion offers beside the catalog: the functions and value
     /// expressions the dialect has built in.
     pub builtins: &'static [Builtin],
+    /// The type names the table editor offers. Not exhaustive: a column whose
+    /// type is not here keeps the type it has.
+    pub types: &'static [&'static str],
 }
 
 impl SqlSpec {
@@ -363,6 +366,7 @@ impl SqlSpec {
         transactions: true,
         row_terms: false,
         builtins: &[],
+        types: &[],
     };
 
     /// The word that opens a transaction around a generated multi-statement
@@ -650,6 +654,33 @@ pub struct Abilities {
     pub schema_switch_waits_for_transaction: bool,
     /// Why no transaction spans an import's chunks.
     pub chunk_refusal: Option<&'static str>,
+    /// A table's structure may be changed in place: at least one column
+    /// operation the editor offers is one the server supports.
+    pub edits_structure: bool,
+    /// The engine has secondary indexes, so the editor draws its index section
+    /// at all.
+    pub edits_indexes: bool,
+    pub view_definition: DefinitionEditing,
+    pub routine_definition: DefinitionEditing,
+    /// A column's type change may carry a conversion expression
+    /// (`ALTER COLUMN … TYPE … USING …`), so the editor offers the field.
+    pub alters_type_using: bool,
+    /// A routine may be called with arguments from the Run dialog.
+    pub executes_routines: bool,
+}
+
+/// How a view's or a routine's definition is rewritten, which decides what the
+/// explorer offers beside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefinitionEditing {
+    /// The server's own `CREATE` is loaded whole, its first keyword rewritten,
+    /// and the result run from the dialog.
+    InPlace,
+    /// No repeatable replacement exists, so the definition goes to a new query
+    /// tab for the user to run themselves.
+    QueryTab,
+    /// Not offered.
+    Unsafe,
 }
 
 impl Abilities {
@@ -668,6 +699,12 @@ impl Abilities {
         exact_row_estimates: false,
         schema_switch_waits_for_transaction: false,
         chunk_refusal: None,
+        edits_structure: false,
+        edits_indexes: false,
+        view_definition: DefinitionEditing::Unsafe,
+        routine_definition: DefinitionEditing::Unsafe,
+        alters_type_using: false,
+        executes_routines: false,
     };
 
     /// [`Target::takes_inserts`](super::Target::takes_inserts).
@@ -745,6 +782,7 @@ pub(crate) const POSTGRES: EngineSpec = EngineSpec {
         regex: RegexMatch::Tilde,
         read_only_session: ReadOnlySession::DefaultTransaction,
         builtins: builtins::postgres::BUILTINS,
+        types: types::POSTGRES,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -757,6 +795,12 @@ pub(crate) const POSTGRES: EngineSpec = EngineSpec {
         switches_database: true,
         picks_schema: true,
         schema_switch_waits_for_transaction: true,
+        edits_structure: true,
+        edits_indexes: true,
+        view_definition: DefinitionEditing::InPlace,
+        routine_definition: DefinitionEditing::InPlace,
+        alters_type_using: true,
+        executes_routines: true,
         ..Abilities::NONE
     },
     hooks: Hooks::NONE,
@@ -804,6 +848,7 @@ pub(crate) const MYSQL: EngineSpec = EngineSpec {
         regex: RegexMatch::RegexpLike,
         read_only_session: ReadOnlySession::SessionTransaction,
         builtins: builtins::mysql::BUILTINS,
+        types: types::MYSQL,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -816,6 +861,13 @@ pub(crate) const MYSQL: EngineSpec = EngineSpec {
         switches_database: true,
         // No `picks_schema`: the database is the schema.
         catalog_lists_databases: true,
+        edits_structure: true,
+        edits_indexes: true,
+        view_definition: DefinitionEditing::InPlace,
+        // No `CREATE OR REPLACE PROCEDURE`: a replacement here would mean
+        // dropping the routine first, which dbdelve does not do unasked.
+        routine_definition: DefinitionEditing::QueryTab,
+        executes_routines: true,
         ..Abilities::NONE
     },
     hooks: Hooks {
@@ -866,6 +918,7 @@ pub(crate) const MARIADB: EngineSpec = EngineSpec {
         regex: RegexMatch::RegexpInstr,
         read_only_session: ReadOnlySession::SessionTransaction,
         builtins: builtins::mysql::BUILTINS,
+        types: types::MYSQL,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -877,6 +930,11 @@ pub(crate) const MARIADB: EngineSpec = EngineSpec {
         copies_ddl: true,
         switches_database: true,
         catalog_lists_databases: true,
+        edits_structure: true,
+        edits_indexes: true,
+        view_definition: DefinitionEditing::InPlace,
+        routine_definition: DefinitionEditing::InPlace,
+        executes_routines: true,
         ..Abilities::NONE
     },
     hooks: Hooks {
@@ -923,6 +981,7 @@ pub(crate) const SQLITE: EngineSpec = EngineSpec {
         // No `generated_defaults`: `table_info` leaves generated columns out
         // altogether.
         builtins: builtins::sqlite::BUILTINS,
+        types: types::SQLITE,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -933,6 +992,12 @@ pub(crate) const SQLITE: EngineSpec = EngineSpec {
         copies_ddl: true,
         // No `assigns_default`: `UPDATE` takes an expression on the right and
         // `DEFAULT` is not one there.
+        // Columns it can add, drop and rename; nothing about a column's type,
+        // nullability or default changes in place, and a view's `CREATE` has
+        // no `OR REPLACE`.
+        edits_structure: true,
+        edits_indexes: true,
+        view_definition: DefinitionEditing::QueryTab,
         ..Abilities::NONE
     },
     hooks: Hooks::NONE,
@@ -1018,6 +1083,7 @@ pub(crate) const DUCKDB: EngineSpec = EngineSpec {
         // database has no session switch; read-only is a way to open the
         // file, which a profile does not ask for yet.
         builtins: builtins::duckdb::BUILTINS,
+        types: types::DUCKDB,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -1033,6 +1099,10 @@ pub(crate) const DUCKDB: EngineSpec = EngineSpec {
         // in-memory database opened again is a new, empty one.
         switches_database_in_session: true,
         picks_schema: true,
+        edits_structure: true,
+        edits_indexes: true,
+        view_definition: DefinitionEditing::InPlace,
+        alters_type_using: true,
         ..Abilities::NONE
     },
     hooks: Hooks {
@@ -1085,6 +1155,7 @@ pub(crate) const SNOWFLAKE: EngineSpec = EngineSpec {
         // is no session to set anything on. No `generated_defaults`: an
         // identity takes a supplied value.
         builtins: builtins::snowflake::BUILTINS,
+        types: types::SNOWFLAKE,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -1102,6 +1173,11 @@ pub(crate) const SNOWFLAKE: EngineSpec = EngineSpec {
         chunk_refusal: Some(
             "Snowflake runs each request on its own, so no transaction can span the chunks.",
         ),
+        edits_structure: true,
+        // No `edits_indexes`: a table there has none.
+        view_definition: DefinitionEditing::InPlace,
+        routine_definition: DefinitionEditing::InPlace,
+        executes_routines: true,
         ..Abilities::NONE
     },
     hooks: Hooks::NONE,
@@ -1162,6 +1238,7 @@ pub(crate) const SQL_SERVER: EngineSpec = EngineSpec {
         // `ApplicationIntent=ReadOnly` routes a login to a readable replica
         // and is ignored by a primary.
         builtins: builtins::sqlserver::BUILTINS,
+        types: types::SQL_SERVER,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -1173,6 +1250,11 @@ pub(crate) const SQL_SERVER: EngineSpec = EngineSpec {
         copies_ddl: true,
         switches_database: true,
         // No `picks_schema`: the default schema is the login's.
+        edits_structure: true,
+        edits_indexes: true,
+        view_definition: DefinitionEditing::InPlace,
+        routine_definition: DefinitionEditing::InPlace,
+        executes_routines: true,
         ..Abilities::NONE
     },
     hooks: Hooks {
@@ -1371,6 +1453,7 @@ pub(crate) const CLICKHOUSE: EngineSpec = EngineSpec {
         // clause that skips a row on a key, because there is no unique key.
         explain_plan: Some(ExplainPrefix::Explain),
         builtins: builtins::clickhouse::BUILTINS,
+        types: types::CLICKHOUSE,
         ..SqlSpec::ANSI
     },
     abilities: Abilities {
@@ -1382,6 +1465,10 @@ pub(crate) const CLICKHOUSE: EngineSpec = EngineSpec {
         switches_database: true,
         catalog_lists_databases: true,
         chunk_refusal: Some("ClickHouse has no transaction, so each chunk is kept as it lands."),
+        edits_structure: true,
+        // No `edits_indexes`: a skip index is spelled inside the column's own
+        // definition, and no `CREATE INDEX` exists.
+        view_definition: DefinitionEditing::QueryTab,
         ..Abilities::NONE
     },
     hooks: Hooks {

@@ -35,9 +35,9 @@ use tracing::span;
 use super::ssh::{Tunnel, tunnelled};
 use super::{
     Catalog, Cell, Column, DbError, EditTarget, Engine, Fetch, QueryResult, Reference,
-    RelationKind, Row, ServerConfig, SslMode, Stopped, Structure, assemble_catalog,
-    assemble_databases, assemble_foreign_keys, assemble_references, assemble_structure,
-    create_table, plain_error, required_cell, terminated,
+    RelationKind, Routine, RoutineParameter, Row, ServerConfig, SslMode, Stopped, Structure,
+    assemble_catalog, assemble_databases, assemble_foreign_keys, assemble_parameters,
+    assemble_references, assemble_structure, create_table, plain_error, required_cell, terminated,
 };
 
 const DATABASES_SQL: &str = "
@@ -107,6 +107,24 @@ JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 WHERE o.type IN ('FN', 'IF', 'TF', 'FS', 'FT', 'P', 'PC')
     AND o.is_ms_shipped = 0
 ORDER BY s.name, o.name
+";
+
+// A parameter's own name carries the `@` a call spells it with. `parameter_id`
+// zero is a scalar function's return value, not an argument. `is_output` marks
+// the parameter the routine writes back, which the call dialog asks a value
+// for all the same: T-SQL binds one by position and name both.
+const PARAMETERS_SQL: &str = "
+SELECT
+    COALESCE(p.name, N'') AS parameter_name,
+    {type} AS data_type,
+    CASE WHEN p.is_output = 1 THEN 'INOUT' ELSE 'IN' END AS parameter_mode
+FROM sys.objects AS o
+JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+JOIN sys.parameters AS p ON p.object_id = o.object_id
+WHERE s.name = {schema}
+    AND o.name = {name}
+    AND p.parameter_id > 0
+ORDER BY p.parameter_id
 ";
 
 /// A column's or parameter's type as `CREATE TABLE` would spell it. The catalog
@@ -684,6 +702,11 @@ enum Origin {
     /// dbdelve's catalog and structure queries: under [`SESSION_OPTIONS`],
     /// never editable, and not what Cancel is for.
     Internal,
+    /// dbdelve's own DDL, a structure edit or a replaced definition: run under
+    /// [`SESSION_OPTIONS`], sent as a batch of its own. `CREATE`/`ALTER VIEW`,
+    /// `PROCEDURE`, `FUNCTION`, `TRIGGER` and `SCHEMA` have to be the first
+    /// statement in a batch, and inside [`scoped`] they are the eighth.
+    Ddl,
 }
 
 /// What Cancel reaches without the session mutex, which the running statement
@@ -869,6 +892,14 @@ impl Connection {
         self.run(sql, Origin::Generated, fetch)
     }
 
+    /// dbdelve's own DDL: a structure edit, or a definition replaced by the
+    /// statement its editor wrote. The same options as [`Self::generated`],
+    /// sent as a batch of their own so the statement after them is a batch's
+    /// first -- see [`Origin::Ddl`].
+    pub fn run_ddl(&self, sql: &str) -> Result<QueryResult, DbError> {
+        self.run(sql, Origin::Ddl, Fetch::default())
+    }
+
     /// dbdelve's own SQL. Its rows are never editable, so it does not pay for
     /// the describe that would say where they came from.
     fn internal_query(&self, sql: &str) -> Result<QueryResult, DbError> {
@@ -984,7 +1015,7 @@ impl Connection {
     ) -> Option<Ran> {
         let mut statement = sql.to_string();
         let mut before = None;
-        if origin != Origin::Internal
+        if matches!(origin, Origin::User | Origin::Generated)
             && let Some(Ok(preflight)) = session.trip(&describing(
                 &PREFLIGHT_SQL.replace("{statement}", &Engine::SqlServer.quote_literal(sql)),
                 origin,
@@ -1009,16 +1040,22 @@ impl Connection {
             }
         }
 
-        let submitted = match origin {
-            Origin::User => statement.clone(),
-            // A transaction opened or closed inside `sp_executesql` changes
-            // `@@TRANCOUNT` across a module boundary, which the server reports
-            // as error 266, so an import's brackets go out bare.
-            Origin::Generated if crate::sql::is_transaction_bracket(&statement) => {
-                statement.clone()
+        let submission = submission(origin, &statement);
+        if submission.options_first {
+            // A failed `SET` is this run's failure: nothing after it would be
+            // run under the options the edit was written for.
+            match session.trip(SESSION_OPTIONS) {
+                None => return None,
+                Some(Err(error)) => {
+                    return Some(Ran {
+                        result: Err(query_error(&error, SESSION_OPTIONS)),
+                        probed: Vec::new(),
+                    });
+                }
+                Some(Ok(_)) => {}
             }
-            Origin::Generated | Origin::Internal => scoped(&statement),
-        };
+        }
+        let submitted = submission.text;
         // A lone read is stopped at the limit by the server: one row past it
         // says there were more, and nothing past that is sent. A batch of its
         // own rather than a prefix on the user's text, which would move every
@@ -1210,6 +1247,21 @@ impl Connection {
         ))?)
     }
 
+    /// The parameters a call has to fill, off `sys.parameters`, which carries a
+    /// parameter's own name and its direction. The type is the same rendering
+    /// [`ROUTINES_SQL`] reads.
+    pub fn routine_parameters(
+        &self,
+        schema: &str,
+        routine: &Routine,
+    ) -> Result<Vec<RoutineParameter>, DbError> {
+        let sql = PARAMETERS_SQL
+            .replace("{type}", TYPE_SQL)
+            .replace("{schema}", &Engine::SqlServer.quote_literal(schema))
+            .replace("{name}", &Engine::SqlServer.quote_literal(&routine.name));
+        assemble_parameters(self.internal_query(&sql)?)
+    }
+
     pub fn structure(&self, schema: &str, relation: &str) -> Result<Structure, DbError> {
         self.structure_for(schema, relation, false)
     }
@@ -1396,6 +1448,39 @@ fn scoped_under(options: &str, sql: &str) -> String {
     )
 }
 
+/// What one statement is sent as, and whether the session options have to go
+/// out ahead of it as a batch of their own.
+struct Submission {
+    /// The options as their own batch, sent before `text`.
+    options_first: bool,
+    text: String,
+}
+
+fn submission(origin: Origin, statement: &str) -> Submission {
+    let bare = || Submission {
+        options_first: false,
+        text: statement.to_string(),
+    };
+    match origin {
+        Origin::User => bare(),
+        // A transaction opened or closed inside `sp_executesql` changes
+        // `@@TRANCOUNT` across a module boundary, which the server reports as
+        // error 266, so an import's brackets go out bare.
+        Origin::Generated if crate::sql::is_transaction_bracket(statement) => bare(),
+        Origin::Generated | Origin::Internal => Submission {
+            options_first: false,
+            text: scoped(statement),
+        },
+        // The options as their own batch: inside `scoped` the statement is not
+        // a batch's first, which `CREATE`/`ALTER VIEW`, `PROCEDURE`,
+        // `FUNCTION`, `TRIGGER` and `SCHEMA` have to be.
+        Origin::Ddl => Submission {
+            options_first: true,
+            text: statement.to_string(),
+        },
+    }
+}
+
 /// A question dbdelve asks about a statement, compiling it under the options
 /// that statement runs under: a user's own, where `SET QUOTED_IDENTIFIER OFF`
 /// makes `"position"` a string rather than a column.
@@ -1403,6 +1488,9 @@ fn describing(sql: &str, origin: Origin) -> String {
     match origin {
         Origin::User => scoped_under(USER_DESCRIBE_OPTIONS, sql),
         Origin::Generated | Origin::Internal => scoped(sql),
+        // Never asked: [`execute`] preflights a user's and a generated
+        // statement only.
+        Origin::Ddl => scoped(sql),
     }
 }
 
@@ -2588,6 +2676,27 @@ mod tests {
         );
     }
 
+    /// A view's or a routine's `CREATE`/`ALTER` has to be the first statement
+    /// of its batch, which inside `scoped` it is not: the options go out of
+    /// the way as a batch of their own.
+    #[test]
+    fn a_ddl_batch_carries_the_session_options_first() {
+        let ddl = submission(Origin::Ddl, "ALTER VIEW v AS SELECT 1");
+        assert!(ddl.options_first);
+        assert_eq!(ddl.text, "ALTER VIEW v AS SELECT 1");
+
+        // The wrapper every other statement dbdelve writes keeps its options
+        // inline, as a batch's own prefix.
+        let generated = submission(Origin::Generated, "ALTER VIEW v AS SELECT 1");
+        assert!(!generated.options_first);
+        assert!(generated.text.starts_with("EXEC sp_executesql N'"));
+        assert!(generated.text.contains(SESSION_OPTIONS));
+
+        let user = submission(Origin::User, "ALTER VIEW v AS SELECT 1");
+        assert!(!user.options_first);
+        assert_eq!(user.text, "ALTER VIEW v AS SELECT 1");
+    }
+
     #[test]
     fn only_a_use_as_a_word_asks_where_the_session_is() {
         assert!(mentions_use("USE master; SELECT 1"));
@@ -3022,6 +3131,128 @@ mod tests {
                 .iter()
                 .any(|schema| schema.name == "sys" || schema.name == "INFORMATION_SCHEMA")
         );
+    }
+
+    #[test]
+    #[ignore = "requires the repository development database configured through dbdelve_MSSQL_URL"]
+    fn live_a_routines_parameters_are_read_in_order() {
+        use crate::db::{ParameterMode, RoutineKind};
+
+        let connection = live();
+        // One batch: a `CREATE PROCEDURE` has to be the first statement in its
+        // batch, and this call sends its text as one.
+        connection
+            .query(
+                "CREATE OR ALTER PROCEDURE dbo.dbdelve_test_params \
+                     @a int, @b nvarchar(20), @c int OUTPUT AS SELECT @a",
+                Fetch::default(),
+            )
+            .expect("the fixture procedure should be created");
+        let catalog = connection.routines();
+        let routine = catalog
+            .as_ref()
+            .ok()
+            .and_then(|catalog| {
+                catalog
+                    .schemas
+                    .iter()
+                    .find(|schema| schema.name == "dbo")?
+                    .routines
+                    .iter()
+                    .find(|routine| routine.name == "dbdelve_test_params")
+            })
+            .cloned();
+        let parameters = routine
+            .as_ref()
+            .map(|routine| connection.routine_parameters("dbo", routine));
+        // The explorer's view of the same routine: every parameter, `OUTPUT`
+        // ones included, which reads the same three rows here because T-SQL
+        // reports them as `INOUT`.
+        let target = super::super::Connection::SqlServer(connection.clone());
+        let signature = routine
+            .as_ref()
+            .map(|routine| target.routine_signature("dbo", routine));
+        connection
+            .query("DROP PROCEDURE dbo.dbdelve_test_params", Fetch::default())
+            .expect("the fixture procedure should be cleaned up");
+
+        let routine = routine.expect("the procedure should be listed");
+        assert_eq!(routine.kind, RoutineKind::Procedure);
+        let parameters = parameters
+            .expect("the parameters should be asked for")
+            .expect("the parameters should load");
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|parameter| {
+                    (
+                        parameter.name.as_str(),
+                        parameter.data_type.as_str(),
+                        parameter.mode,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            [
+                ("@a", "int", ParameterMode::In),
+                ("@b", "nvarchar(20)", ParameterMode::In),
+                // T-SQL binds an `OUTPUT` parameter by name and takes a value
+                // into it all the same, so the dialog asks for one.
+                ("@c", "int", ParameterMode::InOut),
+            ]
+        );
+        assert_eq!(
+            signature
+                .expect("the signature should be asked for")
+                .expect("the signature should load")
+                .iter()
+                .map(|parameter| (
+                    parameter.name.as_str(),
+                    parameter.data_type.as_str(),
+                    parameter.mode,
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("@a", "int", ParameterMode::In),
+                ("@b", "nvarchar(20)", ParameterMode::In),
+                ("@c", "int", ParameterMode::InOut),
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the repository development database configured through dbdelve_MSSQL_URL"]
+    fn live_a_view_is_replaced_through_the_ddl_path() {
+        let connection = live();
+        connection
+            .run_ddl("CREATE OR ALTER VIEW dbo.dbdelve_test_ddl AS SELECT 1 AS one")
+            .expect("the fixture view should be created");
+
+        // The old path, kept here as the proof that it is the one that fails:
+        // inside `sp_executesql` the options go out ahead of the `ALTER`, which
+        // the server then reads as a batch's eighth statement -- Msg 111.
+        let refused = connection
+            .generated(
+                "ALTER VIEW dbo.dbdelve_test_ddl AS SELECT 2 AS two",
+                Fetch::default(),
+            )
+            .expect_err("an ALTER VIEW is not a dynamic batch's first statement");
+        assert!(
+            refused.message.contains("first statement"),
+            "{}",
+            refused.message
+        );
+
+        connection
+            .run_ddl("ALTER VIEW dbo.dbdelve_test_ddl AS SELECT 2 AS two")
+            .expect("the view should be replaced as DDL");
+        let two = connection
+            .query("SELECT two FROM dbo.dbdelve_test_ddl", Fetch::default())
+            .expect("the replaced view should read");
+        assert_eq!(two.rows.first().and_then(|row| row.get(0)), Some("2"));
+
+        connection
+            .run_ddl("DROP VIEW dbo.dbdelve_test_ddl")
+            .expect("the fixture view should be cleaned up");
     }
 
     #[test]

@@ -819,3 +819,76 @@ fn mongo_and_redis_gate_corpus() {
     }
     check("gates_nonsql", &out);
 }
+
+/// What the structure gate refuses. Every one of these is a statement dbdelve
+/// never writes, or one written against something other than the relation the
+/// edit is about: the gate is the only place a `DROP` dbdelve sends is looked
+/// at, so what it turns away is recorded as well as what it admits
+/// (`alters_per_engine` has that side).
+#[test]
+fn the_structure_gate_refuses_what_the_editor_never_writes() {
+    use crate::sql::StructureScope;
+
+    let scope = StructureScope {
+        schema: "public".into(),
+        relation: "accounts".into(),
+        names: ["id", "label", "idx_accounts"]
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+    };
+    let cases = [
+        "DROP TABLE \"public\".\"accounts\";",
+        "DROP VIEW \"public\".\"accounts\";",
+        "DROP SCHEMA \"public\";",
+        "TRUNCATE TABLE \"public\".\"accounts\";",
+        "DELETE FROM \"public\".\"accounts\";",
+        "UPDATE \"public\".\"accounts\" SET \"id\" = 1;",
+        "ALTER TABLE \"other\".\"accounts\" ADD COLUMN \"id\" int;",
+        "ALTER TABLE \"public\".\"other\" ADD COLUMN \"id\" int;",
+        "ALTER TABLE \"public\".\"accounts\" ADD COLUMN \"secret\" int;",
+        "ALTER TABLE \"public\".\"accounts\" DROP COLUMN \"secret\";",
+        "ALTER TABLE \"public\".\"accounts\" RENAME TO \"gone\";",
+        "ALTER TABLE \"public\".\"accounts\" ALTER COLUMN \"secret\" int NOT NULL;",
+        "ALTER TABLE \"public\".\"accounts\" ADD DEFAULT 0 FOR \"secret\";",
+        "ALTER TABLE \"public\".\"accounts\" RENAME INDEX \"idx_accounts\" TO \"other\";",
+        "DROP INDEX \"public\".\"other_index\";",
+        "DROP INDEX \"idx_accounts\" ON \"public\".\"other\";",
+        "CREATE INDEX \"idx_accounts\" ON \"public\".\"other\" (\"id\");",
+        "CREATE INDEX \"other_index\" ON \"public\".\"accounts\" (\"id\");",
+        "ALTER TABLE \"public\".\"accounts\" ADD COLUMN \"id\" int; DELETE FROM \"public\".\"accounts\";",
+        "ALTER TABLE \"public\".\"accounts\" ALTER COLUMN \"id\" int\nGO\nDROP TABLE \"public\".\"accounts\";",
+        "EXEC sp_rename N'public.accounts.secret', N'id', N'COLUMN';",
+        "EXEC sp_rename N'public.accounts.id', N'secret', N'COLUMN';",
+        "EXEC sp_rename N'public.other.id', N'label', N'COLUMN';",
+    ];
+    // What the same scope does admit, so a gate that refuses everything fails
+    // here rather than passing for the wrong reason.
+    let admitted = [
+        "DROP INDEX \"public\".\"idx_accounts\";",
+        "ALTER TABLE \"public\".\"accounts\" DROP COLUMN \"label\";",
+        "ALTER TABLE \"public\".\"accounts\" ALTER COLUMN \"label\" int NOT NULL;",
+        // The editor writes one operation per `ALTER`, but a gate that admits
+        // two of this table's own columns is admitting nothing it may not: the
+        // exception is the columns the user removed, however many there are.
+        "ALTER TABLE \"public\".\"accounts\" DROP COLUMN \"id\", DROP COLUMN \"label\";",
+    ];
+    let mut out = String::new();
+    for engine in sql_engines() {
+        for text in cases {
+            out.push_str(&format!(
+                "[{}] {text:?} => {}\n",
+                engine.as_str(),
+                sql::is_generated_structure(engine, text, &scope)
+            ));
+        }
+        for text in admitted {
+            out.push_str(&format!(
+                "[{}] {text:?} => {}\n",
+                engine.as_str(),
+                sql::is_generated_structure(engine, text, &scope)
+            ));
+        }
+    }
+    check("gates_structure", &out);
+}

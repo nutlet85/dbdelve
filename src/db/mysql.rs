@@ -30,9 +30,10 @@ use ::mysql::{Conn, OptsBuilder, SslOpts, Value};
 use super::ssh::{Tunnel, tunnelled};
 use super::{
     Catalog, Column, DbError, EditTarget, Engine, Fetch, Index, IndexKind, QueryResult, Reference,
-    RowBuilder, ServerConfig, Sizes, SslMode, Stopped, Structure, assemble_catalog,
-    assemble_databases, assemble_foreign_keys, assemble_references, assemble_sizes,
-    assemble_structure, non_utf8_error, optional_cell, plain_error, required_cell,
+    RelationKind, Routine, RoutineKind, RoutineParameter, RowBuilder, ServerConfig, Sizes, SslMode,
+    Stopped, Structure, assemble_catalog, assemble_databases, assemble_foreign_keys,
+    assemble_parameters, assemble_references, assemble_sizes, assemble_structure, non_utf8_error,
+    optional_cell, plain_error, required_cell,
 };
 
 /// Without this the driver waits out the OS SYN retry budget, so a host that
@@ -122,6 +123,21 @@ FROM information_schema.ROUTINES AS routine
 WHERE routine.ROUTINE_SCHEMA NOT IN {system}
   AND routine.ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
 ORDER BY routine.ROUTINE_SCHEMA, routine.ROUTINE_NAME
+";
+
+/// One row per argument, in the routine's own order. A function's parameters
+/// carry no mode, so the column reads null for them.
+const PARAMETERS_SQL: &str = "
+SELECT COALESCE(PARAMETER_NAME, '') AS parameter_name,
+       COALESCE(DTD_IDENTIFIER, DATA_TYPE) AS data_type,
+       UPPER(COALESCE(PARAMETER_MODE, 'IN')) AS parameter_mode
+FROM information_schema.PARAMETERS
+WHERE SPECIFIC_SCHEMA = {schema}
+  AND SPECIFIC_NAME = {name}
+  AND ROUTINE_TYPE = {kind}
+  -- Position zero is a function's return value, not an argument.
+  AND ORDINAL_POSITION > 0
+ORDER BY ORDINAL_POSITION
 ";
 
 // The four structure queries name one relation, so they carry `{schema}` and
@@ -790,19 +806,70 @@ impl Connection {
     }
 
     /// `SHOW CREATE TABLE` answers for a view too, with its `CREATE VIEW` in
-    /// the same second column.
-    pub fn ddl(&self, schema: &str, relation: &str) -> Result<String, DbError> {
+    /// the same second column, but `SHOW CREATE VIEW` is the statement that is
+    /// about a view, so a view is asked with it.
+    pub fn ddl(&self, schema: &str, relation: &str, kind: RelationKind) -> Result<String, DbError> {
+        let statement = match kind {
+            RelationKind::View | RelationKind::MaterializedView => "SHOW CREATE VIEW",
+            _ => "SHOW CREATE TABLE",
+        };
         let shown = self.internal_query(&format!(
-            "SHOW CREATE TABLE {}",
+            "{statement} {}",
             self.engine.qualified(schema, relation)
         ))?;
-        shown
-            .rows
-            .first()
-            .and_then(|row| row.get(1))
+        create_column(&shown)
             .map(|definition| format!("{definition};"))
             .ok_or_else(|| plain_error(format!("{schema}.{relation} has no definition to show.")))
     }
+
+    /// `SHOW CREATE PROCEDURE` puts the definition in its `Create Procedure`
+    /// column, beside the `sql_mode` it was written under.
+    pub fn routine_ddl(&self, schema: &str, routine: &Routine) -> Result<String, DbError> {
+        let kind = match routine.kind {
+            RoutineKind::Procedure => "PROCEDURE",
+            RoutineKind::Function => "FUNCTION",
+        };
+        let shown = self.internal_query(&format!(
+            "SHOW CREATE {kind} {}",
+            self.engine.qualified(schema, &routine.name)
+        ))?;
+        create_column(&shown)
+            .map(|definition| super::terminated(&definition))
+            .ok_or_else(|| {
+                plain_error(format!(
+                    "{schema}.{} has no definition to show.",
+                    routine.name
+                ))
+            })
+    }
+
+    pub fn routine_parameters(
+        &self,
+        schema: &str,
+        routine: &Routine,
+    ) -> Result<Vec<RoutineParameter>, DbError> {
+        let sql = PARAMETERS_SQL
+            .replace("{schema}", &self.engine.quote_literal(schema))
+            .replace("{name}", &self.engine.quote_literal(&routine.name))
+            .replace(
+                "{kind}",
+                match routine.kind {
+                    RoutineKind::Procedure => "'PROCEDURE'",
+                    RoutineKind::Function => "'FUNCTION'",
+                },
+            );
+        assemble_parameters(self.internal_query(&sql)?)
+    }
+}
+
+/// The `Create …` column of a `SHOW CREATE` row, found by its name: the
+/// definition sits at a different position in each of the three statements.
+fn create_column(shown: &QueryResult) -> Option<String> {
+    let index = shown
+        .columns
+        .iter()
+        .position(|column| column.name.to_ascii_lowercase().starts_with("create "))?;
+    shown.rows.first()?.get(index).map(str::to_string)
 }
 
 /// One column as the server describes it: what it is called, what it is, and
@@ -2309,13 +2376,198 @@ mod tests {
         };
     }
 
+    fn live_a_routines_parameters_are_read_in_order(engine: Engine) {
+        let connection = live(engine);
+        connection
+            .query(
+                "DROP PROCEDURE IF EXISTS dbdelve_test_params; \
+                 CREATE PROCEDURE dbdelve_test_params(IN a INT, IN b VARCHAR(20), OUT c INT) \
+                 SELECT a",
+                Fetch::default(),
+            )
+            .expect("the fixture procedure should be created");
+        let catalog = connection.routines();
+        let routine = catalog
+            .as_ref()
+            .ok()
+            .and_then(|catalog| {
+                catalog
+                    .schemas
+                    .iter()
+                    .find(|schema| schema.name == "dbdelve_dev")?
+                    .routines
+                    .iter()
+                    .find(|routine| routine.name == "dbdelve_test_params")
+            })
+            .cloned();
+        let parameters = routine
+            .as_ref()
+            .map(|routine| connection.routine_parameters("dbdelve_dev", routine));
+        connection
+            .query("DROP PROCEDURE dbdelve_test_params", Fetch::default())
+            .expect("the fixture procedure should be cleaned up");
+
+        let routine = routine.expect("the procedure should be listed");
+        assert_eq!(routine.kind, super::super::RoutineKind::Procedure);
+        let parameters = parameters
+            .expect("the parameters should be asked for")
+            .expect("the parameters should load");
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|parameter| (parameter.name.as_str(), parameter.mode))
+                .collect::<Vec<_>>(),
+            [
+                ("a", super::super::ParameterMode::In),
+                ("b", super::super::ParameterMode::In),
+                ("c", super::super::ParameterMode::Out),
+            ]
+        );
+        // The declared spelling differs between the two servers -- MariaDB
+        // writes `int(11)` where MySQL writes `int` -- so only the family is
+        // asserted.
+        assert!(parameters[0].data_type.starts_with("int"));
+        assert!(parameters[1].data_type.starts_with("varchar"));
+    }
+
+    fn live_a_structure_edit_round_trips(engine: Engine) {
+        use crate::db::alter;
+        use crate::sql::{self, StructureScope};
+
+        let connection = live(engine);
+        connection
+            .query(
+                "DROP TABLE IF EXISTS dbdelve_test_alter; \
+                 CREATE TABLE dbdelve_test_alter (id BIGINT NOT NULL, note VARCHAR(80)); \
+                 CREATE INDEX dbdelve_test_alter_note ON dbdelve_test_alter (note)",
+                Fetch::default(),
+            )
+            .expect("the fixture table should be created");
+        let before = connection
+            .structure("dbdelve_dev", "dbdelve_test_alter")
+            .expect("the structure should load");
+
+        let mut edit = alter::TableEdit {
+            schema: "dbdelve_dev".into(),
+            table: "dbdelve_test_alter".into(),
+            relation_kind: RelationKind::Table,
+            columns: before
+                .columns
+                .iter()
+                .map(|column| alter::ColumnEdit {
+                    original: Some(column.clone()),
+                    name: match column.name.as_str() {
+                        "note" => "memo".to_string(),
+                        other => other.to_string(),
+                    },
+                    // MySQL writes every column change as one `MODIFY COLUMN`,
+                    // so the type is restated whether it moved or not.
+                    data_type: match column.name.as_str() {
+                        "id" => "int".to_string(),
+                        _ => column.data_type.clone(),
+                    },
+                    nullable: column.nullable,
+                    default: column.default.clone().unwrap_or_default(),
+                    using: String::new(),
+                    dropped: false,
+                })
+                .collect(),
+            indexes: before
+                .indexes
+                .iter()
+                .map(|index| alter::IndexEdit {
+                    original: Some(index.clone()),
+                    name: index.name.clone(),
+                    unique: index.kind == crate::db::IndexKind::Unique,
+                    columns: index.columns.clone(),
+                    predicate: index.predicate.clone().unwrap_or_default(),
+                    dropped: index.name == "dbdelve_test_alter_note",
+                })
+                .collect(),
+        };
+        edit.columns.push(alter::ColumnEdit {
+            original: None,
+            name: "added".into(),
+            data_type: "text".into(),
+            nullable: true,
+            default: String::new(),
+            using: String::new(),
+            dropped: false,
+        });
+
+        let statements = alter::statements(engine, &edit).expect("the edit should be writable");
+        let scope = StructureScope {
+            schema: "dbdelve_dev".into(),
+            relation: "dbdelve_test_alter".into(),
+            names: edit
+                .columns
+                .iter()
+                .flat_map(|column| {
+                    column
+                        .original
+                        .as_ref()
+                        .map(|original| original.name.clone())
+                        .into_iter()
+                        .chain(std::iter::once(column.name.clone()))
+                })
+                .chain(edit.indexes.iter().flat_map(|index| {
+                    index
+                        .original
+                        .as_ref()
+                        .map(|original| original.name.clone())
+                        .into_iter()
+                        .chain(std::iter::once(index.name.clone()))
+                }))
+                .collect(),
+        };
+        for statement in &statements {
+            assert!(
+                sql::is_generated_structure(engine, statement, &scope),
+                "the gate refused what the editor wrote: {statement}"
+            );
+        }
+        let applied = connection.query(&statements.join("\n"), Fetch::default());
+        let after = connection.structure("dbdelve_dev", "dbdelve_test_alter");
+        connection
+            .query("DROP TABLE dbdelve_test_alter", Fetch::default())
+            .expect("the fixture table should be cleaned up");
+
+        applied.expect("the batch should run");
+        let after = after.expect("the structure should reload");
+        let names: Vec<&str> = after
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect();
+        assert!(names.contains(&"memo"), "the rename landed: {names:?}");
+        assert!(names.contains(&"added"), "the new column landed: {names:?}");
+        assert!(!names.contains(&"note"), "the old name is gone: {names:?}");
+        // MariaDB reports `int(11)` where MySQL reports `int`, so the family is
+        // what is asserted.
+        let id = after
+            .columns
+            .iter()
+            .find(|column| column.name == "id")
+            .map(|column| column.data_type.as_str())
+            .unwrap_or_default();
+        assert!(id.starts_with("int"), "the type change landed: {id}");
+        assert!(
+            after
+                .indexes
+                .iter()
+                .all(|index| index.name != "dbdelve_test_alter_note"),
+            "the dropped index is gone: {:?}",
+            after.indexes
+        );
+    }
+
     fn live_the_ddl_of_a_table_and_a_view_is_the_servers_own(engine: Engine) {
         let connection = live(engine);
         let table = connection
-            .ddl("dbdelve_dev", "accounts")
+            .ddl("dbdelve_dev", "accounts", RelationKind::Table)
             .expect("the table's DDL should load");
         let view = connection
-            .ddl("dbdelve_dev", "account_overview")
+            .ddl("dbdelve_dev", "account_overview", RelationKind::View)
             .expect("the view's DDL should load");
 
         assert!(table.starts_with("CREATE TABLE `accounts` ("), "{table}");
@@ -2434,5 +2686,7 @@ mod tests {
         live_a_table_referencing_nothing_reports_no_foreign_keys,
         live_the_rendered_foreign_key_ddl_survives_beside_the_structured_form,
         live_the_ddl_of_a_table_and_a_view_is_the_servers_own,
+        live_a_routines_parameters_are_read_in_order,
+        live_a_structure_edit_round_trips,
     );
 }

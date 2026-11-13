@@ -2,7 +2,7 @@
 //! connection's mode changes.
 
 use super::*;
-use crate::session::{PendingRun, Resume};
+use crate::session::{Destination, PendingRun, Resume};
 use crate::sql::Stop;
 
 impl Workspace {
@@ -153,11 +153,21 @@ impl Workspace {
         // a statement the user refused was asked for either. The refused
         // statement never reaches a result, so the queue has to be let go of
         // here or its switcher stays frozen on a statement that never ran.
-        let refused = stopped
-            .and_then(|pending| pending.resume)
-            .map(|run| run.tab);
-        if let Some(tab) = refused {
+        let refused = stopped.and_then(|pending| pending.resume);
+        let ddl = refused
+            .as_ref()
+            .is_some_and(|run| matches!(run.destination, Destination::Ddl(_)));
+        if let Some(Resume {
+            destination: Destination::Tab(tab),
+            ..
+        }) = refused
+        {
             self.stop_queue_on(tab, cx);
+        }
+        if ddl {
+            // The dialog that wrote the statement is still up behind the
+            // prompt, waiting for an answer it is not going to get.
+            self.ddl_apply_cancelled(cx);
         }
         // Unconditional: stopping the queue redraws only when one was
         // waiting, and without a redraw a prompt dismissed from the keyboard
@@ -238,21 +248,24 @@ impl Workspace {
                 // Re-checked rather than run outright: raising Read-only to
                 // Full for a DROP answers "may this connection do this at
                 // all" and leaves "did you mean this table", which is a
-                // second dialog on purpose. `execute_and_then` is the only
-                // arm here allowed to re-enter the gate -- it is the one
-                // that just changed the mode the gate reads.
+                // second dialog on purpose. `execute_and_then` and `run_ddl`
+                // are the only arms here allowed to re-enter the gate -- they
+                // are the ones that just changed the mode the gate reads.
                 let Some(resume) = resume else {
                     return;
                 };
-                self.execute_gated(
-                    resume.sql,
-                    resume.tab,
-                    resume.refresh,
-                    resume.keep_rows,
-                    resume.explain,
-                    own_run,
-                    cx,
-                );
+                match resume.destination {
+                    Destination::Tab(tab) => self.execute_gated(
+                        resume.sql,
+                        tab,
+                        resume.refresh,
+                        resume.keep_rows,
+                        resume.explain,
+                        own_run,
+                        cx,
+                    ),
+                    Destination::Ddl(after) => self.run_ddl(resume.sql, after, cx),
+                }
             }
             // Confirm and RunOnce run *unchecked*. Sending either back
             // through `execute_and_then` would re-raise the prompt just
@@ -281,14 +294,19 @@ impl Workspace {
         let Some(resume) = resume else {
             return;
         };
-        self.execute_unchecked(
-            resume.sql,
-            resume.tab,
-            resume.refresh,
-            resume.keep_rows,
-            resume.explain,
-            None,
-            cx,
-        );
+        match resume.destination {
+            Destination::Tab(tab) => self.execute_unchecked(
+                resume.sql,
+                tab,
+                resume.refresh,
+                resume.keep_rows,
+                resume.explain,
+                None,
+                cx,
+            ),
+            // Confirmed or allowed once: the same run the Apply would have
+            // made, without asking again.
+            Destination::Ddl(after) => self.run_ddl_now(resume.sql, after, cx),
+        }
     }
 }

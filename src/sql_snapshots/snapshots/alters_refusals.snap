@@ -1,0 +1,27 @@
+---
+source: src/sql_snapshots.rs
+---
+
+[sqlite] retype a column
+  ! SQLite cannot change a column's type, nullability or default in place.
+
+[mysql] a partial index
+  ! MySQL has no partial indexes.
+
+[mariadb] a partial index
+  ! MySQL has no partial indexes.
+
+[mssql] replace a default
+  ! SQL Server keeps a default as a named constraint, and its name is not read here.
+
+[clickhouse] change nullability
+  ! ClickHouse spells nullability in the type; edit the type to Nullable(…).
+
+[postgres] drop the primary key's index
+  ! A primary key's index is the key itself, which this editor does not change.
+
+[mysql] drop the primary key's index
+  ! A primary key's index is the key itself, which this editor does not change.
+
+[mssql] drop the primary key's index
+  ! A primary key's index is the key itself, which this editor does not change.

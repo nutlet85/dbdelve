@@ -127,17 +127,29 @@ Decided, and not to be re-litigated:
   TRANSACTION`, `COMMIT` and `ROLLBACK` (`sql::is_transaction_bracket`) go out
   bare instead: one opened or closed inside `sp_executesql` changes
   `@@TRANCOUNT` across a module boundary, which the server reports as error
-  266. `Origin::User` runs as typed, under nothing but the login default. A
-  preflight before the statement (`PREFLIGHT_SQL`, run under `SESSION_OPTIONS`
-  for dbdelve's own statement and under the user's options for theirs, bar
+  266. dbdelve's own DDL — a structure edit, or a definition its editor
+  replaced — is its own origin, `Origin::Ddl`, and reaches the server through
+  `Connection::run_ddl`: the same `SESSION_OPTIONS`, but sent as a batch of
+  their own ahead of the statement (`Submission::options_first`) rather than
+  inside one `sp_executesql`. `CREATE`/`ALTER VIEW`, `PROCEDURE`, `FUNCTION`,
+  `TRIGGER` and `SCHEMA` have to be the first statement in a batch, and inside
+  `scoped` they are the eighth, which the server refuses with Msg 111. A `SET`
+  that fails there is the run's failure: nothing after it would run under the
+  options the edit was written for. `Origin::User` runs as typed, under
+  nothing but the login default. A preflight before the statement
+  (`PREFLIGHT_SQL`, run under `SESSION_OPTIONS` for a generated statement and
+  under the user's options for theirs, bar
   `USER_DESCRIBE_OPTIONS`' `IMPLICIT_TRANSACTIONS OFF` and `ROWCOUNT 0`, so it
-  compiles the statement the way it will run) reads `@@TRANCOUNT`,
-  and `transaction_outcome` reads it again after a failure: T-SQL has no
-  nested transactions, so dbdelve issues its own `ROLLBACK` only when its own
-  `BEGIN TRANSACTION` batch opened the transaction from a count of zero, never
-  one open before it arrived; when `XACT_ABORT` ends a transaction that
-  predates the statement regardless, the error says that transaction -- not
-  dbdelve's -- was rolled back.
+  compiles the statement the way it will run) reads `@@TRANCOUNT`, and is
+  skipped for `Origin::Ddl`: it compiles the statement inside `sp_executesql`,
+  which is the one place a view's or a routine's `CREATE` cannot be. With no
+  count before it, `transaction_outcome` hands the server's error back
+  unchanged. `transaction_outcome` reads the count again after a failure:
+  T-SQL has no nested transactions, so dbdelve issues its own `ROLLBACK` only
+  when its own `BEGIN TRANSACTION` batch opened the transaction from a count of
+  zero, never one open before it arrived; when `XACT_ABORT` ends a transaction
+  that predates the statement regardless, the error says that transaction --
+  not dbdelve's -- was rolled back.
 - **`sql_variant` and every CLR type (`geography`, `geometry`, `hierarchyid`,
   system type id 240) panic tiberius part way through a result it cannot
   decode**, which would otherwise close the session and the transaction in it.
@@ -912,3 +924,40 @@ Decided, and not to be re-litigated:
   (`EngineSpec::dbms_names`), suggests that dialect, one click to take it; a
   dialect that also has a built-in driver says what the built-in does that
   the plugin cannot.
+- **Structure edits are spelled by `db::alter`, one arm per engine, and every
+  batch runs through `sql::is_generated_structure`.** `alter::statements` is
+  pure: it takes the rows the editor holds and returns the statements, or the
+  sentence saying why this engine cannot write them. The order is fixed so each
+  statement's dependencies hold — index drops, column renames, column adds,
+  column changes, column drops, index renames, index creates. Points that are
+  not obvious:
+
+  - Postgres and DuckDB change a column with separate `ALTER COLUMN` statements
+    (and read a `USING` expression); MySQL and MariaDB write one
+    `MODIFY COLUMN` restating the whole definition, since that statement
+    replaces it; SQL Server's `ALTER COLUMN` cannot touch a default, whose
+    constraint name the catalog does not hand back, so replacing or dropping an
+    existing one is refused; ClickHouse spells nullability inside the type, so
+    a nullability change is refused and the type is edited to `Nullable(…)`.
+  - Renames: Postgres `RENAME COLUMN`, SQL Server `EXEC sp_rename`, and index
+    renames as `ALTER INDEX … RENAME`, `ALTER TABLE … RENAME INDEX`,
+    `EXEC sp_rename … 'INDEX'`. SQLite and DuckDB have no `ALTER INDEX`, so an
+    index rename or a changed key is a `DROP INDEX` plus a `CREATE INDEX`.
+  - SQLite refuses a column's type, nullability or default changing in place,
+    and refuses a `NOT NULL` column added with no default.
+  - Index names: Postgres, SQLite and DuckDB name them in the schema
+    (`"main"."idx"` on SQLite); MySQL and SQL Server take `ON <table>` for a
+    drop. MySQL has no partial index, and neither has DuckDB.
+  - Snowflake and ClickHouse have no secondary indexes, so the editor draws no
+    index section for them (`Target::edits_indexes`).
+  - A view's or a routine's replacement is the server's own `CREATE` with its
+    first keyword rewritten — `ALTER` on MySQL, MariaDB and SQL Server,
+    `CREATE OR REPLACE` elsewhere — found through the grammar, never by
+    searching the text. MySQL has no `CREATE OR REPLACE PROCEDURE`, so a
+    routine there goes to a query tab instead of being replaced; SQLite and
+    ClickHouse have no replacement for a view either. No materialized view has
+    one anywhere.
+  - A routine's call is `SELECT …`/`CALL …` per engine, `SELECT * FROM …` for a
+    Postgres function and a SQL Server table function, and `EXEC name @p = v`
+    on SQL Server, because a parameter the dialog does not ask for (an `OUT`)
+    shifts positions.

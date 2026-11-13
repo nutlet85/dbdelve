@@ -124,6 +124,30 @@ spliced into DBDelve's statement: exactly one query, nothing destructive
 under it, no delete at all. It admits no write and is not a way around
 `sql::is_generated_write`. Do not add a path that bypasses either.
 
+`sql::is_generated_structure` guards the table editor's batch, the one place
+DBDelve writes a `DROP` of its own: a user's confirmed structure edit. It
+admits, against one `StructureScope` (the relation, and every column and index
+name the edit reads or writes):
+
+- `ALTER TABLE <that relation>` with only `AddColumn`, `DropColumn`,
+  `RenameColumn`, `ChangeColumn`, `ModifyColumn`, `AlterColumn`, `DropIndex`
+  and a MySQL `AddConstraint` naming an index in the scope — every identifier
+  it carries drawn from the scope;
+- `CREATE [UNIQUE] INDEX … ON <that relation>`, named in the scope;
+- `ALTER INDEX <scope> RENAME TO <scope>`;
+- `DROP INDEX`, named in the scope, and on MySQL with `ON <that relation>`;
+- SQL Server's `EXEC sp_rename 'schema.table.member', 'new', 'COLUMN'|'INDEX'`
+  with both names in the scope.
+
+Everything else is refused by construction, `DROP TABLE`, `DROP VIEW`,
+`DROP SCHEMA` and `TRUNCATE` included. Four shapes `sqlparser` has no
+production for — T-SQL's `ALTER COLUMN <col> <type> [NOT NULL]` and
+`ADD DEFAULT … FOR <col>`, MySQL's `RENAME INDEX`, and DuckDB's `USING`
+expression — are matched token for token instead: one statement, this
+relation's quoted name in the third and fifth token, the member's name in the
+scope, and no `GO`, `DROP`, `TRUNCATE`, `DELETE`, `UPDATE`, `INSERT` or `EXEC`
+anywhere in it. tree-sitter reads none of the four either.
+
 MongoDB has its own pair, reached through the same two entry points
 (`sql::is_generated_write_on` and `sql::is_generated_select` dispatch on the
 engine): `mql::is_generated_write` admits `updateOne`s whose filter is

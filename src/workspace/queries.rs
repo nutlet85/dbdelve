@@ -12,8 +12,8 @@ use crate::result_grid::{ColumnView, ColumnWidth};
 
 use super::*;
 use crate::session::{
-    Finished, Lane, PendingDelete, PendingDiscard, PendingRun, QueryRename, Queue, Resume, Step,
-    TabKey, next_step, query_name_refusal,
+    Destination, Finished, Lane, PendingDelete, PendingDiscard, PendingRun, QueryRename, Queue,
+    Resume, Step, TabKey, next_step, query_name_refusal,
 };
 
 impl Workspace {
@@ -1470,9 +1470,12 @@ impl Workspace {
             self.note(message, cx);
             return;
         }
-        let Some(profile) = self.profile_mut() else {
-            return;
-        };
+        self.create_query_tab(window, cx);
+    }
+
+    /// A new empty query tab at the end of the strip, made the one in front.
+    fn create_query_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<u64> {
+        let profile = self.profile_mut()?;
         let id = profile.session.next_query_id;
         profile.session.next_query_id += 1;
         profile.session.naming = false;
@@ -1493,9 +1496,7 @@ impl Workspace {
             window,
             cx,
         );
-        let Some(profile) = self.profile_mut() else {
-            return;
-        };
+        let profile = self.profile_mut()?;
         let profile_id = profile.id.clone();
         profile.session.queries.push(tab);
         // Placed at the end of the strip rather than left for `strip_order`'s
@@ -1504,6 +1505,37 @@ impl Workspace {
         profile.session.place_last(TabKey::Unsaved(id));
         self.install_completions(&profile_id, cx);
         self.activate_tab(Tab::Query(id), window, cx);
+        Some(id)
+    }
+
+    /// Open `sql` in a new query tab, run at once when `run` says so.
+    ///
+    /// For a statement dbdelve wrote where nothing has a buffer: a routine's
+    /// call, or a structure edit the user asked to keep. It lands in the user's
+    /// own buffer, editable and re-runnable, and from there it is a statement
+    /// like any other -- the mode gate, the history and Cancel included.
+    pub(crate) fn open_query_with(
+        &mut self,
+        sql: String,
+        run: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = self.create_query_tab(window, cx) else {
+            return;
+        };
+        if let Some(tab) = self
+            .profile_mut()
+            .and_then(|profile| profile.session.query_tab_mut(id))
+        {
+            let editor = tab.editor.clone();
+            editor.update(cx, |editor, cx| {
+                rewrite(editor, &sql, window, cx);
+            });
+        }
+        if run {
+            self.execute_sql(sql, Tab::Query(id), cx);
+        }
     }
 
     /// Close a query tab. An unsaved buffer's scratch file goes with it: an
@@ -2027,7 +2059,7 @@ impl Workspace {
                 profile.session.pending_run = Some(PendingRun {
                     resume: Some(Resume {
                         sql,
-                        tab,
+                        destination: Destination::Tab(tab),
                         refresh,
                         keep_rows,
                         explain,

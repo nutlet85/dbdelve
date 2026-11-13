@@ -24,8 +24,9 @@ use serde_json::{Value, json};
 
 use super::{
     CancelToken, Cancelling, Catalog, Column, Databases, DbError, Engine, Fetch, ForeignKey,
-    NamedDefinition, QueryResult, RelationKind, Row, Stopped, Structure, assemble_catalog,
-    assemble_databases, assemble_structure, plain_error, terminated,
+    NamedDefinition, ParameterMode, QueryResult, RelationKind, Routine, RoutineKind,
+    RoutineParameter, Row, Stopped, Structure, assemble_catalog, assemble_databases,
+    assemble_structure, plain_error, terminated,
 };
 
 /// What it takes to reach one database in one Snowflake account.
@@ -1055,6 +1056,58 @@ impl Connection {
         )
     }
 
+    /// `GET_DDL` wants the name down to the arguments that tell one overload
+    /// from another, and the database it lives in, which a request carries but
+    /// an identifier does not.
+    pub fn routine_ddl(&self, schema: &str, routine: &Routine) -> Result<String, DbError> {
+        let kind = match routine.kind {
+            RoutineKind::Procedure => "PROCEDURE",
+            RoutineKind::Function => "FUNCTION",
+        };
+        let name = format!(
+            "{}.{}({})",
+            Engine::Snowflake.qualified(&self.config.stored_database(), schema),
+            Engine::Snowflake.quote_identifier(&routine.name),
+            routine.identity_arguments
+        );
+        let result = self.internal_query(&format!(
+            "SELECT GET_DDL('{kind}', {})",
+            Engine::Snowflake.quote_literal(&name)
+        ))?;
+        result
+            .rows
+            .first()
+            .and_then(|row| row.get(0))
+            .map(terminated)
+            .ok_or_else(|| plain_error(format!("{name} has no definition to show.")))
+    }
+
+    /// The arguments read out of the signature the catalog already carries
+    /// (`NAME TYPE, NAME TYPE`), which Snowflake writes for every one of them
+    /// whether the call fills it or reads it back. Nothing is asked of the
+    /// server, so a routine whose definition the account will not hand over
+    /// still gets a dialog it can be called from.
+    pub fn routine_parameters(
+        &self,
+        _schema: &str,
+        routine: &Routine,
+    ) -> Result<Vec<RoutineParameter>, DbError> {
+        Ok(split_arguments(&routine.identity_arguments)
+            .into_iter()
+            .filter_map(|argument| {
+                let (name, data_type) = match argument.split_once(char::is_whitespace) {
+                    Some((name, data_type)) => (name, data_type.trim()),
+                    None => (argument.as_str(), ""),
+                };
+                (!name.is_empty() && !data_type.is_empty()).then(|| RoutineParameter {
+                    name: name.to_string(),
+                    data_type: data_type.to_string(),
+                    mode: ParameterMode::In,
+                })
+            })
+            .collect())
+    }
+
     pub fn structure(&self, schema: &str, relation: &str) -> Result<Structure, DbError> {
         let literal = |value: &str| Engine::Snowflake.quote_literal(value);
 
@@ -1240,6 +1293,28 @@ fn strip_signature_parens(mut result: QueryResult) -> QueryResult {
         }
     }
     result
+}
+
+/// The arguments of a signature split on the commas that separate them, not on
+/// the ones inside a type: `A NUMBER(10, 2), B VARCHAR` is two.
+fn split_arguments(signature: &str) -> Vec<String> {
+    let mut arguments = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, character) in signature.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                arguments.push(signature[start..index].trim().to_string());
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    arguments.push(signature[start..].trim().to_string());
+    arguments.retain(|argument| !argument.is_empty());
+    arguments
 }
 
 /// Two results of the same shape as one, for an assembler that takes one.

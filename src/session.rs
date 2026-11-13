@@ -36,7 +36,8 @@ use crate::{
     },
     explain::{self, Plan},
     explorer::{
-        ExplorerLeaf, Member, ObjectKind, ObjectRef, Pin, Shortcut, ShortcutDatabase, Shortcuts,
+        ExplorerArguments, ExplorerLeaf, Member, ObjectKind, ObjectRef, Pin, Shortcut,
+        ShortcutDatabase, Shortcuts,
     },
     filter::{
         Conjunction, FilterBar, FilterRow, applied_filters, filter_bars, restored_filter,
@@ -49,6 +50,7 @@ use crate::{
     structure_grid::StructureGrid,
     theme::ConnectionColor,
     ui::row_readout,
+    workspace::{DefinitionEditor, RoutineCall, StructureEditor},
 };
 
 /// A connection and everything it owns.
@@ -521,6 +523,9 @@ pub(crate) struct Session {
     /// [`crate::explorer::ExplorerTree::highlights`] built them.
     pub(crate) explorer_highlights: Arc<HashMap<String, Vec<Range<usize>>>>,
     pub(crate) explorer_shortcuts: Arc<HashMap<String, Shortcut>>,
+    /// The one routine whose arguments the sidebar is showing: one field, so
+    /// opening another routine's closes this one.
+    pub(crate) explorer_arguments: Option<ExplorerArguments>,
     /// `cmd+enter` reaches the workspace only through the focused element's
     /// dispatch path, so an unfocused editor makes the primary keystroke dead.
     pub(crate) editor_needs_focus: bool,
@@ -591,6 +596,18 @@ pub(crate) struct Session {
     /// issued for its tab is dropped.
     pub(crate) structure_requests: HashMap<u64, u64>,
     pub(crate) last_structure_request: u64,
+    /// The table editor, over the whole workspace while this profile is in
+    /// front. Tied to the structure tab it was opened from, which is where its
+    /// statements refresh.
+    pub(crate) structure_editor: Option<StructureEditor>,
+    /// The view or routine definition being edited, if one is.
+    pub(crate) definition_editor: Option<DefinitionEditor>,
+    /// The call form of a routine the user asked to run.
+    pub(crate) routine_call: Option<RoutineCall>,
+    /// Whether dbdelve's own DDL is out on this connection. One batch at a
+    /// time: a second Apply while the first is in flight would run against a
+    /// structure neither of them has read back yet.
+    pub(crate) ddl_in_flight: bool,
 }
 
 /// A generated statement waiting to be read and run.
@@ -817,10 +834,32 @@ pub(crate) fn insert_value(nulled: bool, touched: bool, typed: &str) -> Option<O
 /// running.
 pub(crate) struct Resume {
     pub(crate) sql: String,
-    pub(crate) tab: Tab,
+    pub(crate) destination: Destination,
     pub(crate) refresh: Option<Refresh>,
     pub(crate) keep_rows: bool,
     pub(crate) explain: Option<ExplainMode>,
+}
+
+/// Where a resumed statement's result goes: the tab that asked for it, or the
+/// dialog that wrote it, which has no tab to land in.
+#[derive(Clone)]
+pub(crate) enum Destination {
+    Tab(Tab),
+    /// A generated statement: DDL from the structure or definition editor.
+    Ddl(AfterDdl),
+}
+
+/// What a run of dbdelve's own DDL refreshes once it lands.
+#[derive(Clone, Debug)]
+pub(crate) enum AfterDdl {
+    /// The structure tab it was written for, whose definition is now stale.
+    Structure {
+        tab: u64,
+        schema: String,
+        relation: String,
+    },
+    /// A view or routine changed, so the catalog's copy of it has.
+    Catalog,
 }
 
 /// The statement the mode check stopped, held until the user answers. Nothing
@@ -943,7 +982,7 @@ impl Session {
         cx.subscribe(&explorer_tree, {
             let id = id.clone();
             move |workspace, tree, event: &TreeEvent, cx| {
-                workspace.remember_fold(&id, &tree, event, cx);
+                workspace.explorer_event(&id, &tree, event, cx);
             }
         })
         .detach();
@@ -1011,6 +1050,7 @@ impl Session {
             explorer_leaves: Arc::new(HashMap::new()),
             explorer_highlights: Arc::new(HashMap::new()),
             explorer_shortcuts: Arc::new(HashMap::new()),
+            explorer_arguments: None,
             editor_needs_focus: true,
             save_name_needs_focus: false,
             saved_queries,
@@ -1035,6 +1075,10 @@ impl Session {
             stale_edit: None,
             structure_requests: HashMap::new(),
             last_structure_request: 0,
+            structure_editor: None,
+            definition_editor: None,
+            routine_call: None,
+            ddl_in_flight: false,
         }
     }
 
@@ -1427,6 +1471,12 @@ impl Session {
         self.pending_run = None;
         self.pending_export = None;
         self.stale_edit = None;
+        // An editor holds a connection's own relation, and the statement it
+        // would write belongs to the profile it was opened under.
+        self.structure_editor = None;
+        self.definition_editor = None;
+        self.routine_call = None;
+        self.ddl_in_flight = false;
     }
 }
 

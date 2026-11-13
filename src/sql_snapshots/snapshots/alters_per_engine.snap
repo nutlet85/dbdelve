@@ -1,0 +1,163 @@
+---
+source: src/sql_snapshots.rs
+---
+
+[postgres] common operations
+  |DROP INDEX "public"."drop_me";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" RENAME COLUMN "old_name" TO "new_name";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ADD COLUMN "added" text DEFAULT '' NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" DROP COLUMN "gone";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "new_index" ON "public"."accounts" (added);|
+  = admitted:true
+
+[postgres] changes
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" TYPE varchar(40) USING "label"::varchar(40);|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET DEFAULT 'none';|
+  = admitted:true
+  |ALTER INDEX "public"."rename_me" RENAME TO "renamed_index";|
+  = admitted:true
+  |DROP INDEX "public"."rekey_me";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "rekey_me" ON "public"."accounts" (id, label);|
+  = admitted:true
+
+[mysql] common operations
+  |DROP INDEX `drop_me` ON `public`.`accounts`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` RENAME COLUMN `old_name` TO `new_name`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` ADD COLUMN `added` text NOT NULL DEFAULT '';|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` DROP COLUMN `gone`;|
+  = admitted:true
+  |CREATE UNIQUE INDEX `new_index` ON `public`.`accounts` (added);|
+  = admitted:true
+
+[mysql] changes
+  |ALTER TABLE `public`.`accounts` MODIFY COLUMN `label` varchar(40) NOT NULL DEFAULT 'none';|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` RENAME INDEX `rename_me` TO `renamed_index`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` DROP INDEX `rekey_me`, ADD UNIQUE INDEX `rekey_me` (id, label);|
+  = admitted:true
+
+[mariadb] common operations
+  |DROP INDEX `drop_me` ON `public`.`accounts`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` RENAME COLUMN `old_name` TO `new_name`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` ADD COLUMN `added` text NOT NULL DEFAULT '';|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` DROP COLUMN `gone`;|
+  = admitted:true
+  |CREATE UNIQUE INDEX `new_index` ON `public`.`accounts` (added);|
+  = admitted:true
+
+[mariadb] changes
+  |ALTER TABLE `public`.`accounts` MODIFY COLUMN `label` varchar(40) NOT NULL DEFAULT 'none';|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` RENAME INDEX `rename_me` TO `renamed_index`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` DROP INDEX `rekey_me`, ADD UNIQUE INDEX `rekey_me` (id, label);|
+  = admitted:true
+
+[sqlite] common operations
+  |DROP INDEX "public"."drop_me";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" RENAME COLUMN "old_name" TO "new_name";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ADD COLUMN "added" text DEFAULT '' NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" DROP COLUMN "gone";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "public"."new_index" ON "public"."accounts" (added);|
+  = admitted:true
+
+[sqlite] changes
+  ! SQLite cannot change a column's type, nullability or default in place.
+
+[duckdb] common operations
+  |DROP INDEX "public"."drop_me";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" RENAME COLUMN "old_name" TO "new_name";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ADD COLUMN "added" text DEFAULT '' NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" DROP COLUMN "gone";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "new_index" ON "public"."accounts" (added);|
+  = admitted:true
+
+[duckdb] changes
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" TYPE varchar(40) USING "label"::varchar(40);|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET DEFAULT 'none';|
+  = admitted:true
+  |DROP INDEX "public"."rename_me";|
+  = admitted:true
+  |CREATE INDEX "renamed_index" ON "public"."accounts" (label);|
+  = admitted:true
+  |DROP INDEX "public"."rekey_me";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "rekey_me" ON "public"."accounts" (id, label);|
+  = admitted:true
+
+[snowflake] common operations
+  |ALTER TABLE "public"."accounts" RENAME COLUMN "old_name" TO "new_name";|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ADD COLUMN "added" text DEFAULT '' NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" DROP COLUMN "gone";|
+  = admitted:true
+
+[snowflake] changes
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET DATA TYPE varchar(40);|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" SET DEFAULT 'none';|
+  = admitted:true
+
+[clickhouse] common operations
+  |ALTER TABLE `public`.`accounts` RENAME COLUMN `old_name` TO `new_name`;|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` ADD COLUMN `added` text DEFAULT '';|
+  = admitted:true
+  |ALTER TABLE `public`.`accounts` DROP COLUMN `gone`;|
+  = admitted:true
+
+[clickhouse] changes
+  ! ClickHouse spells nullability in the type; edit the type to Nullable(…).
+
+[mssql] common operations
+  |DROP INDEX "drop_me" ON "public"."accounts";|
+  = admitted:true
+  |EXEC sp_rename N'public.accounts.old_name', N'new_name', N'COLUMN';|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ADD "added" text NOT NULL DEFAULT '';|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" DROP COLUMN "gone";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "new_index" ON "public"."accounts" (added);|
+  = admitted:true
+
+[mssql] changes
+  |ALTER TABLE "public"."accounts" ALTER COLUMN "label" varchar(40) NOT NULL;|
+  = admitted:true
+  |ALTER TABLE "public"."accounts" ADD DEFAULT 'none' FOR "label";|
+  = admitted:true
+  |EXEC sp_rename N'public.accounts.rename_me', N'renamed_index', N'INDEX';|
+  = admitted:true
+  |DROP INDEX "rekey_me" ON "public"."accounts";|
+  = admitted:true
+  |CREATE UNIQUE INDEX "rekey_me" ON "public"."accounts" (id, label);|
+  = admitted:true

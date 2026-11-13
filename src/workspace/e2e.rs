@@ -3117,6 +3117,67 @@ fn pinning_leaves_every_row_its_height(cx: &mut TestAppContext) {
     });
 }
 
+/// The arguments a routine row opens into: one line each, drawn under it and
+/// opening nothing themselves.
+#[gpui::test]
+fn an_argument_row_is_drawn_under_its_routine_and_opens_nothing(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite_holding(cx, "create table birds (name text);");
+        settle(cx);
+        // Set in directly: the shape the builder makes when a routine's
+        // arguments have been read. SQLite has no routines to read them from.
+        let routine = "routine-Function-main\0account_name(account_id bigint)";
+        let argument = explorer::argument_row(routine, 0);
+        let items = vec![
+            gpui_component::tree::TreeItem::new(routine, "account_name")
+                .expanded(true)
+                .child(
+                    gpui_component::tree::TreeItem::new(argument.clone(), "account_id bigint")
+                        .disabled(true),
+                ),
+        ];
+        cx.update(|_, cx| {
+            let tree = workspace
+                .read(cx)
+                .profile()
+                .unwrap()
+                .session
+                .explorer_tree
+                .clone();
+            tree.update(cx, |tree, cx| tree.set_items(items, cx));
+        });
+        settle(cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let drawn = explorer_row(&workspace, &argument, cx);
+        assert!(
+            drawn.origin.y > explorer_row(&workspace, routine, cx).origin.y,
+            "the argument is listed under the routine it belongs to"
+        );
+        // Nothing to open or select: the line is text, not a row.
+        cx.simulate_click(drawn.center(), gpui::Modifiers::default());
+        settle(cx);
+        let selected = |cx: &mut VisualTestContext| {
+            cx.update(|_, cx| {
+                let tree = &workspace.read(cx).profile().unwrap().session.explorer_tree;
+                tree.read(cx).selected_index()
+            })
+        };
+        assert_eq!(selected(cx), None);
+        assert_eq!(
+            cx.update(|_, cx| workspace.read(cx).profile().unwrap().session.objects.len()),
+            0
+        );
+        // The routine's own row, which a click does select.
+        let routine_row = explorer_row(&workspace, routine, cx).center();
+        cx.simulate_click(routine_row, gpui::Modifiers::default());
+        settle(cx);
+        assert!(selected(cx).is_some());
+
+        quit(workspace, cx);
+    });
+}
+
 #[gpui::test]
 fn a_service_launch_does_not_reuse_a_profiles_explicit_port(cx: &mut TestAppContext) {
     // PGSERVICE must be set before the process starts, not raced against
@@ -3991,6 +4052,224 @@ fn the_default_chip_puts_a_typed_then_emptied_insert_field_back_out_of_the_state
         assert_eq!(state(1, cx), nulled());
         let sql = statement(cx);
         assert!(sql.contains("NULL") && !sql.contains("robin"), "{sql}");
+
+        quit(workspace, cx);
+    });
+}
+
+/// The table editor's whole path: a column removed in the dialog, the batch
+/// gated as a write on a Read-only connection, answered by the mode prompt, and
+/// the structure tab reloaded from what the server now holds.
+#[gpui::test]
+fn a_column_removed_in_the_table_editor_runs_through_the_mode_prompt(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite_holding(
+            cx,
+            "CREATE TABLE items (id integer NOT NULL PRIMARY KEY, note text);",
+        );
+        cx.update(|window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.edit_structure(
+                    "main".into(),
+                    "items".into(),
+                    crate::db::RelationKind::Table,
+                    window,
+                    cx,
+                );
+            });
+        });
+        // The definition the tab asked for lands, and the frame after seeds the
+        // dialog's rows from it.
+        settle(cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(
+            front_dialog(&workspace, cx),
+            Some("structure-editor"),
+            "the editor is the dialog in front"
+        );
+
+        // The second row is `note`, by the order the server listed them.
+        workspace.update(cx, |workspace, cx| workspace.fold_structure_column(1, cx));
+        workspace.update(cx, |workspace, cx| workspace.apply_structure_edit(cx));
+        settle(cx);
+        assert_eq!(
+            front_dialog(&workspace, cx),
+            Some("pending-run"),
+            "a DROP COLUMN on a Read-only connection asks first"
+        );
+        cx.simulate_keystrokes("escape");
+        workspace.update(cx, |workspace, cx| workspace.cancel_pending_run(cx));
+        settle(cx);
+        assert_eq!(
+            front_dialog(&workspace, cx),
+            Some("structure-editor"),
+            "declining the prompt leaves the editor where it was"
+        );
+
+        workspace.update(cx, |workspace, cx| {
+            workspace.set_mode(crate::sql::Mode::Full, cx)
+        });
+        workspace.update(cx, |workspace, cx| workspace.apply_structure_edit(cx));
+        settle(cx);
+        let columns: Vec<String> = workspace.read_with(cx, |workspace, _| {
+            let profile = workspace.profile().expect("the profile is in front");
+            let tab = profile
+                .session
+                .objects
+                .iter()
+                .find(|tab| matches!(tab.body, ObjectBody::Structure { .. }))
+                .expect("the structure tab is open");
+            let ObjectBody::Structure { structure, .. } = &tab.body else {
+                unreachable!()
+            };
+            match structure {
+                crate::session::StructureState::Loaded(structure) => structure
+                    .columns
+                    .iter()
+                    .map(|column| column.name.clone())
+                    .collect(),
+                crate::session::StructureState::Failed(error) => {
+                    panic!("the structure never loaded: {error}")
+                }
+                crate::session::StructureState::Loading => {
+                    panic!("the structure never loaded")
+                }
+            }
+        });
+        assert_eq!(columns, ["id"], "the column the editor removed is gone");
+        assert_eq!(
+            front_dialog(&workspace, cx),
+            None,
+            "a successful run closes the dialog"
+        );
+
+        quit(workspace, cx);
+    });
+}
+
+/// The type cell of the table editor: a searchable picker over the engine's own
+/// type names, with the parameter list in its own field, so `varchar(80)` is
+/// picked and typed rather than spelled out from memory.
+#[gpui::test]
+fn a_column_type_is_picked_from_the_list_in_the_table_editor(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite_holding(
+            cx,
+            "CREATE TABLE items (id integer NOT NULL PRIMARY KEY, note text);",
+        );
+        cx.update(|window, cx| {
+            workspace.update(cx, |workspace, cx| {
+                workspace.edit_structure(
+                    "main".into(),
+                    "items".into(),
+                    crate::db::RelationKind::Table,
+                    window,
+                    cx,
+                );
+            });
+        });
+        settle(cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let header = cx
+            .debug_bounds("structure-columns-header")
+            .expect("the columns carry a header");
+        // Each header cell sits over its column: the type's over the picker,
+        // and the whole row above the fields rather than beside them.
+        let header_type = cx
+            .debug_bounds("structure-header-type")
+            .expect("the type column is named");
+        let picker = cx
+            .debug_bounds("structure-type-0")
+            .expect("the first column's picker is drawn");
+        assert_eq!(header_type.origin.x, picker.origin.x);
+        assert!(header.origin.y < picker.origin.y);
+        // The nullable cell is the width of the box it holds, so the gap to
+        // the default field is the row's own spacing and not an empty column.
+        let nullable = cx
+            .debug_bounds("structure-nullable-cell-0")
+            .expect("the nullable cell is drawn");
+        let default = cx
+            .debug_bounds("structure-default-0")
+            .expect("the default field is drawn");
+        // At the default chrome size, which this test leaves as it is.
+        assert_eq!(nullable.size.width, gpui::px(48.));
+        assert_eq!(
+            default.origin.x - (nullable.origin.x + nullable.size.width),
+            gpui::px(crate::theme::layout::SPACE_XS),
+            "nothing but the row's gap sits between the box and the default field"
+        );
+
+        // The picker of the second column, `note`, by the order the server
+        // listed them.
+        let picker = cx
+            .debug_bounds("structure-type-1")
+            .expect("the picker is drawn")
+            .center();
+        let types = |cx: &mut VisualTestContext| {
+            workspace.read_with(cx, |workspace, cx| {
+                workspace
+                    .profile()
+                    .and_then(|profile| profile.session.structure_editor.as_ref())
+                    .expect("the editor is open")
+                    .edit(cx)
+                    .columns
+                    .iter()
+                    .map(|column| column.data_type.clone())
+                    .collect::<Vec<_>>()
+            })
+        };
+        // As the server lists them; SQLite's catalog answers in upper case,
+        // and a type the list does not name is kept as it is.
+        assert_eq!(types(cx), ["INTEGER", "TEXT"], "the types as they load");
+
+        cx.simulate_click(picker, gpui::Modifiers::default());
+        settle(cx);
+        // The menu is a deferred layer, drawn after the frame that opened it,
+        // and its search field is what the keystrokes reach.
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_input("int");
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        assert_eq!(
+            types(cx),
+            ["INTEGER", "integer"],
+            "the picked base name is the column's type, and the column before it is untouched"
+        );
+
+        // Again, with a type the parameter field stays empty for.
+        let picker = cx
+            .debug_bounds("structure-type-1")
+            .expect("the picker is drawn")
+            .center();
+        cx.simulate_click(picker, gpui::Modifiers::default());
+        settle(cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_input("float");
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        assert_eq!(types(cx), ["INTEGER", "float"]);
+
+        // The type is the picked name plus the parameter list beside it: a
+        // `varchar` and a `(80)` are the `varchar(80)` the server reads.
+        let picker = cx
+            .debug_bounds("structure-type-1")
+            .expect("the picker is drawn")
+            .center();
+        cx.simulate_click(picker, gpui::Modifiers::default());
+        settle(cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_input("varchar");
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        let params = cx
+            .debug_bounds("structure-params-1")
+            .expect("the parameter field is drawn")
+            .center();
+        cx.simulate_click(params, gpui::Modifiers::default());
+        settle(cx);
+        cx.simulate_input("(80)");
+        settle(cx);
+        assert_eq!(types(cx), ["INTEGER", "varchar(80)"]);
 
         quit(workspace, cx);
     });

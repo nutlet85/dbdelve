@@ -10,6 +10,7 @@ mod e2e;
 mod editing;
 mod exports;
 use exports::ExportMenu;
+mod definition_editor;
 mod files;
 mod filters;
 mod folders;
@@ -21,6 +22,8 @@ mod objects;
 mod profiles;
 mod projects;
 mod queries;
+mod routine_call;
+mod structure_editor;
 mod tabs;
 mod welcome;
 
@@ -29,10 +32,13 @@ use std::collections::{HashMap, HashSet};
 use crate::export::ClipboardFormat;
 use gpui_component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
 
+pub(crate) use definition_editor::{DefinitionEditor, DefinitionTarget};
 pub(crate) use import_dialog::PreviewGrid;
 pub(crate) use profiles::unavailable_reason;
 pub(crate) use projects::project_name_refusal;
 pub(crate) use queries::error_in_buffer;
+pub(crate) use routine_call::RoutineCall;
+pub(crate) use structure_editor::StructureEditor;
 
 use crate::connection_form::{Origin, passphrase_to_persist, password_to_persist};
 use crate::session::{catalog_relation, write_buffer, write_grids};
@@ -2395,45 +2401,55 @@ impl Render for Workspace {
             // Unregistered under the import dialog, which stops only the
             // mouse: these act on the tab it covers, out of sight, and their
             // menu items grey out with them.
-            .when(profile.session.import_rows.is_none(), |root| {
-                root.on_action(cx.listener(Self::run_query))
-                    .on_action(cx.listener(Self::explain_query))
-                    .on_action(cx.listener(Self::format_query))
-                    .on_action(cx.listener(Self::toggle_comment))
-                    .on_action(cx.listener(Self::cancel_query))
-                    .on_action(cx.listener(Self::apply_edits))
-                    .on_action(cx.listener(Self::discard_edits))
-                    .on_action(cx.listener(Self::next_edit))
-                    .on_action(cx.listener(Self::previous_edit))
-                    .on_action(cx.listener(Self::sort_column))
-                    .on_action(cx.listener(Self::sort_active_column))
-                    .on_action(cx.listener(Self::next_result))
-                    .on_action(cx.listener(Self::previous_result))
-                    .on_action(cx.listener(Self::toggle_messages))
-                    .on_action(cx.listener(Self::copy_plan_action))
-                    .on_action(cx.listener(Self::set_row_limit))
-                    .on_action(cx.listener(Self::set_query_limit))
-                    .on_action(cx.listener(Self::custom_row_limit))
-                    .on_action(cx.listener(Self::refresh_active_relation))
-                    .on_action(cx.listener(Self::next_page))
-                    .on_action(cx.listener(Self::previous_page))
-                    .on_action(cx.listener(Self::clear_filter))
-                    .on_action(cx.listener(Self::add_filter))
-                    .on_action(cx.listener(Self::remove_filter))
-                    .on_action(cx.listener(Self::set_filter_column))
-                    .on_action(cx.listener(Self::set_filter_raw))
-                    .on_action(cx.listener(Self::set_filter_operator))
-                    .on_action(cx.listener(Self::toggle_filter_join))
-                    .on_action(cx.listener(Self::toggle_next_join))
-                    .on_action(cx.listener(Self::new_row))
-                    .on_action(cx.listener(Self::save_query))
-                    .on_action(cx.listener(Self::close_tab))
-                    .on_action(cx.listener(Self::go_to_column))
-                    .on_action(cx.listener(Self::toggle_row_panel))
-                    .on_action(cx.listener(Self::toggle_row_edit))
-                    .on_action(cx.listener(Self::toggle_structure))
-                    .on_action(cx.listener(Self::toggle_results_focus))
-            })
+            // A dialog with a buffer of its own holds the keyboard: the run,
+            // format and comment keys belong to that buffer's dialog, not to
+            // the query tab behind it, and a `cmd-enter` aimed at a definition
+            // must not run whatever statement is underneath.
+            .when(
+                profile.session.import_rows.is_none()
+                    && profile.session.definition_editor.is_none()
+                    && profile.session.structure_editor.is_none()
+                    && profile.session.routine_call.is_none(),
+                |root| {
+                    root.on_action(cx.listener(Self::run_query))
+                        .on_action(cx.listener(Self::explain_query))
+                        .on_action(cx.listener(Self::format_query))
+                        .on_action(cx.listener(Self::toggle_comment))
+                        .on_action(cx.listener(Self::cancel_query))
+                        .on_action(cx.listener(Self::apply_edits))
+                        .on_action(cx.listener(Self::discard_edits))
+                        .on_action(cx.listener(Self::next_edit))
+                        .on_action(cx.listener(Self::previous_edit))
+                        .on_action(cx.listener(Self::sort_column))
+                        .on_action(cx.listener(Self::sort_active_column))
+                        .on_action(cx.listener(Self::next_result))
+                        .on_action(cx.listener(Self::previous_result))
+                        .on_action(cx.listener(Self::toggle_messages))
+                        .on_action(cx.listener(Self::copy_plan_action))
+                        .on_action(cx.listener(Self::set_row_limit))
+                        .on_action(cx.listener(Self::set_query_limit))
+                        .on_action(cx.listener(Self::custom_row_limit))
+                        .on_action(cx.listener(Self::refresh_active_relation))
+                        .on_action(cx.listener(Self::next_page))
+                        .on_action(cx.listener(Self::previous_page))
+                        .on_action(cx.listener(Self::clear_filter))
+                        .on_action(cx.listener(Self::add_filter))
+                        .on_action(cx.listener(Self::remove_filter))
+                        .on_action(cx.listener(Self::set_filter_column))
+                        .on_action(cx.listener(Self::set_filter_raw))
+                        .on_action(cx.listener(Self::set_filter_operator))
+                        .on_action(cx.listener(Self::toggle_filter_join))
+                        .on_action(cx.listener(Self::toggle_next_join))
+                        .on_action(cx.listener(Self::new_row))
+                        .on_action(cx.listener(Self::save_query))
+                        .on_action(cx.listener(Self::close_tab))
+                        .on_action(cx.listener(Self::go_to_column))
+                        .on_action(cx.listener(Self::toggle_row_panel))
+                        .on_action(cx.listener(Self::toggle_row_edit))
+                        .on_action(cx.listener(Self::toggle_structure))
+                        .on_action(cx.listener(Self::toggle_results_focus))
+                },
+            )
             .size_full()
             // The shell is the frost: titlebar, sidebar and status bar paint
             // nothing of their own, they are the glass the window root already
@@ -2518,21 +2534,32 @@ impl Render for Workspace {
                 ],
             ))
             .child(self.beside_settings(main_pane, cx))
-            .children(self.dialog_layer(
-                [
-                    ("apply-review", self.render_apply_review(cx)),
-                    ("import-rows", self.render_import_rows(window, cx)),
-                    ("delete", self.render_delete_confirmation(cx)),
-                    ("discard", self.render_discard_confirmation(cx)),
-                    ("pending-export", self.render_pending_export(cx)),
-                    ("pending-run", self.render_pending_run(cx)),
-                    ("queue-failure", self.render_queue_failure(cx)),
-                    ("stale-edit", self.render_stale_edit(cx)),
-                    ("import-choice", self.render_import_choice(cx)),
-                ],
-                window,
-                cx,
-            ))
+            .children({
+                // Rendered before `dialog_layer`, which only borrows: each of
+                // the three builds inputs on its first frame, which a window and
+                // a mutable workspace are needed for.
+                let structure = self.render_structure_editor(window, cx);
+                let definition = self.render_definition_editor(window, cx);
+                let routine = self.render_routine_call(window, cx);
+                self.dialog_layer(
+                    [
+                        ("apply-review", self.render_apply_review(cx)),
+                        ("import-rows", self.render_import_rows(window, cx)),
+                        ("delete", self.render_delete_confirmation(cx)),
+                        ("discard", self.render_discard_confirmation(cx)),
+                        ("pending-export", self.render_pending_export(cx)),
+                        ("structure-editor", structure),
+                        ("definition-editor", definition),
+                        ("routine-call", routine),
+                        ("pending-run", self.render_pending_run(cx)),
+                        ("queue-failure", self.render_queue_failure(cx)),
+                        ("stale-edit", self.render_stale_edit(cx)),
+                        ("import-choice", self.render_import_choice(cx)),
+                    ],
+                    window,
+                    cx,
+                )
+            })
             .children(self.palette.clone())
             .children(self.render_reference_popup(cx))
     }
@@ -2576,6 +2603,13 @@ pub(crate) const EDITOR_FONT_SIZE_MIN: f32 = 11.0;
 pub(crate) const EDITOR_FONT_SIZE_MAX: f32 = 24.0;
 
 pub(crate) const FONT_SIZE_STEP: f32 = 1.0;
+
+/// A server's own words, marked as such: dbdelve does not translate what the
+/// server said, and a dialog showing it in English beside labels that are not
+/// has to say whose sentence it is.
+pub(crate) fn server_said(message: &str) -> String {
+    format!("{} {message}", t!("error.server"))
+}
 
 /// Blocking work -- anything that talks to a connection, the network, the
 /// disk or the Keychain -- on `blocking`'s pool, for the background executor

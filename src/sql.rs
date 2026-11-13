@@ -21,10 +21,11 @@ use serde::Deserialize;
 // and the two parsers are never interchangeable -- see `classify`'s doc.
 use rust_i18n::t;
 use sqlparser::ast::{
-    AlterTableOperation, ConditionalStatementBlock, CopySource, CopyTarget, CreateTableOptions,
-    Delete, Expr, Insert, Merge, ObjectName, ObjectNamePart, Query, Set, SetExpr, SqlOption,
-    Statement, TableFactor, TableObject, TransactionAccessMode, TransactionMode, Update,
-    UtilityOption, Visit, Visitor, visit_statements,
+    AlterIndexOperation, AlterTableOperation, ConditionalStatementBlock, CopySource, CopyTarget,
+    CreateTableOptions, Delete, Expr, Ident, Insert, Merge, ObjectName, ObjectNamePart, ObjectType,
+    Query, Set, SetExpr, SqlOption, Statement, TableConstraint, TableFactor, TableObject,
+    TransactionAccessMode, TransactionMode, Update, UtilityOption, Visit, Visitor,
+    visit_statements,
 };
 use sqlparser::dialect::{
     ClickHouseDialect, Dialect, DuckDbDialect, GenericDialect, MsSqlDialect, MySqlDialect,
@@ -1099,6 +1100,296 @@ pub fn is_generated_write_on(engine: Engine, statement: &str) -> bool {
     }
 }
 
+/// What one structure edit is allowed to touch: this relation, and the names
+/// of its columns and indexes as they read before and after the edit.
+pub(crate) struct StructureScope {
+    pub schema: String,
+    pub relation: String,
+    pub names: Vec<String>,
+}
+
+/// Whether `sql` is a batch [`crate::db::alter`] wrote and nothing else: one of
+/// the shapes a structure edit composes, against this scope's relation, naming
+/// only this scope's columns and indexes.
+///
+/// A gate verifies the statement, never the generator's word (hard rule 2), and
+/// this one is the only place `DROP COLUMN` and `DROP INDEX` are admitted on
+/// dbdelve's own behalf. Everything else a `DROP` can name, `TRUNCATE`,
+/// `DELETE` and `UPDATE` are refused by construction: the statement type has to
+/// be one of the five below.
+///
+/// Most shapes are read by `sqlparser`. The four it has no production for --
+/// T-SQL's `ALTER COLUMN <col> <type> [NOT NULL]` and `ADD DEFAULT … FOR <col>`,
+/// MySQL's `RENAME INDEX`, and DuckDB's `USING` expression -- are matched token
+/// for token instead, which is stricter than the parse tree in the only way
+/// that matters here: no identifier outside the scope may appear, and no word
+/// that could start another statement either. tree-sitter is not consulted:
+/// its grammar reads none of the four either, and error recovery is a weaker
+/// account of a statement than the tokens are.
+pub(crate) fn is_generated_structure(engine: Engine, sql: &str, scope: &StructureScope) -> bool {
+    if engine.syntax() != Syntax::Sql {
+        return false;
+    }
+    let Some(dialect) = dialect(engine) else {
+        return false;
+    };
+    match SqlParser::parse_sql(dialect.as_ref(), sql) {
+        Ok(statements) => {
+            !statements.is_empty()
+                && statements
+                    .iter()
+                    .all(|statement| structure_statement(statement, scope))
+        }
+        Err(_) => unparsed_structure(dialect.as_ref(), sql, scope),
+    }
+}
+
+/// One statement of an edit, read as the parse tree says it is.
+fn structure_statement(statement: &Statement, scope: &StructureScope) -> bool {
+    match statement {
+        Statement::AlterTable(alter) => {
+            scope_relation(&alter.name, scope)
+                && !alter.operations.is_empty()
+                && alter
+                    .operations
+                    .iter()
+                    .all(|operation| alter_operation(operation, scope))
+        }
+        Statement::CreateIndex(create) => {
+            scope_relation(&create.table_name, scope)
+                && create
+                    .name
+                    .as_ref()
+                    .is_some_and(|name| scope_member(name, scope))
+        }
+        Statement::AlterIndex { name, operation } => {
+            let AlterIndexOperation::RenameIndex { index_name } = operation;
+            scope_member(name, scope) && scope_member(index_name, scope)
+        }
+        Statement::Drop {
+            object_type: ObjectType::Index,
+            names,
+            table,
+            cascade,
+            restrict,
+            ..
+        } => {
+            (table
+                .as_ref()
+                .is_none_or(|table| scope_relation(table, scope)))
+                && !cascade
+                && !restrict
+                && !names.is_empty()
+                && names.iter().all(|name| scope_member(name, scope))
+        }
+        Statement::Execute {
+            name, parameters, ..
+        } => sp_rename(name.as_ref(), parameters, scope),
+        _ => false,
+    }
+}
+
+fn alter_operation(operation: &AlterTableOperation, scope: &StructureScope) -> bool {
+    let named = |name: &Ident| scope.names.iter().any(|known| known == &name.value);
+    match operation {
+        AlterTableOperation::AddColumn { column_def, .. } => named(&column_def.name),
+        AlterTableOperation::DropColumn { column_names, .. } => {
+            !column_names.is_empty() && column_names.iter().all(named)
+        }
+        AlterTableOperation::RenameColumn {
+            old_column_name,
+            new_column_name,
+        } => named(old_column_name) && named(new_column_name),
+        AlterTableOperation::ChangeColumn {
+            old_name, new_name, ..
+        } => named(old_name) && named(new_name),
+        AlterTableOperation::ModifyColumn { col_name, .. }
+        | AlterTableOperation::AlterColumn {
+            column_name: col_name,
+            ..
+        } => named(col_name),
+        AlterTableOperation::DropIndex { name } => named(name),
+        // MySQL rebuilds an index in one `ALTER`, which is the only way this
+        // arm is reached: the constraint names an index the scope holds, and
+        // its columns are that index's own key.
+        AlterTableOperation::AddConstraint {
+            constraint: TableConstraint::Unique(unique),
+            ..
+        } => [&unique.name, &unique.index_name]
+            .into_iter()
+            .flatten()
+            .any(|name| scope.names.iter().any(|known| known == &name.value)),
+        _ => false,
+    }
+}
+
+/// Whether `name` is the scope's relation, written the way dbdelve writes it:
+/// the schema and then the relation, both quoted.
+fn scope_relation(name: &ObjectName, scope: &StructureScope) -> bool {
+    match name.0.as_slice() {
+        [
+            ObjectNamePart::Identifier(schema),
+            ObjectNamePart::Identifier(relation),
+        ] => schema.value == scope.schema && relation.value == scope.relation,
+        _ => false,
+    }
+}
+
+/// Whether `name` is one of the scope's columns or indexes: a bare name, or the
+/// schema and the name, as Postgres and SQLite qualify an index.
+fn scope_member(name: &ObjectName, scope: &StructureScope) -> bool {
+    let parts: Vec<&Ident> = name.0.iter().filter_map(ObjectNamePart::as_ident).collect();
+    if parts.len() != name.0.len() {
+        return false;
+    }
+    match parts.as_slice() {
+        [member] => scope.names.iter().any(|known| known == &member.value),
+        [schema, member] => {
+            schema.value == scope.schema && scope.names.iter().any(|known| known == &member.value)
+        }
+        _ => false,
+    }
+}
+
+/// SQL Server's `EXEC sp_rename 'schema.table.member', 'new', 'COLUMN'`, which
+/// is the only way it renames a column or an index.
+fn sp_rename(name: Option<&ObjectName>, parameters: &[Expr], scope: &StructureScope) -> bool {
+    let Some(ObjectNamePart::Identifier(procedure)) = name.and_then(|name| name.0.last()) else {
+        return false;
+    };
+    if !procedure.value.eq_ignore_ascii_case("sp_rename") {
+        return false;
+    }
+    let [old, new, kind] = parameters else {
+        return false;
+    };
+    let (Some(old), Some(new), Some(kind)) = (
+        string_literal(old),
+        string_literal(new),
+        string_literal(kind),
+    ) else {
+        return false;
+    };
+    if !scope.names.iter().any(|known| known == new)
+        || !kind.eq_ignore_ascii_case("COLUMN") && !kind.eq_ignore_ascii_case("INDEX")
+    {
+        return false;
+    }
+    let Some(member) = old
+        .strip_prefix(scope.schema.as_str())
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_prefix(scope.relation.as_str()))
+        .and_then(|rest| rest.strip_prefix('.'))
+    else {
+        return false;
+    };
+    scope.names.iter().any(|known| known == member)
+}
+
+fn string_literal(expression: &Expr) -> Option<&str> {
+    match expression {
+        Expr::Value(value) => match &value.value {
+            sqlparser::ast::Value::SingleQuotedString(text)
+            | sqlparser::ast::Value::DoubleQuotedString(text)
+            | sqlparser::ast::Value::NationalStringLiteral(text) => Some(text),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The shapes `sqlparser` has no production for, matched token for token.
+///
+/// One word of a statement is one [`Piece`]: a word keeps the case it was
+/// written in and whether it was quoted, and everything else is its own text.
+/// A statement has to be exactly one, end in its own `;`, name this scope's
+/// relation in its first three pieces, and hold no word that could begin
+/// another statement -- `GO` above all, which the SQL Server driver splits a
+/// batch on.
+fn unparsed_structure(dialect: &dyn Dialect, sql: &str, scope: &StructureScope) -> bool {
+    let Ok(tokens) = Tokenizer::new(dialect, sql).tokenize() else {
+        return false;
+    };
+    let pieces: Vec<Piece> = tokens
+        .into_iter()
+        .filter_map(|token| match token {
+            Token::Whitespace(_) => None,
+            Token::Word(word) => Some(Piece {
+                text: word.value,
+                quoted: word.quote_style.is_some(),
+            }),
+            token => Some(Piece {
+                text: token.to_string(),
+                quoted: false,
+            }),
+        })
+        .collect();
+    let Some((ends, tail)) = pieces.split_last() else {
+        return false;
+    };
+    if ends.text != ";" || tail.iter().any(|piece| piece.text == ";") {
+        return false;
+    }
+    if tail.iter().any(|piece| {
+        !piece.quoted
+            && matches!(
+                piece.text.to_ascii_uppercase().as_str(),
+                "GO" | "DROP" | "TRUNCATE" | "DELETE" | "UPDATE" | "INSERT" | "EXEC" | "EXECUTE"
+            )
+    }) {
+        return false;
+    }
+    let [alter, table, schema, dot, relation, rest @ ..] = tail else {
+        return false;
+    };
+    if !alter.word("ALTER") || !table.word("TABLE") || dot.text != "." {
+        return false;
+    }
+    // Both parts quoted, as dbdelve writes them: an unquoted name here would
+    // be folded by the server into something the scope is not about.
+    if !schema.quoted
+        || !relation.quoted
+        || schema.text != scope.schema
+        || relation.text != scope.relation
+    {
+        return false;
+    }
+    match rest {
+        // T-SQL's `ALTER COLUMN`, and DuckDB's `TYPE … USING …`, whose type and
+        // expression are the user's own text.
+        [verb, column, name, ..] if verb.word("ALTER") || verb.word("MODIFY") => {
+            column.word("COLUMN") && scope.names.iter().any(|known| known == &name.text)
+        }
+        // T-SQL's default, which is a named constraint on the server but is
+        // written unnamed here.
+        [add, default, expression @ .., r#for, name]
+            if add.word("ADD") && default.word("DEFAULT") && r#for.word("FOR") =>
+        {
+            !expression.is_empty() && scope.names.iter().any(|known| known == &name.text)
+        }
+        // MySQL's and MariaDB's index rename.
+        [rename, index, old, to, new] if rename.word("RENAME") && index.word("INDEX") => {
+            to.word("TO")
+                && scope.names.iter().any(|known| known == &old.text)
+                && scope.names.iter().any(|known| known == &new.text)
+        }
+        _ => false,
+    }
+}
+
+/// One token of an unparsed statement.
+struct Piece {
+    text: String,
+    /// A name the writer quoted, so the server will not fold its case.
+    quoted: bool,
+}
+
+impl Piece {
+    fn word(&self, keyword: &str) -> bool {
+        !self.quoted && self.text.eq_ignore_ascii_case(keyword)
+    }
+}
+
 /// The statements of a write [`is_generated_write_on`] admits, each as its own
 /// text, the transaction bracket the gate sees through dropped: for a driver
 /// that brackets them in a transaction of its own rather than in text. Each
@@ -1690,6 +1981,40 @@ fn parse(sql: &str) -> Option<Tree> {
     // boundaries are unknown, and splicing against a guess would corrupt SQL
     // the user wrote. `NULLS FIRST` and `FOR UPDATE` land here today.
     (!tree.root_node().has_error()).then_some(tree)
+}
+
+/// The byte range of the first `CREATE` a definition opens with, for a
+/// replacement to be spliced into its place.
+///
+/// Read through the grammar rather than found by searching the text: a
+/// `CREATE` inside a string, a comment or a routine's body is not the
+/// statement's own keyword. `None` where no tree comes back at all, and the
+/// caller refuses rather than guessing -- a statement rewritten at the wrong
+/// place is worse than one not rewritten.
+///
+/// Error tolerance is deliberate here, unlike [`parse`]: a stored routine's
+/// body is often text the SQL grammar has no production for, and the keyword
+/// ahead of it is still exactly where the tree says. Nothing is spliced but
+/// that keyword, so a body read imperfectly is not a body changed.
+pub(crate) fn create_keyword_span(sql: &str) -> Option<Range<usize>> {
+    let mut parser = Parser::new();
+    parser
+        .set_language(&tree_sitter_sequel::LANGUAGE.into())
+        .ok()?;
+    let tree = parser.parse(sql, None)?;
+    first_of_kind(tree.root_node(), "keyword_create").map(|node| node.byte_range())
+}
+
+/// The first node of `kind` in document order, which for a statement's own
+/// keyword is the one ahead of everything it declares.
+fn first_of_kind<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>> {
+    if node.kind() == kind {
+        return Some(node);
+    }
+    (0..node.child_count()).find_map(|index| {
+        node.child(index as u32)
+            .and_then(|child| first_of_kind(child, kind))
+    })
 }
 
 /// The node whose children carry `ORDER BY` and `LIMIT`: the query's outermost

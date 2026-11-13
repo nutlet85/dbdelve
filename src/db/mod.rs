@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::tls::SslMode;
 
+pub mod alter;
 mod builtins;
 mod clickhouse;
 #[cfg(test)]
@@ -41,6 +42,7 @@ mod sqlite;
 mod ssh;
 mod target;
 mod turso;
+mod types;
 mod xlsx;
 
 pub use builtins::{Builtin, BuiltinKind};
@@ -58,9 +60,9 @@ pub use snowflake::{SnowflakeConfig, account_identifier, normalize_host};
 #[cfg(test)]
 pub use spec::{Abilities, Hints, Hooks, IdentifierQuote};
 pub use spec::{
-    EngineSpec, ExplainPrefix, ForeignTable, FormatDialect, MaterializedViewDrop, Paging, Params,
-    ParserDialect, RegexMatch, SelectTop, SkipDuplicates, SqlSpec, StatementSplit, SubstringMatch,
-    Truncate, TypedExplain,
+    DefinitionEditing, EngineSpec, ExplainPrefix, ForeignTable, FormatDialect,
+    MaterializedViewDrop, Paging, Params, ParserDialect, RegexMatch, SelectTop, SkipDuplicates,
+    SqlSpec, StatementSplit, SubstringMatch, Truncate, TypedExplain,
 };
 pub use spec::{IdentityInsert, ReadOnlySession, UnreadableFloor};
 pub use target::{Driver, Target, cancel_cost, is_cancel};
@@ -734,6 +736,12 @@ impl Engine {
     /// spells them.
     pub fn builtins(self) -> &'static [Builtin] {
         self.spec().sql.builtins
+    }
+
+    /// The type names the table editor offers for this engine. Not exhaustive:
+    /// a column whose type is not here keeps the type it has.
+    pub fn data_types(self) -> &'static [&'static str] {
+        self.spec().sql.types
     }
 
     /// Whether a backslash in a single-quoted literal escapes the character
@@ -1705,6 +1713,17 @@ impl Connection {
         }
     }
 
+    /// Run a batch dbdelve wrote as DDL: a structure edit, or a definition its
+    /// editor rewrote. Its own method because SQL Server prepends its session
+    /// options inside one `sp_executesql`, and a view's or a routine's
+    /// `CREATE`/`ALTER` has to be the first statement of a batch there.
+    pub fn run_ddl(&self, sql: &str, cancel: &CancelToken) -> Result<QueryResult, DbError> {
+        match self {
+            Self::SqlServer(connection) => connection.run_ddl(sql),
+            _ => self.generated(sql, cancel, None, None),
+        }
+    }
+
     /// The relations of every schema, and no routines.
     ///
     /// Split from [`Connection::routines`] because the two are separate
@@ -1909,7 +1928,7 @@ impl Connection {
     pub fn ddl(&self, schema: &str, relation: &str, kind: RelationKind) -> Result<String, DbError> {
         match self {
             Self::Postgres(connection) => connection.ddl(schema, relation, kind),
-            Self::MySql(connection) => connection.ddl(schema, relation),
+            Self::MySql(connection) => connection.ddl(schema, relation, kind),
             Self::SqlServer(connection) => connection.ddl(schema, relation, kind),
             Self::Sqlite(connection) => connection.ddl(schema, relation),
             Self::Turso(connection) => connection.ddl(schema, relation),
@@ -1922,6 +1941,59 @@ impl Connection {
                 "Copy DDL is not offered through a plugin driver.".into(),
             )),
         }
+    }
+
+    /// The server's own `CREATE` for a routine, which the definition editor
+    /// rewrites into a replacement. Postgres and SQL Server already carry it in
+    /// the catalog; the other two are asked.
+    pub fn routine_ddl(&self, schema: &str, routine: &Routine) -> Result<String, DbError> {
+        match self {
+            Self::Postgres(_) | Self::SqlServer(_) => match routine.definition.trim() {
+                "" => Err(plain_error(format!(
+                    "{}.{} has no definition to replace.",
+                    schema, routine.name
+                ))),
+                _ => Ok(routine.definition.clone()),
+            },
+            // MariaDB opens through the MySQL driver, so it is this arm too.
+            Self::MySql(connection) => connection.routine_ddl(schema, routine),
+            Self::Snowflake(connection) => connection.routine_ddl(schema, routine),
+            _ => Err(plain_error(
+                "This engine has no routine definition to replace.".into(),
+            )),
+        }
+    }
+
+    /// Every parameter of a routine, `OUT` ones included: what the sidebar
+    /// lists under the routine's own row.
+    pub fn routine_signature(
+        &self,
+        schema: &str,
+        routine: &Routine,
+    ) -> Result<Vec<RoutineParameter>, DbError> {
+        match self {
+            Self::Postgres(connection) => connection.routine_parameters(schema, routine),
+            Self::MySql(connection) => connection.routine_parameters(schema, routine),
+            Self::SqlServer(connection) => connection.routine_parameters(schema, routine),
+            Self::Snowflake(connection) => connection.routine_parameters(schema, routine),
+            _ => Err(plain_error(
+                "This engine's routines are not called from here.".into(),
+            )),
+        }
+    }
+
+    /// The parameters a call has to fill, in order, with the `OUT` ones left
+    /// out.
+    pub fn routine_parameters(
+        &self,
+        schema: &str,
+        routine: &Routine,
+    ) -> Result<Vec<RoutineParameter>, DbError> {
+        Ok(self
+            .routine_signature(schema, routine)?
+            .into_iter()
+            .filter(|parameter| parameter.mode != ParameterMode::Out)
+            .collect())
     }
 
     /// Ask the server to stop the statement running under `cancel` -- on
@@ -2347,6 +2419,25 @@ pub struct Routine {
     pub result_type: String,
     pub language: String,
     pub definition: String,
+}
+
+/// Which way a parameter carries its value, as the catalog spells it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParameterMode {
+    In,
+    InOut,
+    /// Filled by the routine rather than by the caller, so the call dialog asks
+    /// for nothing and leaves it out of the statement.
+    Out,
+}
+
+/// One parameter a call has to fill, in the routine's own order. The name is
+/// the server's, which on SQL Server carries the `@` a call spells it with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoutineParameter {
+    pub name: String,
+    pub data_type: String,
+    pub mode: ParameterMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3285,6 +3376,31 @@ fn optional_cell<'a>(result: &'a QueryResult, row: &'a Row, column_name: &str) -
 
 pub(super) fn unexpected_catalog_value(label: &str, value: &str) -> DbError {
     plain_error(format!("Catalog query returned unknown {label} {value}."))
+}
+
+/// The parameters a call has to fill, from a catalog query selecting
+/// `parameter_name`, `data_type` and `parameter_mode`, already ordered as the
+/// routine declares them.
+pub(super) fn assemble_parameters(result: QueryResult) -> Result<Vec<RoutineParameter>, DbError> {
+    result
+        .rows
+        .iter()
+        .map(|row| {
+            let mode = required_cell(&result, row, "parameter_mode")?.to_ascii_uppercase();
+            Ok(RoutineParameter {
+                name: required_cell(&result, row, "parameter_name")?.to_string(),
+                data_type: required_cell(&result, row, "data_type")?.to_string(),
+                mode: match mode.as_str() {
+                    "OUT" => ParameterMode::Out,
+                    "INOUT" | "IN/OUT" => ParameterMode::InOut,
+                    // A function's parameters have no mode of their own, and
+                    // several catalogs leave the column null for them.
+                    "IN" | "" => ParameterMode::In,
+                    other => return Err(unexpected_catalog_value("parameter mode", other)),
+                },
+            })
+        })
+        .collect()
 }
 
 pub(super) fn non_utf8_error(columns: &[Column], index: usize) -> DbError {

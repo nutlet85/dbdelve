@@ -1,0 +1,261 @@
+//! The type names the table editor offers, one list per dialect.
+//!
+//! A list, not a model: the editor picks a base name from it and appends the
+//! parameter list the user types, so `varchar(80)` is `varchar` plus `(80)`.
+//! Nothing here validates what a server accepts -- the server still does, when
+//! the statement runs -- and nothing here is exhaustive: a column whose type
+//! is not listed keeps the type it already has.
+
+pub(super) const POSTGRES: &[&str] = &[
+    "smallint",
+    "integer",
+    "bigint",
+    "numeric",
+    "real",
+    "double precision",
+    "boolean",
+    "text",
+    "varchar",
+    "character varying",
+    "char",
+    "character",
+    "bytea",
+    "date",
+    "time",
+    "time with time zone",
+    "timestamp",
+    "timestamp with time zone",
+    "timestamptz",
+    "interval",
+    "uuid",
+    "json",
+    "jsonb",
+    "xml",
+    "inet",
+    "cidr",
+    "macaddr",
+    "money",
+    "tsvector",
+    "tsquery",
+    "point",
+];
+
+pub(super) const MYSQL: &[&str] = &[
+    "tinyint",
+    "smallint",
+    "mediumint",
+    "int",
+    "integer",
+    "bigint",
+    "decimal",
+    "numeric",
+    "float",
+    "double",
+    "bit",
+    "boolean",
+    "bool",
+    "char",
+    "varchar",
+    "tinytext",
+    "text",
+    "mediumtext",
+    "longtext",
+    "tinyblob",
+    "blob",
+    "mediumblob",
+    "longblob",
+    "binary",
+    "varbinary",
+    "date",
+    "time",
+    "datetime",
+    "timestamp",
+    "year",
+    "enum",
+    "set",
+    "json",
+    "geometry",
+];
+
+pub(super) const SQLITE: &[&str] = &[
+    "integer", "real", "text", "blob", "numeric", "boolean", "date", "datetime", "varchar", "char",
+    "decimal", "double", "float", "bigint", "smallint", "tinyint", "json",
+];
+
+pub(super) const DUCKDB: &[&str] = &[
+    "boolean",
+    "tinyint",
+    "smallint",
+    "integer",
+    "bigint",
+    "hugeint",
+    "utinyint",
+    "usmallint",
+    "uinteger",
+    "ubigint",
+    "uhugeint",
+    "decimal",
+    "real",
+    "double",
+    "varchar",
+    "blob",
+    "date",
+    "time",
+    "timestamp",
+    "timestamp with time zone",
+    "timestamptz",
+    "interval",
+    "uuid",
+    "json",
+    "list",
+    "struct",
+    "map",
+    "union",
+    "enum",
+];
+
+pub(super) const SQL_SERVER: &[&str] = &[
+    "bigint",
+    "int",
+    "smallint",
+    "tinyint",
+    "bit",
+    "decimal",
+    "numeric",
+    "money",
+    "smallmoney",
+    "float",
+    "real",
+    "date",
+    "time",
+    "datetime",
+    "datetime2",
+    "smalldatetime",
+    "datetimeoffset",
+    "char",
+    "varchar",
+    "text",
+    "nchar",
+    "nvarchar",
+    "ntext",
+    "binary",
+    "varbinary",
+    "image",
+    "uniqueidentifier",
+    "xml",
+    "sql_variant",
+    "geography",
+    "geometry",
+    "hierarchyid",
+];
+
+pub(super) const SNOWFLAKE: &[&str] = &[
+    "number",
+    "decimal",
+    "numeric",
+    "int",
+    "integer",
+    "bigint",
+    "smallint",
+    "tinyint",
+    "byteint",
+    "float",
+    "float4",
+    "float8",
+    "double",
+    "real",
+    "varchar",
+    "char",
+    "character",
+    "string",
+    "text",
+    "binary",
+    "varbinary",
+    "boolean",
+    "date",
+    "time",
+    "datetime",
+    "timestamp",
+    "timestamp_ltz",
+    "timestamp_ntz",
+    "timestamp_tz",
+    "variant",
+    "object",
+    "array",
+    "geography",
+    "geometry",
+];
+
+pub(super) const CLICKHOUSE: &[&str] = &[
+    "String",
+    "FixedString",
+    "UInt8",
+    "UInt16",
+    "UInt32",
+    "UInt64",
+    "UInt128",
+    "UInt256",
+    "Int8",
+    "Int16",
+    "Int32",
+    "Int64",
+    "Int128",
+    "Int256",
+    "Float32",
+    "Float64",
+    "Decimal",
+    "Decimal32",
+    "Decimal64",
+    "Decimal128",
+    "Decimal256",
+    "Bool",
+    "Date",
+    "Date32",
+    "DateTime",
+    "DateTime64",
+    "UUID",
+    "IPv4",
+    "IPv6",
+    "Enum8",
+    "Enum16",
+    "LowCardinality",
+    "Nullable",
+    "Array",
+    "Tuple",
+    "Map",
+    "Nested",
+    "JSON",
+    "AggregateFunction",
+    "SimpleAggregateFunction",
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A list the picker can offer: no empty entry, and no duplicate, which a
+    /// searchable menu would show twice with the same title.
+    #[test]
+    fn every_list_is_usable() {
+        let lists = [
+            ("postgres", POSTGRES),
+            ("mysql", MYSQL),
+            ("sqlite", SQLITE),
+            ("duckdb", DUCKDB),
+            ("sql server", SQL_SERVER),
+            ("snowflake", SNOWFLAKE),
+            ("clickhouse", CLICKHOUSE),
+        ];
+        for (engine, types) in lists {
+            assert!(!types.is_empty(), "{engine} offers no types");
+            for (index, name) in types.iter().enumerate() {
+                assert!(!name.is_empty(), "{engine} lists an empty type");
+                assert_eq!(name.trim(), *name, "{engine} lists `{name}` with space");
+                assert!(
+                    !types[..index].contains(name),
+                    "{engine} lists `{name}` twice"
+                );
+            }
+        }
+    }
+}

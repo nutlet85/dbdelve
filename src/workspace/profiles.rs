@@ -8,10 +8,10 @@ use gpui_component::menu::PopupMenuItem;
 use gpui_component::tree::{TreeEvent, TreeState};
 
 use crate::connection_form::{ConnectionTest, Reported, duplicate_profile_name, keep_schema};
-use crate::db::{ExternalConfig, PasswordCommand, Plugin};
-use crate::explorer::Shortcuts;
+use crate::db::{ExternalConfig, PasswordCommand, Plugin, Routine};
+use crate::explorer::{ArgumentsState, ExplorerArguments, Shortcuts};
 use crate::import::{self, Source};
-use crate::session::{STALE_ROWS, restored_shortcuts};
+use crate::session::{STALE_ROWS, restored_shortcuts, routine_name};
 use crate::sql::{Destructive, Mode};
 
 use std::collections::BTreeMap;
@@ -2037,6 +2037,7 @@ impl Workspace {
                     }
                     workspace.install_completions(&id, cx);
                     workspace.refresh_explorer(&id, cx);
+                    workspace.refresh_routine_tabs(&id, generation, cx);
                     workspace.catalog_landed(&id, cx);
                     cx.notify();
                 })
@@ -2254,6 +2255,49 @@ impl Workspace {
         self.rebuild_explorer(id, false, cx);
     }
 
+    /// Bring every open routine tab onto the definition the catalog now holds.
+    ///
+    /// A routine tab carries a copy of what the catalog said when it was
+    /// opened, which the tab draws as its body; a routine replaced from the
+    /// definition editor is a different body under the same name, and the copy
+    /// left on screen would be the old one.
+    fn refresh_routine_tabs(&mut self, id: &str, generation: u64, cx: &mut Context<Self>) {
+        let Some(profile) = self.issued_to(id, generation) else {
+            return;
+        };
+        let CatalogState::Loaded(catalog, _) = &profile.catalog else {
+            return;
+        };
+        // Collected first: the catalog is borrowed from the profile whose tabs
+        // are being written.
+        let updates: Vec<(u64, Routine)> = profile
+            .session
+            .objects
+            .iter()
+            .filter_map(|tab| {
+                let ObjectBody::Routine(open) = &tab.body else {
+                    return None;
+                };
+                let found = catalog
+                    .schemas
+                    .iter()
+                    .find(|schema| schema.name == tab.schema)?
+                    .routines
+                    .iter()
+                    .find(|routine| {
+                        routine_name(routine) == routine_name(open) && routine.kind == open.kind
+                    })?;
+                (found != open).then(|| (tab.id, found.clone()))
+            })
+            .collect();
+        for (id, routine) in updates {
+            if let Some(tab) = profile.session.objects.iter_mut().find(|tab| tab.id == id) {
+                tab.body = ObjectBody::Routine(routine);
+            }
+        }
+        cx.notify();
+    }
+
     /// The sidebar again after only the saved queries changed. The catalog's
     /// rows are the same rows under the same ids, so what the user folded,
     /// opened and selected among them is put back rather than reset.
@@ -2303,6 +2347,126 @@ impl Workspace {
         }
     }
 
+    /// A row of the sidebar the user opened or closed: its fold is remembered,
+    /// and a routine's row opens its arguments.
+    ///
+    /// The tree emits this while it holds its own state mutably borrowed, so
+    /// this reads the tree and rebuilds nothing; the routine's arguments are
+    /// put in place by the rebuild the read finishes with, on a later frame.
+    pub(crate) fn explorer_event(
+        &mut self,
+        id: &str,
+        tree: &Entity<TreeState>,
+        event: &TreeEvent,
+        cx: &mut Context<Self>,
+    ) {
+        self.remember_fold(id, tree, event, cx);
+        let (row, opening) = match event {
+            TreeEvent::Expanded(row) => (row, true),
+            TreeEvent::Collapsed(row) => (row, false),
+        };
+        let Some(profile) = self.profiles.iter().find(|profile| profile.id == id) else {
+            return;
+        };
+        let Some(leaf) = profile.session.explorer_leaves.get(row.as_ref()).copied() else {
+            return;
+        };
+        // Only a routine has arguments to show. A category, a schema or a
+        // relation is a fold and nothing else.
+        if !matches!(leaf.kind, ObjectKind::Routine(_)) {
+            return;
+        }
+        let current = profile
+            .session
+            .explorer_arguments
+            .as_ref()
+            .map(|arguments| arguments.row.clone());
+        let next = explorer::arguments_after(opening, row.as_ref(), current.as_deref());
+        // Closing a routine that was not the open one changes nothing: the
+        // one open stays open, and its arguments stay read.
+        if next == current {
+            return;
+        }
+        // What the row's arguments are read from, taken before the state is
+        // written: the catalog and the connection are what the read needs.
+        let target = opening
+            .then(|| {
+                let ExplorerTarget::Routine {
+                    schema_index,
+                    routine_index,
+                } = leaf.target
+                else {
+                    return None;
+                };
+                let CatalogState::Loaded(catalog, _) = &profile.catalog else {
+                    return None;
+                };
+                let schema = catalog.schemas.get(schema_index)?;
+                Some((
+                    schema.name.clone(),
+                    schema.routines.get(routine_index)?.clone(),
+                    profile.connection()?,
+                    profile.id.clone(),
+                    profile.generation,
+                ))
+            })
+            .flatten();
+        if opening && target.is_none() {
+            return;
+        }
+        let Some(profile) = self.profiles.iter_mut().find(|profile| profile.id == id) else {
+            return;
+        };
+        profile.session.explorer_arguments = next.clone().map(|row| ExplorerArguments {
+            row,
+            state: ArgumentsState::Reading,
+        });
+        let Some(next) = next else {
+            return;
+        };
+        // Before the read, so the routine that was open closes now rather
+        // than when the answer lands. The row to open needs no `opening`: the
+        // tree builds it open from `explorer_arguments`.
+        self.rebuild_explorer_opening(id, true, None, cx);
+        let Some((schema, routine, connection, profile_id, generation)) = target else {
+            return;
+        };
+        let asked = next;
+        let read = spawn_blocking(cx.background_executor(), move || {
+            connection.routine_signature(&schema, &routine)
+        });
+        cx.spawn(async move |workspace, cx| {
+            let result = read.await;
+            workspace
+                .update(cx, |workspace, cx| {
+                    let Some(profile) = workspace.issued_to(&profile_id, generation) else {
+                        return;
+                    };
+                    // The user opened another routine or closed this one while
+                    // the read was in flight, and that answer is the one on
+                    // screen now.
+                    if !profile
+                        .session
+                        .explorer_arguments
+                        .as_ref()
+                        .is_some_and(|arguments| arguments.row == asked)
+                    {
+                        return;
+                    }
+                    profile.session.explorer_arguments = Some(ExplorerArguments {
+                        row: asked.clone(),
+                        state: match result {
+                            Ok(parameters) => ArgumentsState::Loaded(parameters),
+                            Err(error) => ArgumentsState::Failed(error.message),
+                        },
+                    });
+                    workspace.rebuild_explorer_opening(&profile_id, true, None, cx);
+                })
+                .ok();
+        })
+        .detach();
+    }
+
     fn rebuild_explorer(&mut self, id: &str, keep: bool, cx: &mut Context<Self>) {
         self.rebuild_explorer_opening(id, keep, None, cx);
     }
@@ -2333,7 +2497,9 @@ impl Workspace {
         );
         explorer.extend(explorer::queries(&profile.session.saved_queries, &filter));
         if let Some(catalog) = catalog {
-            explorer.extend(build_explorer_tree(catalog, &filter));
+            let arguments = profile.session.explorer_arguments.as_ref();
+            let readable = profile.config.target().executes_routines();
+            explorer.extend(build_explorer_tree(catalog, &filter, arguments, readable));
         }
         let front = profile.front_row();
         let tree = profile.session.explorer_tree.clone();
@@ -2346,7 +2512,12 @@ impl Workspace {
                     .map(|entry| entry.item().clone())
                     .collect();
                 let selected = state.selected_item().map(|item| item.id.clone());
-                (explorer::folds(&roots), selected)
+                let mut folds = explorer::folds(&roots);
+                // A routine's row is a folder exactly while its arguments are
+                // open, which the row itself is built from: kept here, the
+                // routine that was open would stay open over its placeholder.
+                folds.retain(|row, _| !explorer::is_routine_row(row));
+                (folds, selected)
             }
             false => (HashMap::new(), None),
         };

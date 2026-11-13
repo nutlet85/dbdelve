@@ -8,8 +8,8 @@ use gpui_component::tree::TreeItem;
 use rust_i18n::t;
 
 use crate::db::{
-    Catalog, Engine, EngineSpec, ForeignTable, MaterializedViewDrop, RelationKind, Routine,
-    RoutineKind, Schema, SelectTop, Syntax, Target, Truncate,
+    Catalog, Engine, EngineSpec, ForeignTable, MaterializedViewDrop, ParameterMode, RelationKind,
+    Routine, RoutineKind, RoutineParameter, Schema, SelectTop, Syntax, Target, Truncate,
 };
 use crate::fuzzy::{Fuzzy, Query};
 use crate::{mql, redis_cmd};
@@ -137,9 +137,17 @@ fn routine_row(schema: &str, routine: &Routine) -> String {
     routine_id(routine.kind, schema, &crate::session::routine_name(routine))
 }
 
+const ROUTINE_ROW: &str = "routine-";
+
+/// Whether `id` is a routine's row. Such a row is a folder only while its
+/// arguments are open, so its fold is not one the tree keeps.
+pub(crate) fn is_routine_row(id: &str) -> bool {
+    id.starts_with(ROUTINE_ROW)
+}
+
 /// `name` is a routine's name and arguments, as its tab is named.
 fn routine_id(kind: RoutineKind, schema: &str, name: &str) -> String {
-    format!("routine-{kind:?}-{schema}\0{name}")
+    format!("{ROUTINE_ROW}{kind:?}-{schema}\0{name}")
 }
 
 /// The row id of the object a tab shows. A routine is found by its name and
@@ -162,6 +170,92 @@ pub fn object_row(catalog: &Catalog, schema: &str, name: &str, kind: ObjectKind)
             .find(|routine| routine.kind == kind && crate::session::routine_name(routine) == name)
             .map(|routine| routine_row(&schema.name, routine)),
     }
+}
+
+/// What a routine's argument row's id starts with. Everything else about it
+/// follows: the routine's own row id, then the argument's place in the list.
+const ARGUMENT_ROW: &str = "argument\0";
+
+/// The row id of one argument under `routine`'s row.
+pub(crate) fn argument_row(routine: &str, index: usize) -> String {
+    format!("{ARGUMENT_ROW}{routine}\0{index}")
+}
+
+/// Whether `id` is an argument listed under a routine rather than an object of
+/// its own: a line of text the routine row was opened to show.
+pub(crate) fn is_argument_row(id: &str) -> bool {
+    id.starts_with(ARGUMENT_ROW)
+}
+
+/// What was read of the routine whose arguments the explorer is showing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ArgumentsState {
+    Reading,
+    Failed(String),
+    Loaded(Vec<RoutineParameter>),
+}
+
+/// The one routine whose arguments the sidebar is showing, by row id. One
+/// field rather than a set, which is what makes the list an accordion: opening
+/// another routine closes this one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExplorerArguments {
+    pub row: String,
+    pub state: ArgumentsState,
+}
+
+/// The routine whose arguments are open after a click on `routine`, given the
+/// one open now.
+pub(crate) fn arguments_after(
+    opening: bool,
+    routine: &str,
+    current: Option<&str>,
+) -> Option<String> {
+    match opening {
+        true => Some(routine.to_string()),
+        false => current
+            .filter(|current| *current != routine)
+            .map(str::to_string),
+    }
+}
+
+/// One argument as the sidebar lists it: its name, its type, and its mode when
+/// the mode is not the plain `IN` every call fills. Nothing about nullability
+/// is here because no catalog declares one for a parameter.
+fn argument_label(parameter: &RoutineParameter) -> String {
+    let mode = match parameter.mode {
+        ParameterMode::In => "",
+        ParameterMode::InOut => " INOUT",
+        ParameterMode::Out => " OUT",
+    };
+    match parameter.name.trim() {
+        // A Postgres positional argument has no name to show.
+        "" => format!("{}{mode}", parameter.data_type),
+        name => format!("{name} {}{mode}", parameter.data_type),
+    }
+}
+
+/// What is listed under `routine`'s row: its arguments once they are read, and
+/// one placeholder line before that, which is also what makes the row a folder
+/// the tree will open.
+fn argument_rows(routine: &str, state: Option<&ArgumentsState>) -> Vec<TreeItem> {
+    let labels = match state {
+        None | Some(ArgumentsState::Reading) => vec![t!("explorer.reading_arguments").to_string()],
+        Some(ArgumentsState::Failed(message)) => vec![message.clone()],
+        Some(ArgumentsState::Loaded(parameters)) if parameters.is_empty() => {
+            vec![t!("explorer.no_arguments").to_string()]
+        }
+        Some(ArgumentsState::Loaded(parameters)) => parameters.iter().map(argument_label).collect(),
+    };
+    labels
+        .into_iter()
+        .enumerate()
+        .map(|(index, label)| {
+            // Disabled, so a click on one is nothing: it is a line of text
+            // about the routine above it, not a row that opens anything.
+            TreeItem::new(argument_row(routine, index), label).disabled(true)
+        })
+        .collect()
 }
 
 /// Whether the row `id` is the row `front`, or a folder's or a pin's
@@ -300,7 +394,15 @@ impl Builder {
     }
 }
 
-pub fn tree(catalog: &Catalog, filter: &str) -> ExplorerTree {
+/// The catalog as rows. `arguments` names the one routine whose arguments are
+/// open, and `readable` whether this engine's routines have any to read -- a
+/// routine row gets a child only when it does, which is what gives it an arrow.
+pub fn tree(
+    catalog: &Catalog,
+    filter: &str,
+    arguments: Option<&ExplorerArguments>,
+    readable: bool,
+) -> ExplorerTree {
     let mut builder = Builder::new(filter);
 
     let items = catalog
@@ -364,10 +466,20 @@ pub fn tree(catalog: &Catalog, filter: &str) -> ExplorerTree {
                                 size: None,
                             },
                         );
-                        Some(TreeItem::new(
-                            id,
-                            format!("{}({})", routine.name, routine.identity_arguments),
-                        ))
+                        // The name alone: the arguments are what the row
+                        // opens to show, and a one-line signature in the
+                        // label crowds the column they are read down.
+                        let open = arguments.filter(|arguments| arguments.row == id);
+                        Some(
+                            TreeItem::new(id.clone(), routine.name.clone())
+                                .expanded(open.is_some())
+                                .children(match readable {
+                                    true => {
+                                        argument_rows(&id, open.map(|arguments| &arguments.state))
+                                    }
+                                    false => Vec::new(),
+                                }),
+                        )
                     })
                     .collect::<Vec<_>>();
 
@@ -1346,7 +1458,10 @@ fn from_where(qualified: &str, filter: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::{Catalog, Relation, RelationKind, Routine, RoutineKind, Schema};
+    use crate::db::{
+        Catalog, ParameterMode, Relation, RelationKind, Routine, RoutineKind, RoutineParameter,
+        Schema,
+    };
 
     use super::*;
 
@@ -1447,8 +1562,8 @@ mod tests {
             }
         }
         let (mut old, mut new) = (HashSet::new(), HashSet::new());
-        ids(&tree(&before, "").items, &mut old);
-        ids(&tree(&after, "").items, &mut new);
+        ids(&tree(&before, "", None, false).items, &mut old);
+        ids(&tree(&after, "", None, false).items, &mut new);
         assert!(old.is_subset(&new), "moved: {:?}", old.difference(&new));
     }
 
@@ -1581,7 +1696,7 @@ mod tests {
 
     #[test]
     fn partitions_nest_under_their_parent_instead_of_their_category() {
-        let explorer = tree(&partitioned_catalog(), "");
+        let explorer = tree(&partitioned_catalog(), "", None, false);
         let categories = &explorer.items[0].children;
 
         assert_eq!(
@@ -1633,7 +1748,7 @@ mod tests {
 
     #[test]
     fn a_catalog_without_partitions_nests_nothing() {
-        let explorer = tree(&catalog(), "");
+        let explorer = tree(&catalog(), "", None, false);
 
         for schema in &explorer.items {
             for category in &schema.children {
@@ -1646,7 +1761,7 @@ mod tests {
 
     #[test]
     fn a_filter_matching_a_partition_surfaces_it_under_its_parent() {
-        let explorer = tree(&partitioned_catalog(), "2026_q1");
+        let explorer = tree(&partitioned_catalog(), "2026_q1", None, false);
         let categories = &explorer.items[0].children;
 
         assert_eq!(categories.len(), 1);
@@ -1658,22 +1773,19 @@ mod tests {
 
     #[test]
     fn filter_keeps_the_matching_object_hierarchy() {
-        let explorer = tree(&catalog(), "account_name");
+        let explorer = tree(&catalog(), "account_name", None, false);
         let items = explorer.items;
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "public");
         assert_eq!(items[0].children.len(), 1);
         assert_eq!(items[0].children[0].label, "Functions");
-        assert_eq!(
-            items[0].children[0].children[0].label,
-            "account_name(account_id bigint)"
-        );
+        assert_eq!(items[0].children[0].children[0].label, "account_name");
     }
 
     #[test]
     fn each_object_kind_gets_its_own_category() {
-        let explorer = tree(&catalog(), "public");
+        let explorer = tree(&catalog(), "public", None, false);
         let categories = &explorer.items[0].children;
 
         assert_eq!(
@@ -1685,12 +1797,12 @@ mod tests {
         );
         assert_eq!(categories[0].children[0].label, "accounts");
         assert_eq!(categories[1].children[0].label, "active_accounts");
-        assert_eq!(categories[3].children[0].label, "reindex()");
+        assert_eq!(categories[3].children[0].label, "reindex");
     }
 
     #[test]
     fn matching_a_schema_keeps_all_of_its_objects() {
-        let explorer = tree(&catalog(), "analytics");
+        let explorer = tree(&catalog(), "analytics", None, false);
         let items = explorer.items;
 
         assert_eq!(items.len(), 1);
@@ -1733,7 +1845,7 @@ mod tests {
 
     #[test]
     fn no_catalog_rows_id_reads_as_a_saved_query() {
-        let explorer = tree(&catalog(), "");
+        let explorer = tree(&catalog(), "", None, false);
         let mut ids = Vec::new();
         let mut stack: Vec<&TreeItem> = explorer.items.iter().collect();
         while let Some(item) = stack.pop() {
@@ -1753,7 +1865,7 @@ mod tests {
         // never one: picking it would set and save a schema called Queries.
         let names = ["daily".to_string()];
         let mut explorer = queries(&names, "");
-        explorer.extend(tree(&catalog(), ""));
+        explorer.extend(tree(&catalog(), "", None, false));
         let roots: Vec<_> = explorer
             .items
             .iter()
@@ -1778,7 +1890,7 @@ mod tests {
         // expanded, so a schema it failed to close would show here as open.
         let shown = |catalog: &Catalog, saved: &BTreeMap<String, bool>, active| {
             let mut explorer = queries(&["daily".to_string()], "");
-            explorer.extend(tree(catalog, ""));
+            explorer.extend(tree(catalog, "", None, false));
             let folds = root_folds(&explorer.items, saved, active);
             with_folds(explorer.items, &folds)
                 .iter()
@@ -1838,7 +1950,7 @@ mod tests {
     fn a_change_to_the_saved_queries_keeps_what_was_folded_and_opened() {
         let build = |names: &[String]| {
             let mut explorer = queries(names, "");
-            explorer.extend(tree(&partitioned_catalog(), ""));
+            explorer.extend(tree(&partitioned_catalog(), "", None, false));
             explorer.items
         };
         let before = build(&["daily".to_string()]);
@@ -1886,7 +1998,7 @@ mod tests {
 
     #[test]
     fn a_subsequence_of_a_name_finds_it_and_marks_the_letters_it_matched() {
-        let explorer = tree(&catalog(), "acct");
+        let explorer = tree(&catalog(), "acct", None, false);
         let categories = &explorer.items[0].children;
 
         assert_eq!(explorer.items.len(), 1);
@@ -1895,8 +2007,8 @@ mod tests {
             marked(&explorer, "relation-public\0accounts", "accounts").as_deref(),
             Some("acct")
         );
-        // A routine's row reads `name(args)`, and only the name was matched.
-        let label = "account_name(account_id bigint)";
+        // A routine's row reads its name alone, and that is what was matched.
+        let label = "account_name";
         assert_eq!(categories[2].children[0].label, label);
         assert_eq!(
             marked(
@@ -1916,26 +2028,179 @@ mod tests {
 
     #[test]
     fn a_routine_signature_matches_as_a_substring_and_is_not_marked() {
-        let by_argument = tree(&catalog(), "BIGINT");
+        let by_argument = tree(&catalog(), "BIGINT", None, false);
         assert_eq!(
             by_argument.items[0].children[0].children[0].label,
-            "account_name(account_id bigint)"
+            "account_name"
         );
         assert!(by_argument.highlights.is_empty());
 
-        let by_language = tree(&catalog(), "plpgsql");
+        let by_language = tree(&catalog(), "plpgsql", None, false);
         assert_eq!(
             by_language.items[0].children[0].children[0].label,
-            "reindex()"
+            "reindex"
         );
 
         // A subsequence of `account_id bigint`, which no name holds.
-        assert!(tree(&catalog(), "acbt").items.is_empty());
+        assert!(tree(&catalog(), "acbt", None, false).items.is_empty());
+    }
+
+    /// The row `id` anywhere in `items`.
+    fn row<'a>(items: &'a [TreeItem], id: &str) -> Option<&'a TreeItem> {
+        items.iter().find_map(|item| match item.id.as_ref() {
+            found if found == id => Some(item),
+            _ => row(&item.children, id),
+        })
+    }
+
+    const ACCOUNT_NAME: &str = "routine-Function-public\0account_name(account_id bigint)";
+    const REINDEX: &str = "routine-Procedure-public\0reindex()";
+
+    fn argument(routine: &str, state: ArgumentsState) -> ExplorerArguments {
+        ExplorerArguments {
+            row: routine.to_string(),
+            state,
+        }
+    }
+
+    #[test]
+    fn a_routine_row_shows_its_name_and_no_signature() {
+        let explorer = tree(&catalog(), "", None, false);
+
+        let function = row(&explorer.items, ACCOUNT_NAME).expect("the function is listed");
+        assert_eq!(function.label, "account_name");
+        let procedure = row(&explorer.items, REINDEX).expect("the procedure is listed");
+        assert_eq!(procedure.label, "reindex");
+        // A routine's row is a folder only while its arguments are open, so
+        // the fold it was left in is not one a rebuild keeps.
+        assert!(is_routine_row(ACCOUNT_NAME));
+        assert!(!is_routine_row("category-Functions-public"));
+    }
+
+    #[test]
+    fn a_read_routine_opens_its_arguments() {
+        let arguments = argument(
+            ACCOUNT_NAME,
+            ArgumentsState::Loaded(vec![RoutineParameter {
+                name: "account_id".into(),
+                data_type: "bigint".into(),
+                mode: ParameterMode::In,
+            }]),
+        );
+        let explorer = tree(&catalog(), "", Some(&arguments), true);
+
+        let function = row(&explorer.items, ACCOUNT_NAME).expect("the function is listed");
+        assert!(function.is_expanded());
+        assert_eq!(
+            function
+                .children
+                .iter()
+                .map(|child| child.label.to_string())
+                .collect::<Vec<_>>(),
+            ["account_id bigint"]
+        );
+        assert!(is_argument_row(function.children[0].id.as_ref()));
+        assert!(function.children[0].is_disabled());
+    }
+
+    #[test]
+    fn a_collapsed_read_routine_is_a_folder_with_nothing_visible() {
+        let explorer = tree(&catalog(), "", None, true);
+
+        let function = row(&explorer.items, ACCOUNT_NAME).expect("the function is listed");
+        assert!(!function.is_expanded());
+        // A child, so the row has an arrow to open; not shown until it is.
+        assert_eq!(
+            function
+                .children
+                .iter()
+                .map(|child| child.label.to_string())
+                .collect::<Vec<_>>(),
+            [t!("explorer.reading_arguments").to_string()]
+        );
+        // An engine with nothing to read gives the row no children at all.
+        let bare = tree(&catalog(), "", None, false);
+        assert!(
+            row(&bare.items, ACCOUNT_NAME)
+                .expect("the function is listed")
+                .children
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn only_one_routine_has_its_arguments_open() {
+        let arguments = argument(
+            ACCOUNT_NAME,
+            ArgumentsState::Loaded(vec![RoutineParameter {
+                name: "account_id".into(),
+                data_type: "bigint".into(),
+                mode: ParameterMode::In,
+            }]),
+        );
+        let explorer = tree(&catalog(), "", Some(&arguments), true);
+
+        assert!(
+            row(&explorer.items, ACCOUNT_NAME)
+                .expect("the function is listed")
+                .is_expanded()
+        );
+        let procedure = row(&explorer.items, REINDEX).expect("the procedure is listed");
+        assert!(!procedure.is_expanded());
+        assert_eq!(
+            procedure
+                .children
+                .iter()
+                .map(|child| child.label.to_string())
+                .collect::<Vec<_>>(),
+            [t!("explorer.reading_arguments").to_string()]
+        );
+    }
+
+    #[test]
+    fn an_argument_row_reads_specifically() {
+        let parameter = |name: &str, data_type: &str, mode| RoutineParameter {
+            name: name.into(),
+            data_type: data_type.into(),
+            mode,
+        };
+        assert_eq!(
+            argument_label(&parameter("account_id", "bigint", ParameterMode::In)),
+            "account_id bigint"
+        );
+        assert_eq!(
+            argument_label(&parameter("account_id", "bigint", ParameterMode::InOut)),
+            "account_id bigint INOUT"
+        );
+        assert_eq!(
+            argument_label(&parameter("x", "int", ParameterMode::Out)),
+            "x int OUT"
+        );
+        // A Postgres positional argument has no name to show.
+        assert_eq!(
+            argument_label(&parameter("", "bigint", ParameterMode::In)),
+            "bigint"
+        );
+
+        assert!(is_argument_row(&argument_row(ACCOUNT_NAME, 0)));
+        assert!(!is_argument_row(ACCOUNT_NAME));
+    }
+
+    #[test]
+    fn arguments_follow_the_row_that_was_opened() {
+        assert_eq!(arguments_after(true, "a", None), Some("a".to_string()));
+        assert_eq!(arguments_after(true, "b", Some("a")), Some("b".to_string()));
+        assert_eq!(arguments_after(false, "a", Some("a")), None);
+        // A collapse of a row that is not the open one leaves it open.
+        assert_eq!(
+            arguments_after(false, "b", Some("a")),
+            Some("a".to_string())
+        );
     }
 
     #[test]
     fn only_a_row_whose_own_name_matched_is_marked() {
-        let explorer = tree(&catalog(), "analytics");
+        let explorer = tree(&catalog(), "analytics", None, false);
 
         assert_eq!(
             marked(&explorer, "schema-analytics", "analytics").as_deref(),
@@ -1949,12 +2214,12 @@ mod tests {
                 .contains_key("relation-analytics\0events")
         );
 
-        assert!(tree(&catalog(), "").highlights.is_empty());
+        assert!(tree(&catalog(), "", None, false).highlights.is_empty());
     }
 
     #[test]
     fn tree_targets_use_catalog_indices_not_database_names() {
-        let explorer = tree(&catalog(), "account_name");
+        let explorer = tree(&catalog(), "account_name", None, false);
 
         assert_eq!(
             explorer
@@ -1973,7 +2238,7 @@ mod tests {
 
     #[test]
     fn a_leaf_carries_the_kind_its_icon_is_drawn_from() {
-        let explorer = tree(&catalog(), "public");
+        let explorer = tree(&catalog(), "public", None, false);
         let kind = |id: &str| explorer.leaves.get(id).map(|leaf| leaf.kind);
 
         // public: relation 0 is a view, relation 1 is a table.
@@ -2035,7 +2300,7 @@ mod tests {
             "",
         );
         explorer.extend(queries(&names, ""));
-        explorer.extend(tree(&catalog(), ""));
+        explorer.extend(tree(&catalog(), "", None, false));
 
         assert_eq!(
             labels(&explorer.items),
@@ -2086,7 +2351,7 @@ mod tests {
             "",
         );
         explorer.extend(queries(&names, ""));
-        explorer.extend(tree(&catalog, ""));
+        explorer.extend(tree(&catalog, "", None, false));
         let mut ids = Vec::new();
         every_id(&explorer.items, &mut ids);
 
@@ -2385,7 +2650,7 @@ mod tests {
             "",
         );
         explorer.extend(queries(&names, ""));
-        explorer.extend(tree(&catalog(), ""));
+        explorer.extend(tree(&catalog(), "", None, false));
 
         let mut ids = Vec::new();
         every_id(&explorer.items, &mut ids);

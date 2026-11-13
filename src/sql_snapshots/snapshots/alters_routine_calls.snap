@@ -1,0 +1,19 @@
+---
+source: src/sql_snapshots.rs
+---
+[postgres] function
+  |SELECT * FROM "public"."total"('7', 'it''s');|
+[postgres] procedure
+  |CALL "public"."total"('7', 'it''s');|
+[mysql] function
+  |SELECT `public`.`total`('7', 'it''s');|
+[mysql] procedure
+  |CALL `public`.`total`('7', 'it''s');|
+[mssql] table function
+  |SELECT * FROM "public"."total"(N'7', 'it''s');|
+[mssql] procedure
+  |EXEC "public"."total" @a = N'7', @b = 'it''s';|
+[snowflake] function
+  |SELECT "public"."total"('7', 'it''s');|
+[snowflake] procedure
+  |CALL "public"."total"('7', 'it''s');|

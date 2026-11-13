@@ -19,10 +19,10 @@ use crate::tls;
 use super::ssh::{self, Bridged, SocketBridge, Tunnel, tunnelled};
 use super::{
     Catalog, Column, DbError, EditTarget, Engine, Feed, Fetch, QueryResult, Reference,
-    RelationKind, Row, RowBuilder, ServerConfig, Sizes, Stopped, Structure, assemble_catalog,
-    assemble_databases, assemble_foreign_keys, assemble_references, assemble_sizes,
-    assemble_structure, create_table, non_utf8_error, optional_cell, plain_error, required_cell,
-    terminated,
+    RelationKind, Routine, RoutineParameter, Row, RowBuilder, ServerConfig, Sizes, Stopped,
+    Structure, assemble_catalog, assemble_databases, assemble_foreign_keys, assemble_parameters,
+    assemble_references, assemble_sizes, assemble_structure, create_table, non_utf8_error,
+    optional_cell, plain_error, required_cell, terminated,
 };
 
 mod pgpass;
@@ -184,6 +184,25 @@ WHERE procedure.prokind IN ('f', 'p')
             AND dependency.deptype = 'e'
     )
 ORDER BY namespace.nspname, procedure.proname, identity_arguments
+";
+
+const PARAMETERS_SQL: &str = "
+SELECT
+    COALESCE(parameters.parameter_name, '') AS parameter_name,
+    parameters.data_type AS data_type,
+    parameters.parameter_mode AS parameter_mode
+FROM information_schema.parameters AS parameters
+WHERE parameters.specific_schema = {schema}
+    AND parameters.specific_name = (
+        SELECT procedure.proname || '_' || CAST(procedure.oid AS VARCHAR)
+        FROM pg_catalog.pg_proc AS procedure
+        JOIN pg_catalog.pg_namespace AS namespace
+            ON namespace.oid = procedure.pronamespace
+        WHERE namespace.nspname = {schema}
+            AND procedure.proname = {name}
+            AND pg_catalog.pg_get_function_identity_arguments(procedure.oid) = {arguments}
+    )
+ORDER BY parameters.ordinal_position
 ";
 
 // The four structure queries name one relation, so they carry `{schema}` and
@@ -1387,6 +1406,27 @@ impl Connection {
             schema,
             relation,
         ))?)
+    }
+
+    /// The parameters a call has to fill.
+    ///
+    /// `information_schema.parameters` names an overload's row after its
+    /// `specific_name`, which is the routine's name and its oid, so the oid is
+    /// what the subquery builds -- an overload told from its siblings by the
+    /// identity arguments the catalog already carries.
+    pub fn routine_parameters(
+        &self,
+        schema: &str,
+        routine: &Routine,
+    ) -> Result<Vec<RoutineParameter>, DbError> {
+        let sql = PARAMETERS_SQL
+            .replace("{schema}", &Engine::Postgres.quote_literal(schema))
+            .replace("{name}", &Engine::Postgres.quote_literal(&routine.name))
+            .replace(
+                "{arguments}",
+                &Engine::Postgres.quote_literal(&routine.identity_arguments),
+            );
+        assemble_parameters(self.internal_query(&sql)?)
     }
 
     pub fn structure(&self, schema: &str, relation: &str) -> Result<Structure, DbError> {
@@ -4037,6 +4077,197 @@ mod tests {
                 .iter()
                 .all(|reference| reference.referenced_column != "number"),
             "a composite key names no single column: {references:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a local Postgres server configured through PG*"]
+    fn live_a_structure_edit_round_trips() {
+        use crate::db::alter;
+        use crate::sql::{self, StructureScope};
+
+        let connection = Connection::open(&live_config()).expect("connection should open");
+        connection
+            .query(
+                "DROP TABLE IF EXISTS dbdelve_test_alter; \
+                 CREATE TABLE dbdelve_test_alter (id bigint NOT NULL, note text); \
+                 CREATE INDEX dbdelve_test_alter_note ON dbdelve_test_alter (note)",
+                Fetch::default(),
+            )
+            .expect("the fixture table should be created");
+        let before = connection
+            .structure("public", "dbdelve_test_alter")
+            .expect("the structure should load");
+
+        // The editor's own starting point: one row per column the server
+        // listed, then two changes and a removal.
+        let mut edit = alter::TableEdit {
+            schema: "public".into(),
+            table: "dbdelve_test_alter".into(),
+            relation_kind: RelationKind::Table,
+            columns: before
+                .columns
+                .iter()
+                .map(|column| alter::ColumnEdit {
+                    original: Some(column.clone()),
+                    name: match column.name.as_str() {
+                        "note" => "memo".to_string(),
+                        other => other.to_string(),
+                    },
+                    data_type: match column.name.as_str() {
+                        "id" => "integer".to_string(),
+                        other => before
+                            .columns
+                            .iter()
+                            .find(|column| column.name == other)
+                            .map(|column| column.data_type.clone())
+                            .unwrap_or_default(),
+                    },
+                    nullable: column.nullable,
+                    default: column.default.clone().unwrap_or_default(),
+                    using: String::new(),
+                    dropped: false,
+                })
+                .collect(),
+            indexes: before
+                .indexes
+                .iter()
+                .map(|index| alter::IndexEdit {
+                    original: Some(index.clone()),
+                    name: index.name.clone(),
+                    unique: index.kind == crate::db::IndexKind::Unique,
+                    columns: index.columns.clone(),
+                    predicate: index.predicate.clone().unwrap_or_default(),
+                    dropped: index.name == "dbdelve_test_alter_note",
+                })
+                .collect(),
+        };
+        edit.columns.push(alter::ColumnEdit {
+            original: None,
+            name: "added".into(),
+            data_type: "text".into(),
+            nullable: true,
+            default: String::new(),
+            using: String::new(),
+            dropped: false,
+        });
+
+        let statements =
+            alter::statements(Engine::Postgres, &edit).expect("the edit should be writable");
+        let scope = StructureScope {
+            schema: "public".into(),
+            relation: "dbdelve_test_alter".into(),
+            names: edit
+                .columns
+                .iter()
+                .flat_map(|column| {
+                    column
+                        .original
+                        .as_ref()
+                        .map(|original| original.name.clone())
+                        .into_iter()
+                        .chain(std::iter::once(column.name.clone()))
+                })
+                .chain(edit.indexes.iter().flat_map(|index| {
+                    index
+                        .original
+                        .as_ref()
+                        .map(|original| original.name.clone())
+                        .into_iter()
+                        .chain(std::iter::once(index.name.clone()))
+                }))
+                .collect(),
+        };
+        for statement in &statements {
+            assert!(
+                sql::is_generated_structure(Engine::Postgres, statement, &scope),
+                "the gate refused what the editor wrote: {statement}"
+            );
+        }
+        let batch = statements.join("\n");
+        let applied = connection.query(&batch, Fetch::default());
+        let after = connection.structure("public", "dbdelve_test_alter");
+        connection
+            .query("DROP TABLE dbdelve_test_alter", Fetch::default())
+            .expect("the fixture table should be cleaned up");
+
+        applied.expect("the batch should run");
+        let after = after.expect("the structure should reload");
+        let names: Vec<&str> = after
+            .columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect();
+        assert!(names.contains(&"memo"), "the rename landed: {names:?}");
+        assert!(names.contains(&"added"), "the new column landed: {names:?}");
+        assert!(!names.contains(&"note"), "the old name is gone: {names:?}");
+        assert_eq!(
+            after
+                .columns
+                .iter()
+                .find(|column| column.name == "id")
+                .map(|column| column.data_type.as_str()),
+            Some("integer"),
+            "the type change landed"
+        );
+        assert!(
+            after
+                .indexes
+                .iter()
+                .all(|index| index.name != "dbdelve_test_alter_note"),
+            "the dropped index is gone: {:?}",
+            after.indexes
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a local Postgres server configured through PG*"]
+    fn live_a_routines_parameters_are_read_in_order() {
+        let connection = Connection::open(&live_config()).expect("connection should open");
+        connection
+            .query(
+                "CREATE OR REPLACE FUNCTION dbdelve_test_params(a integer, b text, c numeric) \
+                 RETURNS integer AS 'SELECT a' LANGUAGE sql",
+                Fetch::default(),
+            )
+            .expect("the fixture routine should be created");
+        let catalog = connection.routines();
+        let routine = catalog
+            .as_ref()
+            .ok()
+            .and_then(|catalog| {
+                catalog
+                    .schemas
+                    .iter()
+                    .find(|schema| schema.name == "public")?
+                    .routines
+                    .iter()
+                    .find(|routine| routine.name == "dbdelve_test_params")
+            })
+            .cloned();
+        let parameters = routine
+            .as_ref()
+            .map(|routine| connection.routine_parameters("public", routine));
+        connection
+            .query(
+                "DROP FUNCTION dbdelve_test_params(integer, text, numeric)",
+                Fetch::default(),
+            )
+            .expect("the fixture routine should be cleaned up");
+
+        let routine = routine.expect("the routine should be listed");
+        let parameters = parameters
+            .expect("the parameters should be asked for")
+            .expect("the parameters should load");
+        // The catalog names each argument and its type, which is what tells one
+        // overload from another.
+        assert_eq!(routine.identity_arguments, "a integer, b text, c numeric");
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|parameter| (parameter.name.as_str(), parameter.data_type.as_str()))
+                .collect::<Vec<_>>(),
+            [("a", "integer"), ("b", "text"), ("c", "numeric")]
         );
     }
 

@@ -49,6 +49,12 @@ require it, stop and raise it instead.
    than guessing at a clause boundary, because a corrupted statement is worse
    than an unsorted grid.
 
+   The one exception is a structure edit the user made in the table editor and
+   confirmed there: that batch may carry `ALTER TABLE … DROP COLUMN` and
+   `DROP INDEX`, both shown before it runs and both passing
+   `sql::is_generated_structure`. Nothing else: no `DROP TABLE`, `DROP VIEW`,
+   `DROP SCHEMA` or `TRUNCATE`.
+
 2. **Generated SQL passes a whitelist gate, and there is one per path.**
    `sql::is_generated_write_on` is the single gate every statement the grid
    writes passes first; `sql::is_generated_select` guards the filter bar, the
