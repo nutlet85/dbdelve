@@ -5412,10 +5412,11 @@ pub(crate) fn format(
     })
 }
 
-/// Whether `sql` is a SQL Server routine definition — `CREATE [OR ALTER]
-/// PROC`/`PROCEDURE` or `ALTER PROC`/`PROCEDURE`. The generic grammar reads
-/// those as an error tree, so only the routine path may walk through it.
-fn is_procedure(engine: Engine, sql: &str) -> bool {
+/// Whether `sql` is a SQL Server routine definition — `CREATE [OR ALTER]`
+/// `PROC`/`PROCEDURE`/`FUNCTION`/`TRIGGER`, or the `ALTER` form. The generic
+/// grammar reads those as an error tree, so only the routine path may walk
+/// through it.
+fn is_routine(engine: Engine, sql: &str) -> bool {
     if engine.spec().sql.format_dialect != FormatDialect::SqlServer {
         return false;
     }
@@ -5427,13 +5428,16 @@ fn is_procedure(engine: Engine, sql: &str) -> bool {
         Token::Word(word) if word.quote_style.is_none() => Some(word.value.as_str()),
         _ => None,
     });
-    let is_proc =
-        |word: &str| word.eq_ignore_ascii_case("PROC") || word.eq_ignore_ascii_case("PROCEDURE");
+    let is_kind = |word: &str| {
+        ["PROC", "PROCEDURE", "FUNCTION", "TRIGGER"]
+            .iter()
+            .any(|kind| word.eq_ignore_ascii_case(kind))
+    };
     let Some(first) = words.next() else {
         return false;
     };
     if first.eq_ignore_ascii_case("ALTER") {
-        return words.next().is_some_and(is_proc);
+        return words.next().is_some_and(is_kind);
     }
     if !first.eq_ignore_ascii_case("CREATE") {
         return false;
@@ -5448,9 +5452,9 @@ fn is_procedure(engine: Engine, sql: &str) -> bool {
         {
             return false;
         }
-        return words.next().is_some_and(is_proc);
+        return words.next().is_some_and(is_kind);
     }
-    is_proc(second)
+    is_kind(second)
 }
 
 /// `sql` with keywords, function names and type words re-cased as `style`
@@ -5477,6 +5481,7 @@ fn case_sql(sql: &str, style: FormatStyle) -> String {
 fn case_sql_routine(engine: Engine, sql: &str, style: FormatStyle) -> String {
     let mut spans = case_spans(sql, style, true);
     spans.extend(routine_keyword_spans(engine, sql, style.keyword_case));
+    spans.extend(routine_type_spans(engine, sql, style.type_case));
     case_sql_with_spans(sql, spans)
 }
 
@@ -5497,7 +5502,7 @@ fn case_statements(engine: Engine, sql: &str, style: FormatStyle) -> String {
     for statement in statements {
         cased.push_str(&sql[written..statement.start]);
         let text = &sql[statement.clone()];
-        cased.push_str(&if is_procedure(engine, text) {
+        cased.push_str(&if is_routine(engine, text) {
             case_sql_routine(engine, text, style)
         } else {
             case_sql(text, style)
@@ -5596,6 +5601,44 @@ fn case_spans(
     spans
 }
 
+/// The type words in a routine's declarations. The grammar has no node for a
+/// T-SQL `DECLARE @x int` or a `RETURNS int`, so the tokenizer supplies the
+/// type after a variable name or `RETURNS`. A quoted name is the user's, and a
+/// type after a dot is a user-defined type, left as written.
+fn routine_type_spans(
+    engine: Engine,
+    sql: &str,
+    case: CaseStyle,
+) -> Vec<(Range<usize>, CaseStyle)> {
+    if case == CaseStyle::Preserve {
+        return Vec::new();
+    }
+    let dialect = parser(engine.spec().sql.parser_dialect);
+    let Some(tokens) = located_tokens(dialect.as_ref(), sql) else {
+        return Vec::new();
+    };
+    let mut spans = Vec::new();
+    let mut previous: Option<&str> = None;
+    for (token, range) in tokens {
+        let Some(text) = sql.get(range.clone()) else {
+            continue;
+        };
+        if let Token::Word(word) = &token
+            && word.quote_style.is_none()
+            && is_type_word(text)
+            && previous.is_some_and(|before| {
+                before.starts_with('@') || before.eq_ignore_ascii_case("RETURNS")
+            })
+        {
+            spans.push((range.clone(), case));
+        }
+        if !matches!(token, Token::Whitespace(_)) {
+            previous = Some(text);
+        }
+    }
+    spans
+}
+
 /// The routine words the grammar drops from its error tree, or never had a
 /// node for. Only an unquoted word is taken; a quoted name is the user's.
 fn routine_keyword_spans(
@@ -5633,6 +5676,7 @@ fn routine_keyword_spans(
 /// session/control words around a body. The tree handles the SQL inside the
 /// body; these fill the gaps around it.
 const ROUTINE_KEYWORDS: &[&str] = &[
+    "AFTER",
     "ALTER",
     "AS",
     "BEGIN",
@@ -5641,13 +5685,20 @@ const ROUTINE_KEYWORDS: &[&str] = &[
     "CONTINUE",
     "CREATE",
     "DECLARE",
+    "DELETE",
     "ELSE",
+    "ENCRYPTION",
     "END",
     "EXEC",
     "EXECUTE",
+    "FOR",
+    "FUNCTION",
     "GOTO",
     "IF",
+    "INSERT",
+    "INSTEAD",
     "NOCOUNT",
+    "OF",
     "ON",
     "OR",
     "OUTPUT",
@@ -5658,9 +5709,14 @@ const ROUTINE_KEYWORDS: &[&str] = &[
     "READONLY",
     "RECOMPILE",
     "RETURN",
+    "RETURNS",
+    "SCHEMABINDING",
     "SET",
+    "TABLE",
     "THROW",
+    "TRIGGER",
     "TRY",
+    "UPDATE",
     "WAITFOR",
     "WHILE",
     "WITH",
@@ -10605,6 +10661,83 @@ mod tests {
         assert!(lowered.contains("where\n  temperature_c > 0"), "{lowered}");
         assert!(lowered.contains("and pressure_kpa > 88"), "{lowered}");
         assert!(lowered.trim_end().ends_with("end"), "{lowered}");
+    }
+
+    #[test]
+    fn a_sql_server_function_cases_its_keywords_and_types() {
+        let sql = "create function Test_Fn(@Parm nvarchar(10)) returns nvarchar(10) as\nbegin\nreturn Test_Fn(@Parm);\nend";
+        let formatted = format(
+            Engine::SqlServer,
+            sql,
+            FormatStyle {
+                keyword_case: CaseStyle::Upper,
+                function_case: CaseStyle::Upper,
+                type_case: CaseStyle::Upper,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            formatted
+                .contains("CREATE FUNCTION Test_Fn(@Parm NVARCHAR(10)) RETURNS NVARCHAR(10) AS"),
+            "{formatted}"
+        );
+        assert!(formatted.contains("RETURN TEST_FN(@Parm)"), "{formatted}");
+        assert!(formatted.trim_end().ends_with("END"), "{formatted}");
+    }
+
+    #[test]
+    fn a_sql_server_trigger_cases_its_keywords_and_types() {
+        let sql = "create trigger Test_Trg on dbo.measurements after insert as\nbegin\ndeclare @rowcount int;\nselect count(*) from inserted;\nend";
+        let formatted = format(
+            Engine::SqlServer,
+            sql,
+            FormatStyle {
+                keyword_case: CaseStyle::Upper,
+                function_case: CaseStyle::Upper,
+                type_case: CaseStyle::Upper,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            formatted.contains("CREATE TRIGGER Test_Trg ON dbo.measurements"),
+            "{formatted}"
+        );
+        assert!(formatted.contains("AFTER"), "{formatted}");
+        assert!(formatted.contains("INSERT"), "{formatted}");
+        assert!(formatted.contains("AS"), "{formatted}");
+        assert!(formatted.contains("BEGIN"), "{formatted}");
+        assert!(formatted.contains("DECLARE"), "{formatted}");
+        assert!(formatted.contains("@rowcount INT;"), "{formatted}");
+        assert!(formatted.contains("SELECT"), "{formatted}");
+        assert!(formatted.contains("FROM\n  inserted"), "{formatted}");
+        assert!(formatted.trim_end().ends_with("END"), "{formatted}");
+    }
+
+    #[test]
+    fn alter_routines_are_cased_too() {
+        for (sql, opening) in [
+            (
+                "alter function Test_Fn() returns int as begin return 1 end",
+                "ALTER FUNCTION",
+            ),
+            (
+                "create or alter trigger Test_Trg on dbo.measurements after insert as begin select 1 end",
+                "ALTER TRIGGER",
+            ),
+        ] {
+            let formatted = format(
+                Engine::SqlServer,
+                sql,
+                FormatStyle {
+                    keyword_case: CaseStyle::Upper,
+                    ..FormatStyle::default()
+                },
+            )
+            .unwrap();
+            assert!(formatted.contains(opening), "{formatted}");
+        }
     }
 
     #[test]
