@@ -26,6 +26,7 @@ use crate::{
     keybindings::{self, KeybindingSpec},
     palette::Mode as PaletteMode,
     scroller::{SmoothScrollable, smooth},
+    sql::{IndentStyle, KeywordCase},
     theme::{
         Appearance, FontSlot, OPACITY_MAX, OPACITY_MIN, OPACITY_STEP, Theme, fonts, layout,
         popup_theme,
@@ -105,6 +106,9 @@ enum SettingId {
     QualifyCompletions,
     AliasCompletions,
     RunUnreadable,
+    FormatKeywordCase,
+    FormatIndent,
+    FormatJoins,
     Language,
     CheckForUpdates,
     VerboseLogging,
@@ -208,6 +212,57 @@ fn setting_rows() -> Vec<SettingRow> {
             t!("settings.row.alias_completions.title"),
             t!("settings.row.alias_completions.description"),
             &["autocomplete", "completion", "alias", "join", "foreign key"],
+        ),
+        row(
+            SettingId::FormatKeywordCase,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_keyword_case.title"),
+            t!("settings.row.format_keyword_case.description"),
+            &[
+                "format",
+                "formatter",
+                "keyword",
+                "case",
+                "upper",
+                "lower",
+                "格式化",
+                "关键字",
+                "大写",
+                "小写",
+            ],
+        ),
+        row(
+            SettingId::FormatIndent,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_indent.title"),
+            t!("settings.row.format_indent.description"),
+            &[
+                "format",
+                "indent",
+                "spaces",
+                "tab",
+                "缩进",
+                "空格",
+                "制表符",
+            ],
+        ),
+        row(
+            SettingId::FormatJoins,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_joins.title"),
+            t!("settings.row.format_joins.description"),
+            &[
+                "format",
+                "join",
+                "line",
+                "from",
+                "格式化",
+                "换行",
+                "独立成行",
+            ],
         ),
         row(
             SettingId::RunUnreadable,
@@ -925,6 +980,71 @@ fn render_control(
                 workspace.set_alias_completions(alias, cx);
             }))
             .into_any_element(),
+        SettingId::FormatKeywordCase => {
+            let current = settings.format.keyword_case;
+            let choices = [
+                (
+                    KeywordCase::Preserve,
+                    t!("settings.format.keyword_case.preserve"),
+                ),
+                (KeywordCase::Upper, t!("settings.format.keyword_case.upper")),
+                (KeywordCase::Lower, t!("settings.format.keyword_case.lower")),
+            ];
+            segmented(t)
+                .children(choices.map(|(case, label)| {
+                    segmented_choice(
+                        ("format-keyword-case", case as usize),
+                        label.to_string(),
+                        case == current,
+                        t,
+                    )
+                    .on_click(cx.listener(
+                        move |workspace, _: &ClickEvent, _, cx| {
+                            workspace.set_keyword_case(case, cx);
+                        },
+                    ))
+                }))
+                .into_any_element()
+        }
+        SettingId::FormatIndent => {
+            let current = settings.format.indent;
+            let choices = [
+                (
+                    IndentStyle::TwoSpaces,
+                    t!("settings.format.indent.two_spaces"),
+                ),
+                (
+                    IndentStyle::FourSpaces,
+                    t!("settings.format.indent.four_spaces"),
+                ),
+                (IndentStyle::Tab, t!("settings.format.indent.tab")),
+            ];
+            segmented(t)
+                .children(choices.map(|(indent, label)| {
+                    segmented_choice(
+                        ("format-indent", indent as usize),
+                        label.to_string(),
+                        indent == current,
+                        t,
+                    )
+                    .on_click(cx.listener(
+                        move |workspace, _: &ClickEvent, _, cx| {
+                            workspace.set_indent(indent, cx);
+                        },
+                    ))
+                }))
+                .into_any_element()
+        }
+        SettingId::FormatJoins => switch(
+            "format-joins-on-their-own-line",
+            settings.format.joins_on_their_own_line,
+            t,
+        )
+        .on_click(cx.listener(|workspace, _: &ClickEvent, _, cx| {
+            let on = !workspace.settings.format.joins_on_their_own_line;
+            workspace.set_joins_on_their_own_line(on, cx);
+        }))
+        .into_any_element(),
         SettingId::RunUnreadable => switch("run-unreadable", settings.run_unreadable, t)
             .on_click(cx.listener(|workspace, _: &ClickEvent, _, cx| {
                 let run = !workspace.settings.run_unreadable;
@@ -1261,7 +1381,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 17);
+        assert_eq!(found("!keyboard").len(), 20);
     }
 
     #[test]

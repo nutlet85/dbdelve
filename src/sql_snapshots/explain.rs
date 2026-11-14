@@ -134,7 +134,7 @@ fn formats_per_engine() {
             Syntax::Redis => redis_texts.to_vec(),
         };
         for (case, text) in texts {
-            match sql::format(engine, text) {
+            match sql::format(engine, text, sql::FormatStyle::default()) {
                 Ok(formatted) => fragment(&mut out, engine, case, Some(&formatted)),
                 Err(message) => refusal(&mut out, engine, case, message),
             }

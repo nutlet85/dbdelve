@@ -96,6 +96,9 @@ pub(crate) struct Settings {
     /// The UI language for the menus, a `locale::SUPPORTED` code; `None`
     /// follows the system.
     pub(crate) language: Option<String>,
+    /// Format Query's style: the keyword case, the indentation and whether a
+    /// JOIN starts a line of its own.
+    pub(crate) format: crate::sql::FormatStyle,
     /// Keybinding overrides, keyed by action id. Applied to the keymap on
     /// the next launch -- see `src/keybindings.rs`.
     pub(crate) custom_keybindings: HashMap<String, String>,
@@ -136,6 +139,7 @@ impl Default for Settings {
             verbose_logging: false,
             welcomed: false,
             language: None,
+            format: crate::sql::FormatStyle::default(),
             custom_keybindings: HashMap::new(),
         }
     }
@@ -633,6 +637,17 @@ impl Workspace {
                     .clone()
                     .unwrap_or_default();
                 workspace.settings.language = stored_settings.language.clone();
+                workspace.settings.format = stored_settings
+                    .format
+                    .as_ref()
+                    .map(|format| {
+                        crate::sql::FormatStyle::from_stored(
+                            format.keyword_case.as_deref(),
+                            format.indent.as_deref(),
+                            format.joins_on_their_own_line,
+                        )
+                    })
+                    .unwrap_or_default();
                 // Ahead of the restore, which must not prune grids an
                 // unavailable profile under the same id still owns.
                 workspace.unavailable = unavailable;
@@ -1256,6 +1271,37 @@ impl Workspace {
             return;
         }
         self.settings.run_unreadable = run;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_keyword_case(
+        &mut self,
+        case: crate::sql::KeywordCase,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings.format.keyword_case == case {
+            return;
+        }
+        self.settings.format.keyword_case = case;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_indent(&mut self, indent: crate::sql::IndentStyle, cx: &mut Context<Self>) {
+        if self.settings.format.indent == indent {
+            return;
+        }
+        self.settings.format.indent = indent;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_joins_on_their_own_line(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.settings.format.joins_on_their_own_line == on {
+            return;
+        }
+        self.settings.format.joins_on_their_own_line = on;
         self.remember_profiles(cx);
         cx.notify();
     }

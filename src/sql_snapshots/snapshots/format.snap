@@ -1,172 +1,172 @@
 ---
 source: src/sql_snapshots.rs
 ---
-[postgres] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[postgres] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[postgres] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[postgres] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[postgres] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[postgres] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [postgres] comment only => |-- only a comment|
 [postgres] empty => ||
-[postgres] block comment => |select\u{a}  /* a ; b */\u{a}  1|
+[postgres] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
 [postgres] backslash literal => error: |Not formatting: a string, quoted name or comment does not end.|
-[postgres] backslash newline => |select\u{a}  'a\\nb'|
-[postgres] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[postgres] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[postgres] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[postgres] backslash newline => |SELECT\u{a}  'a\\nb'|
+[postgres] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[postgres] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[postgres] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [postgres] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [postgres] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [postgres] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [postgres] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[postgres] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[mysql] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[mysql] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[mysql] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[postgres] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[mysql] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[mysql] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[mysql] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [mysql] comment only => |-- only a comment|
 [mysql] empty => ||
-[mysql] block comment => |select\u{a}  /* a ; b */\u{a}  1|
-[mysql] backslash literal => |select\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
-[mysql] backslash newline => |select\u{a}  'a\\nb'|
-[mysql] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[mysql] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[mysql] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[mysql] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
+[mysql] backslash literal => |SELECT\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
+[mysql] backslash newline => |SELECT\u{a}  'a\\nb'|
+[mysql] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[mysql] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[mysql] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [mysql] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [mysql] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [mysql] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [mysql] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[mysql] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[mariadb] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[mariadb] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[mariadb] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[mysql] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[mariadb] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[mariadb] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[mariadb] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [mariadb] comment only => |-- only a comment|
 [mariadb] empty => ||
-[mariadb] block comment => |select\u{a}  /* a ; b */\u{a}  1|
-[mariadb] backslash literal => |select\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
-[mariadb] backslash newline => |select\u{a}  'a\\nb'|
-[mariadb] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[mariadb] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[mariadb] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[mariadb] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
+[mariadb] backslash literal => |SELECT\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
+[mariadb] backslash newline => |SELECT\u{a}  'a\\nb'|
+[mariadb] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[mariadb] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[mariadb] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [mariadb] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [mariadb] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [mariadb] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [mariadb] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[mariadb] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[sqlite] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[sqlite] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[sqlite] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[mariadb] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[sqlite] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[sqlite] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[sqlite] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [sqlite] comment only => |-- only a comment|
 [sqlite] empty => ||
-[sqlite] block comment => |select\u{a}  /* a ; b */\u{a}  1|
+[sqlite] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
 [sqlite] backslash literal => error: |Not formatting: a string, quoted name or comment does not end.|
-[sqlite] backslash newline => |select\u{a}  'a\\nb'|
-[sqlite] backslash newline escape string => |select\u{a}  E'a\\nb'|
+[sqlite] backslash newline => |SELECT\u{a}  'a\\nb'|
+[sqlite] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
 [sqlite] quoted names => error: |Not formatting: the new layout would read as different SQL.|
-[sqlite] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[sqlite] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [sqlite] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [sqlite] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [sqlite] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [sqlite] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[sqlite] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[turso] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[turso] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[turso] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[sqlite] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[turso] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[turso] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[turso] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [turso] comment only => |-- only a comment|
 [turso] empty => ||
-[turso] block comment => |select\u{a}  /* a ; b */\u{a}  1|
+[turso] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
 [turso] backslash literal => error: |Not formatting: a string, quoted name or comment does not end.|
-[turso] backslash newline => |select\u{a}  'a\\nb'|
-[turso] backslash newline escape string => |select\u{a}  E'a\\nb'|
+[turso] backslash newline => |SELECT\u{a}  'a\\nb'|
+[turso] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
 [turso] quoted names => error: |Not formatting: the new layout would read as different SQL.|
-[turso] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[turso] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [turso] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [turso] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [turso] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [turso] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[turso] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[duckdb] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[duckdb] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[duckdb] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[turso] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[duckdb] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[duckdb] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[duckdb] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [duckdb] comment only => |-- only a comment|
 [duckdb] empty => ||
-[duckdb] block comment => |select\u{a}  /* a ; b */\u{a}  1|
+[duckdb] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
 [duckdb] backslash literal => error: |Not formatting: a string, quoted name or comment does not end.|
-[duckdb] backslash newline => |select\u{a}  'a\\nb'|
-[duckdb] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[duckdb] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[duckdb] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[duckdb] backslash newline => |SELECT\u{a}  'a\\nb'|
+[duckdb] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[duckdb] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[duckdb] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [duckdb] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [duckdb] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [duckdb] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [duckdb] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[duckdb] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[snowflake] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[snowflake] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[snowflake] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[duckdb] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[snowflake] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[snowflake] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[snowflake] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [snowflake] comment only => |-- only a comment|
 [snowflake] empty => ||
-[snowflake] block comment => |select\u{a}  /* a ; b */\u{a}  1|
-[snowflake] backslash literal => |select\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
-[snowflake] backslash newline => |select\u{a}  'a\\nb'|
-[snowflake] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[snowflake] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[snowflake] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[snowflake] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
+[snowflake] backslash literal => |SELECT\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
+[snowflake] backslash newline => |SELECT\u{a}  'a\\nb'|
+[snowflake] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[snowflake] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[snowflake] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [snowflake] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [snowflake] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [snowflake] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [snowflake] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[snowflake] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[clickhouse] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[clickhouse] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[clickhouse] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[snowflake] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[clickhouse] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[clickhouse] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[clickhouse] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [clickhouse] comment only => |-- only a comment|
 [clickhouse] empty => ||
-[clickhouse] block comment => |select\u{a}  /* a ; b */\u{a}  1|
-[clickhouse] backslash literal => |select\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
-[clickhouse] backslash newline => |select\u{a}  'a\\nb'|
-[clickhouse] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[clickhouse] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[clickhouse] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[clickhouse] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
+[clickhouse] backslash literal => |SELECT\u{a}  'a\\b',\u{a}  'it\\'s'\u{a}from\u{a}  t|
+[clickhouse] backslash newline => |SELECT\u{a}  'a\\nb'|
+[clickhouse] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[clickhouse] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[clickhouse] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [clickhouse] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [clickhouse] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [clickhouse] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [clickhouse] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[clickhouse] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[mssql] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[mssql] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[mssql] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[clickhouse] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[mssql] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[mssql] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[mssql] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [mssql] comment only => |-- only a comment|
 [mssql] empty => ||
-[mssql] block comment => |select\u{a}  /* a ; b */\u{a}  1|
+[mssql] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
 [mssql] backslash literal => error: |Not formatting: a string, quoted name or comment does not end.|
-[mssql] backslash newline => |select\u{a}  'a\\nb'|
-[mssql] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[mssql] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [c]\u{a}from\u{a}  t|
-[mssql] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[mssql] backslash newline => |SELECT\u{a}  'a\\nb'|
+[mssql] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[mssql] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [c]\u{a}FROM\u{a}  t|
+[mssql] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [mssql] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [mssql] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [mssql] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [mssql] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[mssql] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
-[mssql] go separator => |select\u{a}  1\u{a}GO\u{a}select\u{a}  [x]\u{a}from\u{a}  [t]|
-[mssql] go with count => |select\u{a}  1\u{a}go 5\u{a}select\u{a}  2|
-[mssql] go inline => |select\u{a}  1\u{a}GO|
+[mssql] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
+[mssql] go separator => |SELECT\u{a}  1\u{a}GO\u{a}select\u{a}  [x]\u{a}FROM\u{a}  [t]|
+[mssql] go with count => |select\u{a}  1\u{a}go 5\u{a}SELECT\u{a}  2|
+[mssql] go inline => |SELECT\u{a}  1\u{a}GO|
 [mongodb] find => |db.getCollection("a").find({ a: 1, b: { $gt: 2 } })|
 [mongodb] multi-line find => |db.getCollection("a")\u{a}  .find({\u{a}    a: 1,\u{a}    b: { $gt: 2 }\u{a}  })\u{a}  .limit(5)|
 [mongodb] unterminated => error: |Not formatting: a statement in the buffer does not parse.|
 [mongodb] empty => ||
 [redis] get => error: |Not formatting: a Redis command is one line, as typed.|
 [redis] empty => error: |Not formatting: a Redis command is one line, as typed.|
-[generic] plain => |select\u{a}  a,\u{a}  b\u{a}from\u{a}  t\u{a}where\u{a}  x = 1 -- keep\u{a}order by\u{a}  a|
-[generic] two statements => |select\u{a}  1;\u{a}select\u{a}  2;|
-[generic] two statements spaced => |select\u{a}  1;\u{a}\u{a}select\u{a}  2|
+[generic] plain => |SELECT\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  x = 1 -- keep\u{a}ORDER BY\u{a}  a|
+[generic] two statements => |SELECT\u{a}  1;\u{a}SELECT\u{a}  2;|
+[generic] two statements spaced => |SELECT\u{a}  1;\u{a}\u{a}SELECT\u{a}  2|
 [generic] comment only => |-- only a comment|
 [generic] empty => ||
-[generic] block comment => |select\u{a}  /* a ; b */\u{a}  1|
+[generic] block comment => |SELECT\u{a}  /* a ; b */\u{a}  1|
 [generic] backslash literal => error: |Not formatting: a string, quoted name or comment does not end.|
-[generic] backslash newline => |select\u{a}  'a\\nb'|
-[generic] backslash newline escape string => |select\u{a}  E'a\\nb'|
-[generic] quoted names => |select\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}from\u{a}  t|
-[generic] placeholders => |select\u{a}  *\u{a}from\u{a}  t\u{a}where\u{a}  a = $1\u{a}  and b = ?\u{a}  and c = :name\u{a}  and d = @p1\u{a}  and e = % s|
+[generic] backslash newline => |SELECT\u{a}  'a\\nb'|
+[generic] backslash newline escape string => |SELECT\u{a}  E'a\\nb'|
+[generic] quoted names => |SELECT\u{a}  `a`,\u{a}  "b",\u{a}  [ c ]\u{a}FROM\u{a}  t|
+[generic] placeholders => |SELECT\u{a}  *\u{a}FROM\u{a}  t\u{a}WHERE\u{a}  a = $1\u{a}  AND b = ?\u{a}  AND c = :name\u{a}  AND d = @p1\u{a}  AND e = % s|
 [generic] dollar quote => error: |Not formatting: a dollar-quoted body would be rewritten.|
 [generic] unended string => error: |Not formatting: a string, quoted name or comment does not end.|
 [generic] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [generic] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
-[generic] very long line => |select\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}from\u{a}  t|
+[generic] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|

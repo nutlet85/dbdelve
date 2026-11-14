@@ -3085,8 +3085,13 @@ impl Workspace {
         // Said out loud rather than left as a no-op: a Format that appears to
         // do nothing reads as a broken Format, not as a deliberate refusal.
         let formatted = match whole {
-            true => crate::sql::format(self.engine(), source),
-            false => crate::sql::format_selection(self.engine(), &text, span.clone()),
+            true => crate::sql::format(self.engine(), source, self.settings.format),
+            false => crate::sql::format_selection(
+                self.engine(),
+                &text,
+                span.clone(),
+                self.settings.format,
+            ),
         };
         let formatted = match formatted {
             Ok(formatted) => formatted,

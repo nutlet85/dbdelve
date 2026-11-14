@@ -476,6 +476,20 @@ pub struct StoredFonts {
     pub grid: Option<String>,
 }
 
+/// Format Query's style, as written in `[settings.format]`. The two choices
+/// are strings rather than serde enums, and each value is parsed leniently:
+/// a value a newer build wrote must not fail this build's decode of the whole
+/// profile list, which would move `profiles.toml` aside.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct StoredFormat {
+    #[serde(default)]
+    pub keyword_case: Option<String>,
+    #[serde(default)]
+    pub indent: Option<String>,
+    #[serde(default)]
+    pub joins_on_their_own_line: Option<bool>,
+}
+
 /// What the app is set to, as opposed to what a connection is. App-level for
 /// the same reason the fonts are: the theme, the zoom and how many rows a
 /// preview asks for belong to the person reading, not to the database they
@@ -526,6 +540,10 @@ pub struct StoredSettings {
     /// before there was one.
     #[serde(default)]
     pub welcomed: Option<bool>,
+    /// Format Query's style. Absent in a file written before the setting
+    /// existed; each missing or unknown value reads as the field's default.
+    #[serde(default)]
+    pub format: Option<StoredFormat>,
     /// Keybinding overrides, keyed by the action id in
     /// `keybindings::REGISTRY`. Only the ones a user actually changed --
     /// everything else stays on whatever the running build defaults to.
@@ -3970,6 +3988,11 @@ open_objects = []
                 run_unreadable: Some(true),
                 verbose_logging: Some(true),
                 welcomed: Some(true),
+                format: Some(StoredFormat {
+                    keyword_case: Some("upper".into()),
+                    indent: Some("four_spaces".into()),
+                    joins_on_their_own_line: Some(true),
+                }),
                 custom_keybindings: Some(HashMap::from([(
                     "apply_edits".to_string(),
                     "cmd-shift-s".to_string(),
@@ -4081,6 +4104,23 @@ open_objects = []
             .expect("a file predating settings must load")
             .settings;
         assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn a_format_table_with_words_this_build_does_not_know_still_decodes() {
+        let text = "active = \"dev\"\n\
+                    [settings.format]\n\
+                    keyword_case = \"shout\"\n\
+                    indent = \"three_spaces\"\n\
+                    joins_on_their_own_line = true\n";
+        let format = decode_profiles(text, &[])
+            .expect("an unknown format word must not fail the file")
+            .settings
+            .and_then(|settings| settings.format)
+            .expect("the table must be read");
+        assert_eq!(format.keyword_case.as_deref(), Some("shout"));
+        assert_eq!(format.indent.as_deref(), Some("three_spaces"));
+        assert_eq!(format.joins_on_their_own_line, Some(true));
     }
 
     #[test]

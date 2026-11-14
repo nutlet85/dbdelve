@@ -5101,8 +5101,94 @@ pub(crate) fn gate_own_run(
     gate(verdict, mode, confirmed).filter(|stop| !(run_unreadable && *stop == Stop::RunOnce))
 }
 
-/// `sql` laid out over several lines: the same tokens, indented. Refused when
-/// the buffer holds a dollar-quoted body, which this cannot reflow safely.
+/// How Format Query spells SQL keywords. `Preserve` leaves the buffer's own
+/// case alone; `Upper` and `Lower` re-case only the words tree-sitter marks as
+/// keywords, never identifiers, function names, quoted names or comments.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum KeywordCase {
+    Preserve,
+    #[default]
+    Upper,
+    Lower,
+}
+
+impl KeywordCase {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Preserve => "preserve",
+            Self::Upper => "upper",
+            Self::Lower => "lower",
+        }
+    }
+}
+
+/// The indentation Format Query writes for each level.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum IndentStyle {
+    #[default]
+    TwoSpaces,
+    FourSpaces,
+    Tab,
+}
+
+impl IndentStyle {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::TwoSpaces => "two_spaces",
+            Self::FourSpaces => "four_spaces",
+            Self::Tab => "tab",
+        }
+    }
+
+    fn sqlformat(self) -> sqlformat::Indent {
+        match self {
+            Self::TwoSpaces => sqlformat::Indent::Spaces(2),
+            Self::FourSpaces => sqlformat::Indent::Spaces(4),
+            Self::Tab => sqlformat::Indent::Tabs,
+        }
+    }
+}
+
+/// What Format Query is set to: the keyword case, the indentation, and whether
+/// a JOIN starts a line of its own. `Default` is what the app starts with:
+/// upper-case keywords, two spaces and JOINs indented under FROM.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FormatStyle {
+    pub(crate) keyword_case: KeywordCase,
+    pub(crate) indent: IndentStyle,
+    pub(crate) joins_on_their_own_line: bool,
+}
+
+impl FormatStyle {
+    /// The style a stored `[settings.format]` table names. Each value is
+    /// parsed on its own: a missing or unknown word falls back to the field's
+    /// default, so a file written by a newer build still opens. The store
+    /// keeps the words; this is where they become a style.
+    pub(crate) fn from_stored(
+        keyword_case: Option<&str>,
+        indent: Option<&str>,
+        joins_on_their_own_line: Option<bool>,
+    ) -> Self {
+        Self {
+            keyword_case: match keyword_case {
+                Some("preserve") => KeywordCase::Preserve,
+                Some("lower") => KeywordCase::Lower,
+                _ => KeywordCase::Upper,
+            },
+            indent: match indent {
+                Some("four_spaces") => IndentStyle::FourSpaces,
+                Some("tab") => IndentStyle::Tab,
+                _ => IndentStyle::TwoSpaces,
+            },
+            joins_on_their_own_line: joins_on_their_own_line.unwrap_or(false),
+        }
+    }
+}
+
+/// `sql` laid out over several lines: the same tokens, indented. `style`
+/// decides the indentation, the keyword case and whether a JOIN starts a line
+/// of its own. Refused when the buffer holds a dollar-quoted body, which this
+/// cannot reflow safely.
 ///
 /// Token-level reformatting rather than a round trip through the `sqlparser`
 /// AST this module already parses with for `classify`. Regenerating a statement
@@ -5124,6 +5210,13 @@ pub(crate) fn gate_own_run(
 // ponytail: `FormatOptions`' `dialect` is Generic except on SQL Server, where
 // Generic splits `[my col]` into `[ my col ]`, another name. Postgres's dialect
 // is the upgrade path if its output ever looks wrong there.
+//
+// ponytail: the case pass covers the keywords tree-sitter-sequel knows. Words
+// only one engine has, like T-SQL's TOP or ClickHouse's SETTINGS, keep the
+// case they were typed in until a reason to extend the grammar's set appears.
+// A statement the grammar cannot parse keeps the case of the words inside the
+// unparsed part (MySQL's `\'` literal is one): no guess there is worth a
+// rename.
 ///
 /// Each statement is reflowed on its own, and the text between statements --
 /// blank lines, comments, the `;`s and SQL Server's `GO` lines -- is kept as
@@ -5139,7 +5232,9 @@ pub(crate) fn gate_own_run(
 ///
 /// The result must tokenize as the buffer did, whitespace aside, or it is
 /// refused: sqlformat respaces some tokens into others, like `[my col]`
-/// outside SQL Server's dialect or MySQL's `0x0A`.
+/// outside SQL Server's dialect or MySQL's `0x0A`. The keyword case is applied
+/// after that check: it only changes letters inside `keyword_*` spans, so it
+/// cannot turn one token into another.
 ///
 /// Err is the refusal, said to the user as it stands. A MongoDB buffer is not
 /// SQL, and sqlformat over it splits regexes and turns comment text into code,
@@ -5150,7 +5245,11 @@ pub(crate) fn gate_own_run(
 // prefix per line here, as it is in `mql::format`: sqlformat carries a
 // multi-line string literal through as one token, and a prefix would edit its
 // value.
-pub(crate) fn format(engine: Engine, sql: &str) -> Result<String, &'static str> {
+pub(crate) fn format(
+    engine: Engine,
+    sql: &str,
+    style: FormatStyle,
+) -> Result<String, &'static str> {
     match engine.syntax() {
         Syntax::Sql => {}
         Syntax::Mongo => return crate::mql::format(sql),
@@ -5170,6 +5269,8 @@ pub(crate) fn format(engine: Engine, sql: &str) -> Result<String, &'static str> 
     };
     let options = sqlformat::FormatOptions {
         dialect: layout,
+        indent: style.indent.sqlformat(),
+        joins_as_top_level: style.joins_on_their_own_line,
         ..sqlformat::FormatOptions::default()
     };
 
@@ -5202,9 +5303,80 @@ pub(crate) fn format(engine: Engine, sql: &str) -> Result<String, &'static str> 
         .ok()
         .map(layout_free);
     match after == Some(before) {
-        true => Ok(formatted),
+        true => Ok(match style.keyword_case {
+            KeywordCase::Preserve => formatted,
+            case => case_keywords(&formatted, case),
+        }),
         false => Err("Not formatting: the new layout would read as different SQL."),
     }
+}
+
+/// `sql` with its keyword spans re-cased.
+///
+/// sqlformat's own `uppercase` is not used: it decides from a context-free
+/// reserved-word list, so a column called `status` comes back `STATUS` and a
+/// table called `type` comes back `TYPE` — a rename, not a layout. The grammar
+/// knows which words are keywords where they stand, and only those spans are
+/// touched.
+fn case_keywords(sql: &str, case: KeywordCase) -> String {
+    let upper = match case {
+        KeywordCase::Upper => true,
+        KeywordCase::Lower => false,
+        KeywordCase::Preserve => return sql.to_string(),
+    };
+    let spans = keyword_spans(sql);
+    if spans.is_empty() {
+        return sql.to_string();
+    }
+    let mut cased = sql.to_string();
+    // Back to front: replacing a span moves everything after it, never a span
+    // that starts earlier.
+    for span in spans.iter().rev() {
+        let Some(text) = sql.get(span.clone()) else {
+            continue;
+        };
+        let replacement = match upper {
+            true => text.to_uppercase(),
+            false => text.to_lowercase(),
+        };
+        cased.replace_range(span.clone(), &replacement);
+    }
+    cased
+}
+
+/// The byte ranges of the `keyword_*` nodes tree-sitter-sequel finds in
+/// `sql`. A keyword node's children are not walked: the whole node is one word
+/// or one multi-word keyword, and re-casing the outer span covers it.
+fn keyword_spans(sql: &str) -> Vec<Range<usize>> {
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_sequel::LANGUAGE.into())
+        .is_err()
+    {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(sql, None) else {
+        return Vec::new();
+    };
+    let mut spans = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        // An `ERROR` subtree is where the grammar did not understand the
+        // text: `:name` is read there as a `keyword_name` node. Casing a word
+        // the grammar cannot place is how a parameter name becomes a keyword,
+        // so nothing inside an error is touched.
+        if node.is_error() {
+            continue;
+        }
+        if node.kind().starts_with("keyword_") {
+            spans.push(node.byte_range());
+            continue;
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    spans.sort_by_key(|span| span.start);
+    spans
 }
 
 fn sqlformat_dialect(dialect: FormatDialect) -> sqlformat::Dialect {
@@ -5226,6 +5398,7 @@ pub(crate) fn format_selection(
     engine: Engine,
     sql: &str,
     selection: Range<usize>,
+    style: FormatStyle,
 ) -> Result<String, &'static str> {
     let splits = match dialect(engine) {
         Some(reader) => {
@@ -5251,7 +5424,7 @@ pub(crate) fn format_selection(
              comment.",
         );
     }
-    format(engine, &sql[selection])
+    format(engine, &sql[selection], style)
 }
 
 /// The statements in `tokens` as the dialect's tokenizer cuts them: from the
@@ -9718,6 +9891,35 @@ mod tests {
         );
     }
 
+    /// Formatting with the keyword case left as typed, for the tests whose
+    /// subject is the layout rather than the case.
+    fn preserve(engine: Engine, sql: &str) -> Result<String, &'static str> {
+        format(
+            engine,
+            sql,
+            FormatStyle {
+                keyword_case: KeywordCase::Preserve,
+                ..FormatStyle::default()
+            },
+        )
+    }
+
+    fn preserve_selection(
+        engine: Engine,
+        sql: &str,
+        selection: Range<usize>,
+    ) -> Result<String, &'static str> {
+        format_selection(
+            engine,
+            sql,
+            selection,
+            FormatStyle {
+                keyword_case: KeywordCase::Preserve,
+                ..FormatStyle::default()
+            },
+        )
+    }
+
     #[test]
     fn a_comment_the_user_wrote_survives_formatting() {
         // The whole reason formatting is token-level: an AST round trip would
@@ -9725,6 +9927,7 @@ mod tests {
         let formatted = format(
             Engine::Postgres,
             "select a -- the one we care about\nfrom t",
+            FormatStyle::default(),
         )
         .unwrap();
 
@@ -9734,43 +9937,184 @@ mod tests {
         );
     }
 
+    // A keyword case is a second pass over the formatted text. It must reach
+    // the keywords and nothing else: sqlformat's own `uppercase` turns a
+    // column called `status` into `STATUS`, which is a rename.
+    #[test]
+    fn a_keyword_case_reaches_keywords_and_no_names() {
+        let sql = "select status, name, type, key, value, date, timestamp, count(*) as n, \
+                   \"select\", 'from' from status_log \
+                   where status = 'active' -- select";
+        let upper = format(Engine::Postgres, sql, FormatStyle::default()).unwrap();
+        assert!(upper.contains("SELECT"), "{upper}");
+        assert!(upper.contains("FROM"), "{upper}");
+        assert!(upper.contains("WHERE"), "{upper}");
+        assert!(upper.contains(" AS n"), "{upper}");
+        assert!(upper.contains("  status,"), "{upper}");
+        assert!(upper.contains("  name,"), "{upper}");
+        assert!(upper.contains("  type,"), "{upper}");
+        assert!(upper.contains("  key,"), "{upper}");
+        assert!(upper.contains("  value,"), "{upper}");
+        assert!(upper.contains("  date,"), "{upper}");
+        assert!(upper.contains("  timestamp,"), "{upper}");
+        assert!(upper.contains("count(*)"), "{upper}");
+        assert!(upper.contains("\"select\""), "{upper}");
+        assert!(upper.contains("'from'"), "{upper}");
+        assert!(upper.contains("-- select"), "{upper}");
+
+        // The grammar has no `:name` production and recovers it as an error
+        // whose `keyword_name` child must not be read as a keyword.
+        let placeholders = format(
+            Engine::Postgres,
+            "select * from t where a = :name and b = :select",
+            FormatStyle::default(),
+        )
+        .unwrap();
+        assert!(placeholders.contains(":name"), "{placeholders}");
+        assert!(placeholders.contains(":select"), "{placeholders}");
+        assert!(placeholders.contains("WHERE"), "{placeholders}");
+
+        let lower = format(
+            Engine::Postgres,
+            "SELECT Status FROM Status_Log WHERE Status = 'Active'",
+            FormatStyle {
+                keyword_case: KeywordCase::Lower,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(lower.contains("select"), "{lower}");
+        assert!(lower.contains("from"), "{lower}");
+        assert!(lower.contains("where"), "{lower}");
+        assert!(lower.contains("Status"), "{lower}");
+        assert!(lower.contains("Status_Log"), "{lower}");
+        assert!(lower.contains("'Active'"), "{lower}");
+    }
+
+    #[test]
+    fn a_stored_format_style_falls_back_per_field() {
+        assert_eq!(
+            FormatStyle::from_stored(None, None, None),
+            FormatStyle::default()
+        );
+        assert_eq!(
+            FormatStyle::from_stored(Some("shout"), Some("three_spaces"), Some(true)),
+            FormatStyle {
+                keyword_case: KeywordCase::Upper,
+                indent: IndentStyle::TwoSpaces,
+                joins_on_their_own_line: true,
+            }
+        );
+        assert_eq!(
+            FormatStyle::from_stored(Some("lower"), Some("four_spaces"), Some(false)),
+            FormatStyle {
+                keyword_case: KeywordCase::Lower,
+                indent: IndentStyle::FourSpaces,
+                joins_on_their_own_line: false,
+            }
+        );
+    }
+
+    #[test]
+    fn format_indentation_and_join_placement_follow_the_style() {
+        let sql = "select a.id from accounts a left join billing b on b.account_id = a.id";
+        let four = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                indent: IndentStyle::FourSpaces,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(four.contains("\n    a.id"), "{four}");
+
+        let tab = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                indent: IndentStyle::Tab,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(tab.contains("\n\ta.id"), "{tab:?}");
+
+        let joined = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                joins_on_their_own_line: true,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(joined.contains("\nLEFT JOIN\n  billing"), "{joined}");
+    }
+
     // sqlformat reflows the inside of a `$$` body, which edits the literal
     // rather than its layout. Refusing the buffer is the only answer that keeps
     // hard rule 1; this is the test that catches the day that stops being true.
     #[test]
     fn a_buffer_holding_a_dollar_quoted_body_is_refused() {
-        assert!(format(Engine::Postgres, "DO $$ BEGIN DELETE FROM t; END $$").is_err());
-        assert!(format(Engine::Postgres, "select $tag$ x; y $tag$").is_err());
+        assert!(
+            format(
+                Engine::Postgres,
+                "DO $$ BEGIN DELETE FROM t; END $$",
+                FormatStyle::default()
+            )
+            .is_err()
+        );
+        assert!(
+            format(
+                Engine::Postgres,
+                "select $tag$ x; y $tag$",
+                FormatStyle::default()
+            )
+            .is_err()
+        );
     }
 
     // A placeholder is not a quote, and reading it as one would refuse to format
     // every parameterised statement anybody writes.
     #[test]
     fn a_numbered_placeholder_still_formats() {
-        assert!(format(Engine::Postgres, "select a from t where id = $1").is_ok());
+        assert!(
+            format(
+                Engine::Postgres,
+                "select a from t where id = $1",
+                FormatStyle::default()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn formatting_an_already_formatted_statement_changes_nothing() {
-        let once = format(Engine::Postgres, "select a, b from t where x = 1").unwrap();
+        let style = FormatStyle::default();
+        let once = format(Engine::Postgres, "select a, b from t where x = 1", style).unwrap();
 
-        assert_eq!(format(Engine::Postgres, &once).unwrap(), once);
+        assert_eq!(format(Engine::Postgres, &once, style).unwrap(), once);
     }
 
     #[test]
     fn sql_server_formatting_keeps_bracketed_names_and_go_lines() {
         let sql = "select [my col] from t\nGO 5\nselect 2\ngo\n";
-        let formatted = format(Engine::SqlServer, sql).unwrap();
+        let style = FormatStyle::default();
+        let formatted = format(Engine::SqlServer, sql, style).unwrap();
         assert!(formatted.contains("[my col]"), "{formatted}");
         assert!(formatted.contains("\nGO 5\n"), "{formatted}");
         assert_eq!(go_lines(&formatted).len(), 2, "{formatted}");
-        assert_eq!(format(Engine::SqlServer, &formatted).unwrap(), formatted);
+        assert_eq!(
+            format(Engine::SqlServer, &formatted, style).unwrap(),
+            formatted
+        );
     }
 
     #[test]
     fn formatting_keeps_the_text_between_statements_as_written() {
         let sql = "\n  select a,b from t;  -- why\n\n\n-- next\nselect 2;\n";
-        let formatted = format(Engine::Postgres, sql).unwrap();
+        let formatted = preserve(Engine::Postgres, sql).unwrap();
 
         assert_eq!(
             formatted,
@@ -9781,7 +10125,7 @@ mod tests {
     #[test]
     fn statements_on_one_line_are_formatted_onto_lines_of_their_own() {
         assert_eq!(
-            format(Engine::Postgres, "select 1; select 2").unwrap(),
+            preserve(Engine::Postgres, "select 1; select 2").unwrap(),
             "select\n  1;\nselect\n  2"
         );
     }
@@ -9793,7 +10137,7 @@ mod tests {
         let sql =
             "select 1;\n\ninsert into t values ('Don\\'t; be    late');\n\n\n-- keep\nselect   3;";
         assert_eq!(
-            format(Engine::MySql, sql).unwrap(),
+            preserve(Engine::MySql, sql).unwrap(),
             "select\n  1;\n\ninsert into\n  t\nvalues\n  ('Don\\'t; be    late');\n\n\n-- keep\nselect\n  3;"
         );
     }
@@ -9801,15 +10145,22 @@ mod tests {
     #[test]
     fn an_indented_statement_comes_back_flush() {
         assert_eq!(
-            format(Engine::Postgres, "select 1;\n    select a from t;").unwrap(),
+            preserve(Engine::Postgres, "select 1;\n    select a from t;").unwrap(),
             "select\n  1;\nselect\n  a\nfrom\n  t;"
         );
     }
 
     #[test]
     fn a_respaced_token_is_refused_rather_than_formatted() {
-        assert!(format(Engine::Sqlite, "select [my col] from t").is_err());
-        assert!(format(Engine::MySql, "select 0x0A").is_err());
+        assert!(
+            format(
+                Engine::Sqlite,
+                "select [my col] from t",
+                FormatStyle::default()
+            )
+            .is_err()
+        );
+        assert!(format(Engine::MySql, "select 0x0A", FormatStyle::default()).is_err());
     }
 
     #[test]
@@ -9818,12 +10169,12 @@ mod tests {
         let from = |text: &str| sql.find(text).unwrap();
         // Line by line through a literal that spans two.
         assert!(
-            format_selection(Engine::Postgres, sql, from("line   two")..from(";\n/*")).is_err()
+            preserve_selection(Engine::Postgres, sql, from("line   two")..from(";\n/*")).is_err()
         );
-        assert!(format_selection(Engine::Postgres, sql, from("b */")..sql.len()).is_err());
-        assert!(format_selection(Engine::Postgres, sql, from("ect  1")..sql.len()).is_err());
+        assert!(preserve_selection(Engine::Postgres, sql, from("b */")..sql.len()).is_err());
+        assert!(preserve_selection(Engine::Postgres, sql, from("ect  1")..sql.len()).is_err());
         assert_eq!(
-            format_selection(Engine::Postgres, sql, from("/*")..sql.len()).unwrap(),
+            preserve_selection(Engine::Postgres, sql, from("/*")..sql.len()).unwrap(),
             "/* a   b */ select\n  1;"
         );
     }
@@ -9833,7 +10184,7 @@ mod tests {
         for engine in [Engine::Postgres, Engine::Snowflake] {
             let sql = "select $$hello   world$$";
             let start = sql.find("hello").unwrap();
-            assert!(format_selection(engine, sql, start..start + 13).is_err());
+            assert!(preserve_selection(engine, sql, start..start + 13).is_err());
         }
     }
 
@@ -9843,7 +10194,7 @@ mod tests {
             "create function f() returns int as $$ select 1 $$ language sql;\n\nselect a,b from t;";
         let start = sql.find("select a").unwrap();
         assert_eq!(
-            format_selection(Engine::Postgres, sql, start..sql.len()).unwrap(),
+            preserve_selection(Engine::Postgres, sql, start..sql.len()).unwrap(),
             "select\n  a,\n  b\nfrom\n  t;"
         );
     }
@@ -9851,7 +10202,7 @@ mod tests {
     #[test]
     fn a_comment_ahead_of_an_indented_statement_stays() {
         assert_eq!(
-            format(Engine::Postgres, "select 1;\n/* c */ select 2;").unwrap(),
+            preserve(Engine::Postgres, "select 1;\n/* c */ select 2;").unwrap(),
             "select\n  1;\n/* c */ select\n  2;"
         );
     }
@@ -9861,19 +10212,40 @@ mod tests {
         let sql = "// old: db.t.find({a:   1})\ndb.t.find({b:   2})";
         let inside = sql.find("db.t").unwrap();
         let next = sql.rfind("db.t").unwrap();
-        assert!(format_selection(Engine::MongoDb, sql, inside..sql.len()).is_err());
-        assert!(format_selection(Engine::MongoDb, sql, next..sql.len()).is_ok());
+        assert!(
+            format_selection(
+                Engine::MongoDb,
+                sql,
+                inside..sql.len(),
+                FormatStyle::default()
+            )
+            .is_err()
+        );
+        assert!(
+            format_selection(
+                Engine::MongoDb,
+                sql,
+                next..sql.len(),
+                FormatStyle::default()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn only_the_text_up_to_a_selection_must_tokenize() {
         let sql = "select 1 from t;\nselect 'unfinished";
-        assert!(format_selection(Engine::Postgres, sql, 0..16).is_ok());
+        assert!(format_selection(Engine::Postgres, sql, 0..16, FormatStyle::default()).is_ok());
     }
 
     #[test]
     fn a_flat_statement_gains_line_breaks() {
-        let formatted = format(Engine::Postgres, "select a, b from t where x = 1").unwrap();
+        let formatted = format(
+            Engine::Postgres,
+            "select a, b from t where x = 1",
+            FormatStyle::default(),
+        )
+        .unwrap();
 
         assert!(formatted.lines().count() > 1, "{formatted}");
         assert!(formatted.contains("  "), "{formatted}");

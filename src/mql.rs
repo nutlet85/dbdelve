@@ -4718,7 +4718,13 @@ mod tests {
     /// Format Query's answer for `text`, checked to read back as the same
     /// statements and to be its own answer.
     fn formatted(text: &str) -> String {
-        let format = |text: &str| crate::sql::format(crate::db::Engine::MongoDb, text);
+        let format = |text: &str| {
+            crate::sql::format(
+                crate::db::Engine::MongoDb,
+                text,
+                crate::sql::FormatStyle::default(),
+            )
+        };
         let once = format(text).unwrap_or_else(|refusal| panic!("{text}: {refusal}"));
         assert_eq!(classify(&once), classify(text), "{once}");
         assert_eq!(statements(&once).len(), statements(text).len(), "{once}");
@@ -4791,7 +4797,13 @@ mod tests {
 
     #[test]
     fn a_half_typed_buffer_is_refused_rather_than_formatted() {
-        let format = |text: &str| crate::sql::format(crate::db::Engine::MongoDb, text);
+        let format = |text: &str| {
+            crate::sql::format(
+                crate::db::Engine::MongoDb,
+                text,
+                crate::sql::FormatStyle::default(),
+            )
+        };
         for text in [
             "db.c.find({a:",
             "db.c.find({}).sort(",
