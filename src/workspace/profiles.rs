@@ -74,6 +74,11 @@ impl Workspace {
             welcomed: Some(self.settings.welcomed),
             format: Some(store::StoredFormat {
                 keyword_case: Some(self.settings.format.keyword_case.as_str().to_string()),
+                function_case: Some(self.settings.format.function_case.as_str().to_string()),
+                type_case: Some(self.settings.format.type_case.as_str().to_string()),
+                logical_operators: Some(
+                    self.settings.format.logical_operators.as_str().to_string(),
+                ),
                 indent: Some(self.settings.format.indent.as_str().to_string()),
                 joins_on_their_own_line: Some(self.settings.format.joins_on_their_own_line),
                 expression_width: Some(self.settings.format.expression_width),

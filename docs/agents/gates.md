@@ -66,18 +66,24 @@ where the user can read it:
   bracket-depth layout over the tree-sitter tokens, refused unless the
   result reads back as the same statements). Never an AST round-trip: that
   regenerates the statement and drops every comment the user wrote. Its
-  style is app-wide: keyword case (`upper` by default, or `preserve`/`lower`),
-  indentation (two spaces, four, or a tab), whether a JOIN starts a line
-  of its own, the widest parenthesized expression kept on one line (50
-  characters by default), and whether a short comma-separated clause keeps its
-  items on one line (off by default). The keyword case is a second pass over
-  the formatted text;
-  tree-sitter-sequel marks the `keyword_*` nodes and only those spans are
-  re-cased. `sqlformat`'s own `uppercase` is not used: it decides from a
-  context-free reserved-word list, so a column called `status` comes back
-  `STATUS` — a rename, not a layout. A part the grammar cannot parse keeps
-  the case it was typed in; the pass never guesses inside an error, so a
-  `:name` placeholder stays a parameter name.
+  style is app-wide: keyword case (`upper` by default), function and type
+  case (`preserve` and `upper` by default), where a logical `AND`/`OR` sits
+  (`leading` by default, or `trailing`), indentation (two spaces, four, or a
+  tab), whether a JOIN starts a line of its own, the widest parenthesized
+  expression kept on one line (50 characters by default), and whether a short
+  comma-separated clause keeps its items on one line (off by default). The
+  word cases are a second pass over the formatted text; tree-sitter-sequel
+  marks the `keyword_*` nodes, invocation names and type words, and only those
+  spans are re-cased. `sqlformat`'s own `uppercase` is not used: it decides
+  from a context-free reserved-word list, so a column called `status` comes
+  back `STATUS` — a rename, not a layout. A part the grammar cannot parse
+  keeps the case it was typed in; the pass never guesses inside an error, so a
+  `:name` placeholder stays a parameter name. A file from before the type
+  setting existed keeps casing its types with the keyword case, as v1 did; an
+  absent function case is `preserve`, which is what v1 did to function names.
+  A trailing logical operator moves to the end of the previous line, but a
+  line comment on that line keeps it leading — moving it would put it inside
+  the comment.
 
 Limits on what DBDelve may write. It never writes `DROP` or `TRUNCATE`
 into a buffer or onto the wire, whatever the user asked for. It writes

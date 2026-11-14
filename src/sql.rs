@@ -5101,23 +5101,40 @@ pub(crate) fn gate_own_run(
     gate(verdict, mode, confirmed).filter(|stop| !(run_unreadable && *stop == Stop::RunOnce))
 }
 
-/// How Format Query spells SQL keywords. `Preserve` leaves the buffer's own
-/// case alone; `Upper` and `Lower` re-case only the words tree-sitter marks as
-/// keywords, never identifiers, function names, quoted names or comments.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum KeywordCase {
+/// How Format Query spells a word: keywords, function names and data types
+/// each have their own choice. `Preserve` leaves the buffer's own case alone;
+/// `Upper` and `Lower` re-case only the words the grammar marks in that role,
+/// never quoted names, strings or comments.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CaseStyle {
     Preserve,
-    #[default]
     Upper,
     Lower,
 }
 
-impl KeywordCase {
+impl CaseStyle {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Preserve => "preserve",
             Self::Upper => "upper",
             Self::Lower => "lower",
+        }
+    }
+}
+
+/// Where a logical `AND`/`OR` sits when the formatter breaks the line.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum LogicalOperatorPosition {
+    #[default]
+    Leading,
+    Trailing,
+}
+
+impl LogicalOperatorPosition {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Leading => "leading",
+            Self::Trailing => "trailing",
         }
     }
 }
@@ -5160,14 +5177,19 @@ pub(crate) const EXPRESSION_WIDTH_MAX: usize = 120;
 pub(crate) const COMPACT_CLAUSES_MIN: usize = 20;
 pub(crate) const COMPACT_CLAUSES_MAX: usize = 200;
 
-/// What Format Query is set to: the keyword case, the indentation, whether a
-/// JOIN starts a line of its own, how wide a parenthesized expression may be,
-/// and whether a short clause stays on one line. `Default` is what the app
-/// starts with: upper-case keywords, two spaces, JOINs indented under FROM,
-/// expressions up to 50 characters, and every clause item on its own line.
+/// What Format Query is set to: the three word cases, where a logical
+/// operator sits, the indentation, whether a JOIN starts a line of its own,
+/// how wide a parenthesized expression may be, and whether a short clause
+/// stays on one line. `Default` is what the app starts with: upper-case
+/// keywords and types, function names and logical operators as typed, two
+/// spaces, JOINs indented under FROM, expressions up to 50 characters, and
+/// every clause item on its own line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FormatStyle {
-    pub(crate) keyword_case: KeywordCase,
+    pub(crate) keyword_case: CaseStyle,
+    pub(crate) function_case: CaseStyle,
+    pub(crate) type_case: CaseStyle,
+    pub(crate) logical_operators: LogicalOperatorPosition,
     pub(crate) indent: IndentStyle,
     pub(crate) joins_on_their_own_line: bool,
     /// The longest parenthesized expression kept on one line, in characters.
@@ -5181,7 +5203,10 @@ pub(crate) struct FormatStyle {
 impl Default for FormatStyle {
     fn default() -> Self {
         Self {
-            keyword_case: KeywordCase::Upper,
+            keyword_case: CaseStyle::Upper,
+            function_case: CaseStyle::Preserve,
+            type_case: CaseStyle::Upper,
+            logical_operators: LogicalOperatorPosition::Leading,
             indent: IndentStyle::TwoSpaces,
             joins_on_their_own_line: false,
             expression_width: EXPRESSION_WIDTH_DEFAULT,
@@ -5196,18 +5221,31 @@ impl FormatStyle {
     /// default, and a width outside its range is clamped, so a file written
     /// by a newer build still opens. The store keeps the values; this is
     /// where they become a style.
+    // One argument per stored field; grouping them would only rename the list.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_stored(
         keyword_case: Option<&str>,
+        function_case: Option<&str>,
+        type_case: Option<&str>,
+        logical_operators: Option<&str>,
         indent: Option<&str>,
         joins_on_their_own_line: Option<bool>,
         expression_width: Option<usize>,
         compact_clauses: Option<usize>,
     ) -> Self {
+        let keyword_case = parse_case(keyword_case, CaseStyle::Upper);
+        // Before the type setting existed, the keyword case cased type words
+        // too. An absent type case keeps that; a v1 file never touched
+        // function names, so their absent case is Preserve.
+        let type_case = parse_case(type_case, keyword_case);
+        let function_case = parse_case(function_case, CaseStyle::Preserve);
         Self {
-            keyword_case: match keyword_case {
-                Some("preserve") => KeywordCase::Preserve,
-                Some("lower") => KeywordCase::Lower,
-                _ => KeywordCase::Upper,
+            keyword_case,
+            function_case,
+            type_case,
+            logical_operators: match logical_operators {
+                Some("trailing") => LogicalOperatorPosition::Trailing,
+                _ => LogicalOperatorPosition::Leading,
             },
             indent: match indent {
                 Some("four_spaces") => IndentStyle::FourSpaces,
@@ -5225,11 +5263,23 @@ impl FormatStyle {
     }
 }
 
+/// A word case from the store, or `default` when the key is absent or names
+/// something this build does not know.
+fn parse_case(value: Option<&str>, default: CaseStyle) -> CaseStyle {
+    match value {
+        Some("preserve") => CaseStyle::Preserve,
+        Some("upper") => CaseStyle::Upper,
+        Some("lower") => CaseStyle::Lower,
+        _ => default,
+    }
+}
+
 /// `sql` laid out over several lines: the same tokens, indented. `style`
-/// decides the indentation, the keyword case, whether a JOIN starts a line of
-/// its own, the widest parenthesized expression kept on one line, and whether
-/// a short clause keeps its items on one line. Refused when the buffer holds a
-/// dollar-quoted body, which this cannot reflow safely.
+/// decides the keyword, function and type cases, where a logical operator
+/// sits, the indentation, whether a JOIN starts a line of its own, the widest
+/// parenthesized expression kept on one line, and whether a short clause keeps
+/// its items on one line. Refused when the buffer holds a dollar-quoted body,
+/// which this cannot reflow safely.
 ///
 /// Token-level reformatting rather than a round trip through the `sqlparser`
 /// AST this module already parses with for `classify`. Regenerating a statement
@@ -5345,52 +5395,55 @@ pub(crate) fn format(
         .tokenize()
         .ok()
         .map(layout_free);
-    match after == Some(before) {
-        true => Ok(match style.keyword_case {
-            KeywordCase::Preserve => formatted,
-            case => case_keywords(&formatted, case),
-        }),
-        false => Err("Not formatting: the new layout would read as different SQL."),
+    if after != Some(before) {
+        return Err("Not formatting: the new layout would read as different SQL.");
     }
+    let formatted = if style.keyword_case == CaseStyle::Preserve
+        && style.function_case == CaseStyle::Preserve
+        && style.type_case == CaseStyle::Preserve
+    {
+        formatted
+    } else {
+        case_sql(&formatted, style)
+    };
+    Ok(match style.logical_operators {
+        LogicalOperatorPosition::Leading => formatted,
+        LogicalOperatorPosition::Trailing => move_logical_operators(reader.as_ref(), &formatted),
+    })
 }
 
-/// `sql` with its keyword spans re-cased.
+/// `sql` with keywords, function names and type words re-cased as `style`
+/// asks.
 ///
 /// sqlformat's own `uppercase` is not used: it decides from a context-free
 /// reserved-word list, so a column called `status` comes back `STATUS` and a
 /// table called `type` comes back `TYPE` — a rename, not a layout. The grammar
-/// knows which words are keywords where they stand, and only those spans are
-/// touched.
-fn case_keywords(sql: &str, case: KeywordCase) -> String {
-    let upper = match case {
-        KeywordCase::Upper => true,
-        KeywordCase::Lower => false,
-        KeywordCase::Preserve => return sql.to_string(),
-    };
-    let spans = keyword_spans(sql);
+/// knows which words are keywords, function names or types where they stand,
+/// and only those spans are touched.
+fn case_sql(sql: &str, style: FormatStyle) -> String {
+    let spans = case_spans(sql, style);
     if spans.is_empty() {
         return sql.to_string();
     }
     let mut cased = sql.to_string();
     // Back to front: replacing a span moves everything after it, never a span
     // that starts earlier.
-    for span in spans.iter().rev() {
+    for (span, case) in spans.iter().rev() {
         let Some(text) = sql.get(span.clone()) else {
             continue;
         };
-        let replacement = match upper {
-            true => text.to_uppercase(),
-            false => text.to_lowercase(),
+        let replacement = match case {
+            CaseStyle::Upper => text.to_uppercase(),
+            CaseStyle::Lower => text.to_lowercase(),
+            CaseStyle::Preserve => continue,
         };
         cased.replace_range(span.clone(), &replacement);
     }
     cased
 }
 
-/// The byte ranges of the `keyword_*` nodes tree-sitter-sequel finds in
-/// `sql`. A keyword node's children are not walked: the whole node is one word
-/// or one multi-word keyword, and re-casing the outer span covers it.
-fn keyword_spans(sql: &str) -> Vec<Range<usize>> {
+/// The spans `case_sql` re-cases, each with the case its role asks for.
+fn case_spans(sql: &str, style: FormatStyle) -> Vec<(Range<usize>, CaseStyle)> {
     let mut parser = Parser::new();
     if parser
         .set_language(&tree_sitter_sequel::LANGUAGE.into())
@@ -5412,14 +5465,221 @@ fn keyword_spans(sql: &str) -> Vec<Range<usize>> {
             continue;
         }
         if node.kind().starts_with("keyword_") {
-            spans.push(node.byte_range());
+            let range = node.byte_range();
+            let case = match sql.get(range.clone()) {
+                Some(text) if is_type_word(text) => style.type_case,
+                _ => style.keyword_case,
+            };
+            if case != CaseStyle::Preserve {
+                spans.push((range, case));
+            }
             continue;
+        }
+        if node.kind() == "invocation"
+            && let Some(range) = function_name(sql, node)
+            && style.function_case != CaseStyle::Preserve
+        {
+            spans.push((range, style.function_case));
         }
         let mut cursor = node.walk();
         stack.extend(node.children(&mut cursor));
     }
-    spans.sort_by_key(|span| span.start);
-    spans
+    // Keep the outermost span where the grammar nests two: a `TIMESTAMP` type
+    // is two keyword nodes in the grammar's tree, and both must not be edited.
+    spans.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
+    let mut filtered = Vec::with_capacity(spans.len());
+    let mut end = 0;
+    for (span, case) in spans {
+        if span.start >= end {
+            end = span.end;
+            filtered.push((span, case));
+        }
+    }
+    filtered
+}
+
+/// The range of the name an `invocation` calls, unless it is a quoted or
+/// bracketed name, which the user spelled deliberately.
+fn function_name<'tree>(sql: &str, invocation: Node<'tree>) -> Option<Range<usize>> {
+    let count = u32::try_from(invocation.named_child_count()).ok()?;
+    let object = (0..count)
+        .filter_map(|index| invocation.named_child(index))
+        .find(|node| node.kind() == "object_reference")?;
+    let last = u32::try_from(object.named_child_count())
+        .ok()?
+        .checked_sub(1)?;
+    let name = object.named_child(last)?;
+    if name.kind() != "identifier" {
+        return None;
+    }
+    let range = name.byte_range();
+    if sql.get(range.clone())?.starts_with(['"', '`', '[']) {
+        return None;
+    }
+    Some(range)
+}
+
+/// Whether `text` is a type word the grammar spells as a keyword. The keyword
+/// case leaves these to the type case.
+fn is_type_word(text: &str) -> bool {
+    TYPE_WORDS
+        .iter()
+        .any(|word| text.eq_ignore_ascii_case(word))
+}
+
+/// Type words the grammar spells as `keyword_*` in a type position. A word
+/// here is cased by the type case, not the keyword case; a word missing here
+/// follows the keyword case, which is the harmless direction.
+const TYPE_WORDS: &[&str] = &[
+    "BIGINT",
+    "BIGSERIAL",
+    "BINARY",
+    "BIT",
+    "BLOB",
+    "BOOL",
+    "BOOLEAN",
+    "BYTEA",
+    "CHAR",
+    "CHARACTER",
+    "CIDR",
+    "DATE",
+    "DATETIME",
+    "DATETIME2",
+    "DATETIMEOFFSET",
+    "DECIMAL",
+    "DOUBLE",
+    "ENUM",
+    "FLOAT",
+    "GEOGRAPHY",
+    "GEOMETRY",
+    "INET",
+    "INT",
+    "INTEGER",
+    "INTERVAL",
+    "JSON",
+    "JSONB",
+    "MACADDR",
+    "MEDIUMINT",
+    "MONEY",
+    "NCHAR",
+    "NUMERIC",
+    "NVARCHAR",
+    "OID",
+    "PRECISION",
+    "REAL",
+    "SERIAL",
+    "SMALLDATETIME",
+    "SMALLINT",
+    "SMALLMONEY",
+    "SMALLSERIAL",
+    "STRING",
+    "TEXT",
+    "TIME",
+    "TIMESTAMP",
+    "TIMESTAMPTZ",
+    "TIMETZ",
+    "TINYINT",
+    "UNSIGNED",
+    "UUID",
+    "VARBINARY",
+    "VARCHAR",
+    "VARYING",
+    "XML",
+    "ZEROFILL",
+    "ZONE",
+];
+
+/// One `AND`/`OR` sitting at the start of its line.
+struct LogicalMove {
+    operator: String,
+    line_start: usize,
+    operator_start: usize,
+    operand_start: usize,
+    line_end: usize,
+    operator_only: bool,
+    previous_line_trimmed_end: usize,
+}
+
+/// `sql` with each leading `AND`/`OR` moved to the end of the line before it.
+///
+/// Only a token the tokenizer calls an operator at the start of a line is
+/// moved, and a line comment on the previous line stops it: the operator would
+/// otherwise become part of the comment. Whitespace only; the token stream is
+/// unchanged.
+fn move_logical_operators(dialect: &dyn sqlparser::dialect::Dialect, sql: &str) -> String {
+    let Some(tokens) = located_tokens(dialect, sql) else {
+        return sql.to_string();
+    };
+    let mut moves = Vec::new();
+    for (index, (token, range)) in tokens.iter().enumerate() {
+        let Token::Word(word) = token else {
+            continue;
+        };
+        if word.quote_style.is_some()
+            || !(word.value.eq_ignore_ascii_case("AND") || word.value.eq_ignore_ascii_case("OR"))
+        {
+            continue;
+        }
+        let line_start = sql[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        if !sql[line_start..range.start].trim().is_empty() {
+            continue;
+        }
+        let previous = tokens[..index]
+            .iter()
+            .rev()
+            .find(|(token, _)| !is_layout(token));
+        if previous.is_some_and(|(token, _)| {
+            matches!(
+                token,
+                Token::Whitespace(Whitespace::SingleLineComment { .. })
+            )
+        }) {
+            continue;
+        }
+        if line_start == 0 {
+            continue;
+        }
+        let previous_start = sql[..line_start - 1].rfind('\n').map_or(0, |at| at + 1);
+        let previous = &sql[previous_start..line_start - 1];
+        if previous.trim().is_empty() {
+            continue;
+        }
+        let line_end = sql[range.end..]
+            .find('\n')
+            .map_or(sql.len(), |at| range.end + at);
+        let after = &sql[range.end..line_end];
+        let spaces = after.len() - after.trim_start_matches([' ', '\t']).len();
+        let operand_start = range.end + spaces;
+        moves.push(LogicalMove {
+            operator: sql[range.clone()].to_string(),
+            line_start,
+            operator_start: range.start,
+            operand_start,
+            line_end,
+            operator_only: sql[operand_start..line_end].trim().is_empty(),
+            previous_line_trimmed_end: previous_start + previous.trim_end().len(),
+        });
+    }
+    if moves.is_empty() {
+        return sql.to_string();
+    }
+    let mut moved = sql.to_string();
+    // Bottom-up: an edit is below every move still to apply, so the offsets of
+    // the earlier ones stay valid.
+    for mv in moves.iter().rev() {
+        if mv.operator_only {
+            let end = if mv.line_end < moved.len() {
+                mv.line_end + 1
+            } else {
+                mv.line_end
+            };
+            moved.replace_range(mv.line_start..end, "");
+        } else {
+            moved.replace_range(mv.operator_start..mv.operand_start, "");
+        }
+        moved.insert_str(mv.previous_line_trimmed_end, &format!(" {}", mv.operator));
+    }
+    moved
 }
 
 fn sqlformat_dialect(dialect: FormatDialect) -> sqlformat::Dialect {
@@ -9941,7 +10201,7 @@ mod tests {
             engine,
             sql,
             FormatStyle {
-                keyword_case: KeywordCase::Preserve,
+                keyword_case: CaseStyle::Preserve,
                 ..FormatStyle::default()
             },
         )
@@ -9957,7 +10217,7 @@ mod tests {
             sql,
             selection,
             FormatStyle {
-                keyword_case: KeywordCase::Preserve,
+                keyword_case: CaseStyle::Preserve,
                 ..FormatStyle::default()
             },
         )
@@ -10021,7 +10281,7 @@ mod tests {
             Engine::Postgres,
             "SELECT Status FROM Status_Log WHERE Status = 'Active'",
             FormatStyle {
-                keyword_case: KeywordCase::Lower,
+                keyword_case: CaseStyle::Lower,
                 ..FormatStyle::default()
             },
         )
@@ -10037,19 +10297,25 @@ mod tests {
     #[test]
     fn a_stored_format_style_falls_back_per_field() {
         assert_eq!(
-            FormatStyle::from_stored(None, None, None, None, None),
+            FormatStyle::from_stored(None, None, None, None, None, None, None, None),
             FormatStyle::default()
         );
         assert_eq!(
             FormatStyle::from_stored(
                 Some("shout"),
+                Some("shout"),
+                Some("shout"),
+                Some("sideways"),
                 Some("three_spaces"),
                 Some(true),
                 Some(500),
                 Some(1),
             ),
             FormatStyle {
-                keyword_case: KeywordCase::Upper,
+                keyword_case: CaseStyle::Upper,
+                function_case: CaseStyle::Preserve,
+                type_case: CaseStyle::Upper,
+                logical_operators: LogicalOperatorPosition::Leading,
                 indent: IndentStyle::TwoSpaces,
                 joins_on_their_own_line: true,
                 expression_width: EXPRESSION_WIDTH_MAX,
@@ -10059,19 +10325,133 @@ mod tests {
         assert_eq!(
             FormatStyle::from_stored(
                 Some("lower"),
+                Some("upper"),
+                Some("preserve"),
+                Some("trailing"),
                 Some("four_spaces"),
                 Some(false),
                 Some(80),
                 Some(0),
             ),
             FormatStyle {
-                keyword_case: KeywordCase::Lower,
+                keyword_case: CaseStyle::Lower,
+                function_case: CaseStyle::Upper,
+                type_case: CaseStyle::Preserve,
+                logical_operators: LogicalOperatorPosition::Trailing,
                 indent: IndentStyle::FourSpaces,
                 joins_on_their_own_line: false,
                 expression_width: 80,
                 compact_clauses: None,
             }
         );
+
+        // A v1 file has no type case, and v1 cased types with the keyword
+        // setting; an absent type case keeps that. A v1 file never touched
+        // function names, so their absent case is Preserve.
+        let inherited =
+            FormatStyle::from_stored(Some("lower"), None, None, None, None, None, None, None);
+        assert_eq!(inherited.keyword_case, CaseStyle::Lower);
+        assert_eq!(inherited.function_case, CaseStyle::Preserve);
+        assert_eq!(inherited.type_case, CaseStyle::Lower);
+    }
+
+    #[test]
+    fn function_case_changes_only_invocation_names() {
+        let sql = "select count(*), schema.func(x), \"quoted\"(1) from t";
+        let upper = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                function_case: CaseStyle::Upper,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(upper.contains("COUNT(*)"), "{upper}");
+        assert!(upper.contains("schema.FUNC(x)"), "{upper}");
+        assert!(upper.contains("\"quoted\"(1)"), "{upper}");
+
+        let lower = format(
+            Engine::Postgres,
+            "SELECT COUNT(*), schema.FUNC(x) FROM t",
+            FormatStyle {
+                keyword_case: CaseStyle::Preserve,
+                function_case: CaseStyle::Lower,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(lower.contains("count(*)"), "{lower}");
+        assert!(lower.contains("schema.func(x)"), "{lower}");
+        assert!(lower.contains("SELECT"), "{lower}");
+    }
+
+    #[test]
+    fn type_case_changes_only_type_words() {
+        let sql = "select cast(x as int), cast(y as text), date, timestamp from t";
+        let upper = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                type_case: CaseStyle::Upper,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(upper.contains("INT"), "{upper}");
+        assert!(upper.contains("TEXT"), "{upper}");
+        assert!(upper.contains("  date,"), "{upper}");
+        assert!(upper.contains("\n  timestamp\n"), "{upper}");
+
+        let lower = format(
+            Engine::Postgres,
+            "SELECT CAST(x AS INT), CAST(y AS TEXT) FROM t",
+            FormatStyle {
+                keyword_case: CaseStyle::Preserve,
+                type_case: CaseStyle::Lower,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(lower.contains("CAST(x AS int)"), "{lower}");
+        assert!(lower.contains("CAST(y AS text)"), "{lower}");
+    }
+
+    #[test]
+    fn logical_operators_move_to_the_previous_line() {
+        let sql = "select * from t where a = 1 and b = 2 or c = 3";
+        let trailing = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                logical_operators: LogicalOperatorPosition::Trailing,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(trailing.contains("a = 1 AND\n"), "{trailing}");
+        assert!(trailing.contains("b = 2 OR\n"), "{trailing}");
+        assert!(!trailing.contains("\n  AND"), "{trailing}");
+
+        let leading = format(Engine::Postgres, sql, FormatStyle::default()).unwrap();
+        assert!(leading.contains("\n  AND b = 2"), "{leading}");
+    }
+
+    #[test]
+    fn a_logical_operator_stays_leading_after_a_line_comment() {
+        let sql = "select * from t where a = 1 -- why\nand b = 2";
+        let trailing = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                logical_operators: LogicalOperatorPosition::Trailing,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(trailing.contains("-- why\n"), "{trailing}");
+        assert!(!trailing.contains("-- why AND"), "{trailing}");
+        assert!(trailing.contains("AND b = 2"), "{trailing}");
     }
 
     #[test]

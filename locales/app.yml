@@ -286,6 +286,12 @@ settings.row.alias_completions.title:         { en: "Alias tables and suggest jo
 settings.row.alias_completions.description:   { en: "Completing a table after FROM or JOIN adds a short alias, and after JOIN offers the condition its foreign keys imply.", zh-CN: "在 FROM 或 JOIN 之后补全表名时会带上简短别名，在 JOIN 之后还会提示外键隐含的连接条件。" }
 settings.row.format_keyword_case.title:       { en: "Keyword case", zh-CN: "关键字大小写" }
 settings.row.format_keyword_case.description: { en: "Format Query writes keywords in this case. Identifiers, function names, quoted names, strings and comments are left as typed.", zh-CN: "格式化查询把关键字写成这个大小写。标识符、函数名、引号名、字符串和注释保持原样。" }
+settings.row.format_function_case.title:       { en: "Function case", zh-CN: "函数名大小写" }
+settings.row.format_function_case.description: { en: "Format Query writes function names in this case. Schema names, quoted names and arguments are left as typed.", zh-CN: "格式化查询把函数名写成这个大小写。模式名、引号名和参数保持原样。" }
+settings.row.format_type_case.title:           { en: "Data type case", zh-CN: "数据类型大小写" }
+settings.row.format_type_case.description:     { en: "Format Query writes type names in this case, as in CAST(x AS int) or a column definition. A name that looks like a type but is used as an identifier is left alone.", zh-CN: "格式化查询把类型名写成这个大小写，例如 CAST(x AS int) 或列定义中的类型。用作标识符的类型同名词语保持原样。" }
+settings.row.format_logical_operators.title:   { en: "AND/OR position", zh-CN: "AND/OR 位置" }
+settings.row.format_logical_operators.description: { en: "Where a broken line's AND or OR sits: at the start of the next line, or at the end of the line before it. A line comment on the previous line keeps the operator at the start.", zh-CN: "换行后的 AND 或 OR 放在下一行行首，还是上一行行尾。上一行有行注释时仍放在行首。" }
 settings.row.format_indent.title:             { en: "Indent", zh-CN: "缩进" }
 settings.row.format_indent.description:       { en: "The indentation Format Query uses for each level: two spaces, four spaces, or a tab.", zh-CN: "格式化查询每一级使用的缩进：两个空格、四个空格或一个制表符。" }
 settings.row.format_expression_width.title:       { en: "Expression width", zh-CN: "表达式宽度" }
@@ -325,9 +331,11 @@ settings.row.fonts.grid.description:          { en: "Result cells, their headers
 settings.sorting.server:      { en: "Server", zh-CN: "服务器" }
 settings.sorting.client:      { en: "Client", zh-CN: "客户端" }
 settings.language.system:     { en: "System", zh-CN: "跟随系统" }
-settings.format.keyword_case.preserve: { en: "Leave as typed", zh-CN: "保持原样" }
-settings.format.keyword_case.upper:    { en: "Upper case", zh-CN: "大写" }
-settings.format.keyword_case.lower:    { en: "Lower case", zh-CN: "小写" }
+settings.format.case.preserve:         { en: "Leave as typed", zh-CN: "保持原样" }
+settings.format.case.upper:            { en: "Upper case", zh-CN: "大写" }
+settings.format.case.lower:            { en: "Lower case", zh-CN: "小写" }
+settings.format.logical_operators.leading:  { en: "Start of line", zh-CN: "行首" }
+settings.format.logical_operators.trailing: { en: "End of line", zh-CN: "行尾" }
 settings.format.indent.two_spaces:     { en: "2 spaces", zh-CN: "2 空格" }
 settings.format.indent.four_spaces:    { en: "4 spaces", zh-CN: "4 空格" }
 settings.format.indent.tab:            { en: "Tab", zh-CN: "制表符" }

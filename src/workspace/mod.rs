@@ -643,6 +643,9 @@ impl Workspace {
                     .map(|format| {
                         crate::sql::FormatStyle::from_stored(
                             format.keyword_case.as_deref(),
+                            format.function_case.as_deref(),
+                            format.type_case.as_deref(),
+                            format.logical_operators.as_deref(),
                             format.indent.as_deref(),
                             format.joins_on_their_own_line,
                             format.expression_width,
@@ -1277,15 +1280,46 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn set_keyword_case(
-        &mut self,
-        case: crate::sql::KeywordCase,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn set_keyword_case(&mut self, case: crate::sql::CaseStyle, cx: &mut Context<Self>) {
         if self.settings.format.keyword_case == case {
             return;
         }
         self.settings.format.keyword_case = case;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_function_case(
+        &mut self,
+        case: crate::sql::CaseStyle,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings.format.function_case == case {
+            return;
+        }
+        self.settings.format.function_case = case;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_type_case(&mut self, case: crate::sql::CaseStyle, cx: &mut Context<Self>) {
+        if self.settings.format.type_case == case {
+            return;
+        }
+        self.settings.format.type_case = case;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_logical_operators(
+        &mut self,
+        position: crate::sql::LogicalOperatorPosition,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings.format.logical_operators == position {
+            return;
+        }
+        self.settings.format.logical_operators = position;
         self.remember_profiles(cx);
         cx.notify();
     }

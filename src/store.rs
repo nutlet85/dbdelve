@@ -476,14 +476,20 @@ pub struct StoredFonts {
     pub grid: Option<String>,
 }
 
-/// Format Query's style, as written in `[settings.format]`. The two choices
-/// are strings rather than serde enums, and each value is parsed leniently:
-/// a value a newer build wrote must not fail this build's decode of the whole
-/// profile list, which would move `profiles.toml` aside.
+/// Format Query's style, as written in `[settings.format]`. The case and
+/// operator choices are strings rather than serde enums, and each value is
+/// parsed leniently: a value a newer build wrote must not fail this build's
+/// decode of the whole profile list, which would move `profiles.toml` aside.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StoredFormat {
     #[serde(default)]
     pub keyword_case: Option<String>,
+    #[serde(default)]
+    pub function_case: Option<String>,
+    #[serde(default)]
+    pub type_case: Option<String>,
+    #[serde(default)]
+    pub logical_operators: Option<String>,
     #[serde(default)]
     pub indent: Option<String>,
     #[serde(default)]
@@ -3995,6 +4001,9 @@ open_objects = []
                 welcomed: Some(true),
                 format: Some(StoredFormat {
                     keyword_case: Some("upper".into()),
+                    function_case: Some("upper".into()),
+                    type_case: Some("lower".into()),
+                    logical_operators: Some("trailing".into()),
                     indent: Some("four_spaces".into()),
                     joins_on_their_own_line: Some(true),
                     expression_width: Some(80),
@@ -4118,6 +4127,9 @@ open_objects = []
         let text = "active = \"dev\"\n\
                     [settings.format]\n\
                     keyword_case = \"shout\"\n\
+                    function_case = \"sideways\"\n\
+                    type_case = \"preserve\"\n\
+                    logical_operators = \"trailing\"\n\
                     indent = \"three_spaces\"\n\
                     joins_on_their_own_line = true\n\
                     expression_width = 500\n\
@@ -4128,6 +4140,9 @@ open_objects = []
             .and_then(|settings| settings.format)
             .expect("the table must be read");
         assert_eq!(format.keyword_case.as_deref(), Some("shout"));
+        assert_eq!(format.function_case.as_deref(), Some("sideways"));
+        assert_eq!(format.type_case.as_deref(), Some("preserve"));
+        assert_eq!(format.logical_operators.as_deref(), Some("trailing"));
         assert_eq!(format.indent.as_deref(), Some("three_spaces"));
         assert_eq!(format.joins_on_their_own_line, Some(true));
         assert_eq!(format.expression_width, Some(500));

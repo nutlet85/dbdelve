@@ -30,7 +30,8 @@ use crate::{
     palette::Mode as PaletteMode,
     scroller::{SmoothScrollable, smooth},
     sql::{
-        COMPACT_CLAUSES_MAX, EXPRESSION_WIDTH_MAX, EXPRESSION_WIDTH_MIN, IndentStyle, KeywordCase,
+        COMPACT_CLAUSES_MAX, CaseStyle, EXPRESSION_WIDTH_MAX, EXPRESSION_WIDTH_MIN, IndentStyle,
+        LogicalOperatorPosition,
     },
     theme::{
         Appearance, FontSlot, OPACITY_MAX, OPACITY_MIN, OPACITY_STEP, Theme, fonts, layout,
@@ -112,6 +113,9 @@ enum SettingId {
     AliasCompletions,
     RunUnreadable,
     FormatKeywordCase,
+    FormatFunctionCase,
+    FormatTypeCase,
+    FormatLogicalOperators,
     FormatIndent,
     FormatExpressionWidth,
     FormatCompactClauses,
@@ -237,6 +241,61 @@ fn setting_rows() -> Vec<SettingRow> {
                 "关键字",
                 "大写",
                 "小写",
+            ],
+        ),
+        row(
+            SettingId::FormatFunctionCase,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_function_case.title"),
+            t!("settings.row.format_function_case.description"),
+            &[
+                "format",
+                "function",
+                "case",
+                "upper",
+                "lower",
+                "函数",
+                "函数名",
+                "大写",
+                "小写",
+            ],
+        ),
+        row(
+            SettingId::FormatTypeCase,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_type_case.title"),
+            t!("settings.row.format_type_case.description"),
+            &[
+                "format",
+                "type",
+                "data type",
+                "case",
+                "upper",
+                "lower",
+                "类型",
+                "数据类型",
+                "大写",
+                "小写",
+            ],
+        ),
+        row(
+            SettingId::FormatLogicalOperators,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_logical_operators.title"),
+            t!("settings.row.format_logical_operators.description"),
+            &[
+                "format",
+                "and",
+                "or",
+                "operator",
+                "line",
+                "换行",
+                "运算符",
+                "行首",
+                "行尾",
             ],
         ),
         row(
@@ -924,6 +983,30 @@ fn render_row(
     }
 }
 
+/// A three-way word case, for the keyword, function and type rows.
+fn case_control(
+    id: &'static str,
+    current: CaseStyle,
+    set: fn(&mut Workspace, CaseStyle, &mut Context<Workspace>),
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
+    let t = *theme(cx);
+    let choices = [
+        (CaseStyle::Preserve, t!("settings.format.case.preserve")),
+        (CaseStyle::Upper, t!("settings.format.case.upper")),
+        (CaseStyle::Lower, t!("settings.format.case.lower")),
+    ];
+    segmented(t)
+        .children(choices.map(|(case, label)| {
+            segmented_choice((id, case as usize), label.to_string(), case == current, t).on_click(
+                cx.listener(move |workspace, _: &ClickEvent, _, cx| {
+                    set(workspace, case, cx);
+                }),
+            )
+        }))
+        .into_any_element()
+}
+
 /// A number between two buttons: `−` steps down, `+` up, and the readout
 /// between them says what the number means.
 fn width_stepper(
@@ -1058,27 +1141,47 @@ fn render_control(
                 workspace.set_alias_completions(alias, cx);
             }))
             .into_any_element(),
-        SettingId::FormatKeywordCase => {
-            let current = settings.format.keyword_case;
+        SettingId::FormatKeywordCase => case_control(
+            "format-keyword-case",
+            settings.format.keyword_case,
+            |workspace, case, cx| workspace.set_keyword_case(case, cx),
+            cx,
+        ),
+        SettingId::FormatFunctionCase => case_control(
+            "format-function-case",
+            settings.format.function_case,
+            |workspace, case, cx| workspace.set_function_case(case, cx),
+            cx,
+        ),
+        SettingId::FormatTypeCase => case_control(
+            "format-type-case",
+            settings.format.type_case,
+            |workspace, case, cx| workspace.set_type_case(case, cx),
+            cx,
+        ),
+        SettingId::FormatLogicalOperators => {
+            let current = settings.format.logical_operators;
             let choices = [
                 (
-                    KeywordCase::Preserve,
-                    t!("settings.format.keyword_case.preserve"),
+                    LogicalOperatorPosition::Leading,
+                    t!("settings.format.logical_operators.leading"),
                 ),
-                (KeywordCase::Upper, t!("settings.format.keyword_case.upper")),
-                (KeywordCase::Lower, t!("settings.format.keyword_case.lower")),
+                (
+                    LogicalOperatorPosition::Trailing,
+                    t!("settings.format.logical_operators.trailing"),
+                ),
             ];
             segmented(t)
-                .children(choices.map(|(case, label)| {
+                .children(choices.map(|(position, label)| {
                     segmented_choice(
-                        ("format-keyword-case", case as usize),
+                        ("format-logical-operators", position as usize),
                         label.to_string(),
-                        case == current,
+                        position == current,
                         t,
                     )
                     .on_click(cx.listener(
                         move |workspace, _: &ClickEvent, _, cx| {
-                            workspace.set_keyword_case(case, cx);
+                            workspace.set_logical_operators(position, cx);
                         },
                     ))
                 }))
@@ -1489,7 +1592,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 22);
+        assert_eq!(found("!keyboard").len(), 25);
     }
 
     #[test]
