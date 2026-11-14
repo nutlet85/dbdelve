@@ -101,6 +101,14 @@ pixel is still ours**: `TableDelegate::render_td` is pull-based, and the
 highlighter emits neutral token kinds that we map to our own palette. Never
 accept a library default appearance; map it to our theme tokens.
 
+## Element IDs
+
+**Two elements visible at once cannot share an `ElementId`.** An a11y node's
+id is the hash of its full element path, so a duplicate panics in a debug build
+and silently drops the second node from the a11y tree in release. The query
+pane and the status bar both show Cancel while a statement runs; they are
+`cancel-query-pane` and `cancel-query-status` for this reason.
+
 ---
 
 

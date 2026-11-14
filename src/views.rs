@@ -1424,7 +1424,9 @@ fn render_results(
             .gap(px(layout::SPACE_SM))
             .children(timer)
             .child(
-                button("cancel-query", label, Tone::Quiet, Control::Compact, t)
+                // The status bar's Cancel is on screen at the same time as
+                // this one, so the two cannot share an ElementId.
+                button("cancel-query-pane", label, Tone::Quiet, Control::Compact, t)
                     .disabled(cancelling.is_some())
                     .on_click(cx.listener(|workspace, _, window, cx| {
                         workspace.cancel_query(&CancelQuery, window, cx);
@@ -2886,11 +2888,19 @@ pub(crate) fn render_running(
                     }),
             )
             .child(
-                button("cancel-query", label, Tone::Quiet, Control::Compact, t)
-                    .disabled(cancelling.is_some())
-                    .on_click(cx.listener(|workspace, _, window, cx| {
-                        workspace.cancel_query(&CancelQuery, window, cx);
-                    })),
+                // The pane's Cancel is on screen at the same time as this
+                // one; see the overlay in render_results.
+                button(
+                    "cancel-query-status",
+                    label,
+                    Tone::Quiet,
+                    Control::Compact,
+                    t,
+                )
+                .disabled(cancelling.is_some())
+                .on_click(cx.listener(|workspace, _, window, cx| {
+                    workspace.cancel_query(&CancelQuery, window, cx);
+                })),
             )
             .into_any_element(),
     )
