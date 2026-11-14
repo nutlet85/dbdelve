@@ -5404,12 +5404,53 @@ pub(crate) fn format(
     {
         formatted
     } else {
-        case_sql(&formatted, style)
+        case_statements(engine, &formatted, style)
     };
     Ok(match style.logical_operators {
         LogicalOperatorPosition::Leading => formatted,
         LogicalOperatorPosition::Trailing => move_logical_operators(reader.as_ref(), &formatted),
     })
+}
+
+/// Whether `sql` is a SQL Server routine definition — `CREATE [OR ALTER]
+/// PROC`/`PROCEDURE` or `ALTER PROC`/`PROCEDURE`. The generic grammar reads
+/// those as an error tree, so only the routine path may walk through it.
+fn is_procedure(engine: Engine, sql: &str) -> bool {
+    if engine.spec().sql.format_dialect != FormatDialect::SqlServer {
+        return false;
+    }
+    let dialect = parser(engine.spec().sql.parser_dialect);
+    let Some(tokens) = located_tokens(dialect.as_ref(), sql) else {
+        return false;
+    };
+    let mut words = tokens.iter().filter_map(|(token, _)| match token {
+        Token::Word(word) if word.quote_style.is_none() => Some(word.value.as_str()),
+        _ => None,
+    });
+    let is_proc =
+        |word: &str| word.eq_ignore_ascii_case("PROC") || word.eq_ignore_ascii_case("PROCEDURE");
+    let Some(first) = words.next() else {
+        return false;
+    };
+    if first.eq_ignore_ascii_case("ALTER") {
+        return words.next().is_some_and(is_proc);
+    }
+    if !first.eq_ignore_ascii_case("CREATE") {
+        return false;
+    }
+    let Some(second) = words.next() else {
+        return false;
+    };
+    if second.eq_ignore_ascii_case("OR") {
+        if !words
+            .next()
+            .is_some_and(|word| word.eq_ignore_ascii_case("ALTER"))
+        {
+            return false;
+        }
+        return words.next().is_some_and(is_proc);
+    }
+    is_proc(second)
 }
 
 /// `sql` with keywords, function names and type words re-cased as `style`
@@ -5421,14 +5462,72 @@ pub(crate) fn format(
 /// knows which words are keywords, function names or types where they stand,
 /// and only those spans are touched.
 fn case_sql(sql: &str, style: FormatStyle) -> String {
-    let spans = case_spans(sql, style);
+    case_sql_with_spans(sql, case_spans(sql, style, false))
+}
+
+/// The case pass for a SQL Server routine.
+///
+/// A `CREATE PROC` is a batch whose body the generic grammar cannot place:
+/// its root is an `ERROR` node that still holds the routine's own keyword and
+/// type nodes, and the body's statements it did read. `case_spans` can walk
+/// those children when asked, but the grammar drops a few words on the way
+/// (the `PROC` abbreviation, the body's closing `END`), which the tokenizer
+/// still has. Both sets go through the same filtering, so a word the tree
+/// already named is not edited twice.
+fn case_sql_routine(engine: Engine, sql: &str, style: FormatStyle) -> String {
+    let mut spans = case_spans(sql, style, true);
+    spans.extend(routine_keyword_spans(engine, sql, style.keyword_case));
+    case_sql_with_spans(sql, spans)
+}
+
+/// Apply the case pass statement by statement, so a SQL Server routine gets
+/// the error-walking path while plain statements keep the error-refusing one.
+/// The gaps — comments and whitespace — are copied as they are.
+fn case_statements(engine: Engine, sql: &str, style: FormatStyle) -> String {
+    let dialect = parser(engine.spec().sql.parser_dialect);
+    let Some(tokens) = located_tokens(dialect.as_ref(), sql) else {
+        return sql.to_string();
+    };
+    let statements = match batches_on(engine) {
+        true => Buffer::for_engine(engine, sql).statements().to_vec(),
+        false => between_semicolons(&tokens),
+    };
+    let mut cased = String::with_capacity(sql.len());
+    let mut written = 0;
+    for statement in statements {
+        cased.push_str(&sql[written..statement.start]);
+        let text = &sql[statement.clone()];
+        cased.push_str(&if is_procedure(engine, text) {
+            case_sql_routine(engine, text, style)
+        } else {
+            case_sql(text, style)
+        });
+        written = statement.end;
+    }
+    cased.push_str(&sql[written..]);
+    cased
+}
+
+/// Apply `spans` to `sql`, outermost first, back to front.
+fn case_sql_with_spans(sql: &str, mut spans: Vec<(Range<usize>, CaseStyle)>) -> String {
     if spans.is_empty() {
         return sql.to_string();
+    }
+    // Keep the outermost span where the grammar nests two: a `TIMESTAMP` type
+    // is two keyword nodes in the grammar's tree, and both must not be edited.
+    spans.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
+    let mut filtered = Vec::with_capacity(spans.len());
+    let mut end = 0;
+    for (span, case) in spans {
+        if span.start >= end {
+            end = span.end;
+            filtered.push((span, case));
+        }
     }
     let mut cased = sql.to_string();
     // Back to front: replacing a span moves everything after it, never a span
     // that starts earlier.
-    for (span, case) in spans.iter().rev() {
+    for (span, case) in filtered.iter().rev() {
         let Some(text) = sql.get(span.clone()) else {
             continue;
         };
@@ -5443,7 +5542,18 @@ fn case_sql(sql: &str, style: FormatStyle) -> String {
 }
 
 /// The spans `case_sql` re-cases, each with the case its role asks for.
-fn case_spans(sql: &str, style: FormatStyle) -> Vec<(Range<usize>, CaseStyle)> {
+///
+/// `through_errors` walks the children of an `ERROR` node. A SQL Server
+/// routine is one such node even when its body is valid SQL: the grammar has
+/// no `CREATE PROC`, and the body it cannot place sits under the error. The
+/// keyword nodes it did place there are sound; a `keyword_name` — how it
+/// spells a name it mistook for a keyword — is skipped, so a parameter or
+/// quoted name is never renamed. Only the routine path asks for this.
+fn case_spans(
+    sql: &str,
+    style: FormatStyle,
+    through_errors: bool,
+) -> Vec<(Range<usize>, CaseStyle)> {
     let mut parser = Parser::new();
     if parser
         .set_language(&tree_sitter_sequel::LANGUAGE.into())
@@ -5457,11 +5567,10 @@ fn case_spans(sql: &str, style: FormatStyle) -> Vec<(Range<usize>, CaseStyle)> {
     let mut spans = Vec::new();
     let mut stack = vec![tree.root_node()];
     while let Some(node) = stack.pop() {
-        // An `ERROR` subtree is where the grammar did not understand the
-        // text: `:name` is read there as a `keyword_name` node. Casing a word
-        // the grammar cannot place is how a parameter name becomes a keyword,
-        // so nothing inside an error is touched.
-        if node.is_error() {
+        if node.is_error() && !through_errors {
+            continue;
+        }
+        if through_errors && node.kind() == "keyword_name" {
             continue;
         }
         if node.kind().starts_with("keyword_") {
@@ -5484,19 +5593,78 @@ fn case_spans(sql: &str, style: FormatStyle) -> Vec<(Range<usize>, CaseStyle)> {
         let mut cursor = node.walk();
         stack.extend(node.children(&mut cursor));
     }
-    // Keep the outermost span where the grammar nests two: a `TIMESTAMP` type
-    // is two keyword nodes in the grammar's tree, and both must not be edited.
-    spans.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
-    let mut filtered = Vec::with_capacity(spans.len());
-    let mut end = 0;
-    for (span, case) in spans {
-        if span.start >= end {
-            end = span.end;
-            filtered.push((span, case));
-        }
-    }
-    filtered
+    spans
 }
+
+/// The routine words the grammar drops from its error tree, or never had a
+/// node for. Only an unquoted word is taken; a quoted name is the user's.
+fn routine_keyword_spans(
+    engine: Engine,
+    sql: &str,
+    case: CaseStyle,
+) -> Vec<(Range<usize>, CaseStyle)> {
+    if case == CaseStyle::Preserve {
+        return Vec::new();
+    }
+    let dialect = parser(engine.spec().sql.parser_dialect);
+    let Some(tokens) = located_tokens(dialect.as_ref(), sql) else {
+        return Vec::new();
+    };
+    tokens
+        .into_iter()
+        .filter_map(|(token, range)| {
+            let Token::Word(word) = token else {
+                return None;
+            };
+            if word.quote_style.is_some() {
+                return None;
+            }
+            let text = sql.get(range.clone())?;
+            ROUTINE_KEYWORDS
+                .iter()
+                .any(|keyword| text.eq_ignore_ascii_case(keyword))
+                .then_some((range, case))
+        })
+        .collect()
+}
+
+/// The T-SQL routine words the generic grammar has no node for, or drops from
+/// its error: the `PROC` abbreviation, the closing `END`, and the
+/// session/control words around a body. The tree handles the SQL inside the
+/// body; these fill the gaps around it.
+const ROUTINE_KEYWORDS: &[&str] = &[
+    "ALTER",
+    "AS",
+    "BEGIN",
+    "BREAK",
+    "CATCH",
+    "CONTINUE",
+    "CREATE",
+    "DECLARE",
+    "ELSE",
+    "END",
+    "EXEC",
+    "EXECUTE",
+    "GOTO",
+    "IF",
+    "NOCOUNT",
+    "ON",
+    "OR",
+    "OUTPUT",
+    "PRINT",
+    "PROC",
+    "PROCEDURE",
+    "RAISERROR",
+    "READONLY",
+    "RECOMPILE",
+    "RETURN",
+    "SET",
+    "THROW",
+    "TRY",
+    "WAITFOR",
+    "WHILE",
+    "WITH",
+];
 
 /// The range of the name an `invocation` calls, unless it is a quoted or
 /// bracketed name, which the user spelled deliberately.
@@ -10384,6 +10552,77 @@ mod tests {
         assert!(lower.contains("count(*)"), "{lower}");
         assert!(lower.contains("schema.func(x)"), "{lower}");
         assert!(lower.contains("SELECT"), "{lower}");
+    }
+
+    #[test]
+    fn a_sql_server_routine_cases_its_keywords_and_types() {
+        let sql = "create proc Test_Usp @Parm nvarchar(10) as\nbegin\nselect [select], count(*), cast(temperature_c as int) from dbo.measurements m where temperature_c > 0 and pressure_kpa > 88;\nend";
+        let upper = FormatStyle {
+            keyword_case: CaseStyle::Upper,
+            function_case: CaseStyle::Upper,
+            type_case: CaseStyle::Upper,
+            ..FormatStyle::default()
+        };
+        let formatted = format(Engine::SqlServer, sql, upper).unwrap();
+        assert!(
+            formatted.contains("CREATE PROC Test_Usp @Parm NVARCHAR(10) AS"),
+            "{formatted}"
+        );
+        assert!(formatted.contains("BEGIN\nSELECT"), "{formatted}");
+        assert!(formatted.contains("[select]"), "{formatted}");
+        assert!(formatted.contains("COUNT(*)"), "{formatted}");
+        assert!(
+            formatted.contains("CAST(temperature_c AS INT)"),
+            "{formatted}"
+        );
+        assert!(
+            formatted.contains("FROM\n  dbo.measurements m"),
+            "{formatted}"
+        );
+        assert!(
+            formatted.contains("WHERE\n  temperature_c > 0"),
+            "{formatted}"
+        );
+        assert!(formatted.contains("AND pressure_kpa > 88"), "{formatted}");
+        assert!(formatted.trim_end().ends_with("END"), "{formatted}");
+
+        let lower = FormatStyle {
+            keyword_case: CaseStyle::Lower,
+            function_case: CaseStyle::Lower,
+            type_case: CaseStyle::Lower,
+            ..FormatStyle::default()
+        };
+        let lowered = format(Engine::SqlServer, &formatted, lower).unwrap();
+        assert!(
+            lowered.contains("create proc Test_Usp @Parm nvarchar(10) as"),
+            "{lowered}"
+        );
+        assert!(lowered.contains("begin\nselect"), "{lowered}");
+        assert!(lowered.contains("[select]"), "{lowered}");
+        assert!(lowered.contains("count(*)"), "{lowered}");
+        assert!(lowered.contains("cast(temperature_c as int)"), "{lowered}");
+        assert!(lowered.contains("from\n  dbo.measurements m"), "{lowered}");
+        assert!(lowered.contains("where\n  temperature_c > 0"), "{lowered}");
+        assert!(lowered.contains("and pressure_kpa > 88"), "{lowered}");
+        assert!(lowered.trim_end().ends_with("end"), "{lowered}");
+    }
+
+    #[test]
+    fn a_routine_leaves_a_misspelled_type_alone() {
+        let sql = "create proc Test_Usp @Parm NVachar(10) as\nbegin\nselect * from t where a > 0 and b > 1;\nend";
+        let formatted = format(
+            Engine::SqlServer,
+            sql,
+            FormatStyle {
+                keyword_case: CaseStyle::Upper,
+                type_case: CaseStyle::Lower,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(formatted.contains("NVachar"), "{formatted}");
+        assert!(formatted.contains("SELECT"), "{formatted}");
+        assert!(formatted.contains("END"), "{formatted}");
     }
 
     #[test]

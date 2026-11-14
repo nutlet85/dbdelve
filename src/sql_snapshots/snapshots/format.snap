@@ -145,8 +145,8 @@ source: src/sql_snapshots.rs
 [mssql] unended comment => error: |Not formatting: a string, quoted name or comment does not end.|
 [mssql] unended identifier => error: |Not formatting: a string, quoted name or comment does not end.|
 [mssql] very long line => |SELECT\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  a,\u{a}  b\u{a}FROM\u{a}  t|
-[mssql] go separator => |SELECT\u{a}  1\u{a}GO\u{a}select\u{a}  [x]\u{a}FROM\u{a}  [t]|
-[mssql] go with count => |select\u{a}  1\u{a}go 5\u{a}SELECT\u{a}  2|
+[mssql] go separator => |SELECT\u{a}  1\u{a}GO\u{a}SELECT\u{a}  [x]\u{a}FROM\u{a}  [t]|
+[mssql] go with count => |SELECT\u{a}  1\u{a}go 5\u{a}SELECT\u{a}  2|
 [mssql] go inline => |SELECT\u{a}  1\u{a}GO|
 [mongodb] find => |db.getCollection("a").find({ a: 1, b: { $gt: 2 } })|
 [mongodb] multi-line find => |db.getCollection("a")\u{a}  .find({\u{a}    a: 1,\u{a}    b: { $gt: 2 }\u{a}  })\u{a}  .limit(5)|
