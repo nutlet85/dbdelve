@@ -488,6 +488,11 @@ pub struct StoredFormat {
     pub indent: Option<String>,
     #[serde(default)]
     pub joins_on_their_own_line: Option<bool>,
+    #[serde(default)]
+    pub expression_width: Option<usize>,
+    /// `0` means off; a positive width is the longest clause kept on one line.
+    #[serde(default)]
+    pub compact_clauses: Option<usize>,
 }
 
 /// What the app is set to, as opposed to what a connection is. App-level for
@@ -3992,6 +3997,8 @@ open_objects = []
                     keyword_case: Some("upper".into()),
                     indent: Some("four_spaces".into()),
                     joins_on_their_own_line: Some(true),
+                    expression_width: Some(80),
+                    compact_clauses: Some(60),
                 }),
                 custom_keybindings: Some(HashMap::from([(
                     "apply_edits".to_string(),
@@ -4112,7 +4119,9 @@ open_objects = []
                     [settings.format]\n\
                     keyword_case = \"shout\"\n\
                     indent = \"three_spaces\"\n\
-                    joins_on_their_own_line = true\n";
+                    joins_on_their_own_line = true\n\
+                    expression_width = 500\n\
+                    compact_clauses = 0\n";
         let format = decode_profiles(text, &[])
             .expect("an unknown format word must not fail the file")
             .settings
@@ -4121,6 +4130,8 @@ open_objects = []
         assert_eq!(format.keyword_case.as_deref(), Some("shout"));
         assert_eq!(format.indent.as_deref(), Some("three_spaces"));
         assert_eq!(format.joins_on_their_own_line, Some(true));
+        assert_eq!(format.expression_width, Some(500));
+        assert_eq!(format.compact_clauses, Some(0));
     }
 
     #[test]

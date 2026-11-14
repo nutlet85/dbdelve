@@ -5149,25 +5149,59 @@ impl IndentStyle {
     }
 }
 
-/// What Format Query is set to: the keyword case, the indentation, and whether
-/// a JOIN starts a line of its own. `Default` is what the app starts with:
-/// upper-case keywords, two spaces and JOINs indented under FROM.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The longest parenthesized expression Format Query keeps on one line, in
+/// characters. sqlformat's own default, so a style nobody has touched formats
+/// as it did before the setting existed.
+pub(crate) const EXPRESSION_WIDTH_DEFAULT: usize = 50;
+pub(crate) const EXPRESSION_WIDTH_MIN: usize = 20;
+pub(crate) const EXPRESSION_WIDTH_MAX: usize = 120;
+
+/// A compact clause is at least this wide; below it the setting is off.
+pub(crate) const COMPACT_CLAUSES_MIN: usize = 20;
+pub(crate) const COMPACT_CLAUSES_MAX: usize = 200;
+
+/// What Format Query is set to: the keyword case, the indentation, whether a
+/// JOIN starts a line of its own, how wide a parenthesized expression may be,
+/// and whether a short clause stays on one line. `Default` is what the app
+/// starts with: upper-case keywords, two spaces, JOINs indented under FROM,
+/// expressions up to 50 characters, and every clause item on its own line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FormatStyle {
     pub(crate) keyword_case: KeywordCase,
     pub(crate) indent: IndentStyle,
     pub(crate) joins_on_their_own_line: bool,
+    /// The longest parenthesized expression kept on one line, in characters.
+    pub(crate) expression_width: usize,
+    /// `Some(width)` keeps a comma-separated clause on one line when the
+    /// clause is no longer than `width` characters; `None` gives every item
+    /// its own line.
+    pub(crate) compact_clauses: Option<usize>,
+}
+
+impl Default for FormatStyle {
+    fn default() -> Self {
+        Self {
+            keyword_case: KeywordCase::Upper,
+            indent: IndentStyle::TwoSpaces,
+            joins_on_their_own_line: false,
+            expression_width: EXPRESSION_WIDTH_DEFAULT,
+            compact_clauses: None,
+        }
+    }
 }
 
 impl FormatStyle {
     /// The style a stored `[settings.format]` table names. Each value is
     /// parsed on its own: a missing or unknown word falls back to the field's
-    /// default, so a file written by a newer build still opens. The store
-    /// keeps the words; this is where they become a style.
+    /// default, and a width outside its range is clamped, so a file written
+    /// by a newer build still opens. The store keeps the values; this is
+    /// where they become a style.
     pub(crate) fn from_stored(
         keyword_case: Option<&str>,
         indent: Option<&str>,
         joins_on_their_own_line: Option<bool>,
+        expression_width: Option<usize>,
+        compact_clauses: Option<usize>,
     ) -> Self {
         Self {
             keyword_case: match keyword_case {
@@ -5181,14 +5215,21 @@ impl FormatStyle {
                 _ => IndentStyle::TwoSpaces,
             },
             joins_on_their_own_line: joins_on_their_own_line.unwrap_or(false),
+            expression_width: expression_width
+                .unwrap_or(EXPRESSION_WIDTH_DEFAULT)
+                .clamp(EXPRESSION_WIDTH_MIN, EXPRESSION_WIDTH_MAX),
+            compact_clauses: compact_clauses.and_then(|width| {
+                (width > 0).then(|| width.clamp(COMPACT_CLAUSES_MIN, COMPACT_CLAUSES_MAX))
+            }),
         }
     }
 }
 
 /// `sql` laid out over several lines: the same tokens, indented. `style`
-/// decides the indentation, the keyword case and whether a JOIN starts a line
-/// of its own. Refused when the buffer holds a dollar-quoted body, which this
-/// cannot reflow safely.
+/// decides the indentation, the keyword case, whether a JOIN starts a line of
+/// its own, the widest parenthesized expression kept on one line, and whether
+/// a short clause keeps its items on one line. Refused when the buffer holds a
+/// dollar-quoted body, which this cannot reflow safely.
 ///
 /// Token-level reformatting rather than a round trip through the `sqlparser`
 /// AST this module already parses with for `classify`. Regenerating a statement
@@ -5271,6 +5312,8 @@ pub(crate) fn format(
         dialect: layout,
         indent: style.indent.sqlformat(),
         joins_as_top_level: style.joins_on_their_own_line,
+        max_inline_block: style.expression_width,
+        max_inline_arguments: style.compact_clauses,
         ..sqlformat::FormatOptions::default()
     };
 
@@ -9994,25 +10037,89 @@ mod tests {
     #[test]
     fn a_stored_format_style_falls_back_per_field() {
         assert_eq!(
-            FormatStyle::from_stored(None, None, None),
+            FormatStyle::from_stored(None, None, None, None, None),
             FormatStyle::default()
         );
         assert_eq!(
-            FormatStyle::from_stored(Some("shout"), Some("three_spaces"), Some(true)),
+            FormatStyle::from_stored(
+                Some("shout"),
+                Some("three_spaces"),
+                Some(true),
+                Some(500),
+                Some(1),
+            ),
             FormatStyle {
                 keyword_case: KeywordCase::Upper,
                 indent: IndentStyle::TwoSpaces,
                 joins_on_their_own_line: true,
+                expression_width: EXPRESSION_WIDTH_MAX,
+                compact_clauses: Some(COMPACT_CLAUSES_MIN),
             }
         );
         assert_eq!(
-            FormatStyle::from_stored(Some("lower"), Some("four_spaces"), Some(false)),
+            FormatStyle::from_stored(
+                Some("lower"),
+                Some("four_spaces"),
+                Some(false),
+                Some(80),
+                Some(0),
+            ),
             FormatStyle {
                 keyword_case: KeywordCase::Lower,
                 indent: IndentStyle::FourSpaces,
                 joins_on_their_own_line: false,
+                expression_width: 80,
+                compact_clauses: None,
             }
         );
+    }
+
+    #[test]
+    fn format_expression_width_splits_a_long_parenthesized_expression() {
+        let sql = "select product.price + (product.original_price * product.sales_tax) as total \
+                   from product";
+        let narrow = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                expression_width: 40,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(narrow.contains("product.price + (\n"), "{narrow}");
+
+        let wide = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                expression_width: 80,
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(
+            wide.contains("(product.original_price * product.sales_tax) AS total"),
+            "{wide}"
+        );
+    }
+
+    #[test]
+    fn format_compact_clauses_keeps_a_short_clause_on_one_line() {
+        let sql = "select a.id, b.name, count(*) as n from accounts a where a.id = b.id";
+        let compact = format(
+            Engine::Postgres,
+            sql,
+            FormatStyle {
+                compact_clauses: Some(80),
+                ..FormatStyle::default()
+            },
+        )
+        .unwrap();
+        assert!(compact.contains("a.id, b.name, count(*) AS n"), "{compact}");
+
+        let loose = format(Engine::Postgres, sql, FormatStyle::default()).unwrap();
+        assert!(loose.contains("  a.id,\n  b.name,"), "{loose}");
     }
 
     #[test]

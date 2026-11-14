@@ -76,6 +76,8 @@ impl Workspace {
                 keyword_case: Some(self.settings.format.keyword_case.as_str().to_string()),
                 indent: Some(self.settings.format.indent.as_str().to_string()),
                 joins_on_their_own_line: Some(self.settings.format.joins_on_their_own_line),
+                expression_width: Some(self.settings.format.expression_width),
+                compact_clauses: Some(self.settings.format.compact_clauses.unwrap_or(0)),
             }),
             custom_keybindings: Some(self.settings.custom_keybindings.clone()),
             theme_opacity: Some(self.settings.theme_opacity.clone()),

@@ -645,6 +645,8 @@ impl Workspace {
                             format.keyword_case.as_deref(),
                             format.indent.as_deref(),
                             format.joins_on_their_own_line,
+                            format.expression_width,
+                            format.compact_clauses,
                         )
                     })
                     .unwrap_or_default();
@@ -1302,6 +1304,34 @@ impl Workspace {
             return;
         }
         self.settings.format.joins_on_their_own_line = on;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_expression_width(&mut self, width: usize, cx: &mut Context<Self>) {
+        let width = width.clamp(
+            crate::sql::EXPRESSION_WIDTH_MIN,
+            crate::sql::EXPRESSION_WIDTH_MAX,
+        );
+        if self.settings.format.expression_width == width {
+            return;
+        }
+        self.settings.format.expression_width = width;
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_compact_clauses(&mut self, width: usize, cx: &mut Context<Self>) {
+        let width = (width > 0).then(|| {
+            width.clamp(
+                crate::sql::COMPACT_CLAUSES_MIN,
+                crate::sql::COMPACT_CLAUSES_MAX,
+            )
+        });
+        if self.settings.format.compact_clauses == width {
+            return;
+        }
+        self.settings.format.compact_clauses = width;
         self.remember_profiles(cx);
         cx.notify();
     }

@@ -288,6 +288,10 @@ settings.row.format_keyword_case.title:       { en: "Keyword case", zh-CN: "关�
 settings.row.format_keyword_case.description: { en: "Format Query writes keywords in this case. Identifiers, function names, quoted names, strings and comments are left as typed.", zh-CN: "格式化查询把关键字写成这个大小写。标识符、函数名、引号名、字符串和注释保持原样。" }
 settings.row.format_indent.title:             { en: "Indent", zh-CN: "缩进" }
 settings.row.format_indent.description:       { en: "The indentation Format Query uses for each level: two spaces, four spaces, or a tab.", zh-CN: "格式化查询每一级使用的缩进：两个空格、四个空格或一个制表符。" }
+settings.row.format_expression_width.title:       { en: "Expression width", zh-CN: "表达式宽度" }
+settings.row.format_expression_width.description: { en: "The longest parenthesized expression Format Query keeps on one line, in characters. Longer expressions are split; the rest of a line is not rewrapped.", zh-CN: "格式化查询在括号表达式的长度不超过这个字符数时保持一行，超过则拆成多行；它不会重新折行其余内容。" }
+settings.row.format_compact_clauses.title:       { en: "Compact clauses", zh-CN: "紧凑子句" }
+settings.row.format_compact_clauses.description: { en: "Keeps a comma-separated clause on one line when the clause is no longer than the chosen width; otherwise every item gets its own line. Off by default.", zh-CN: "子句长度不超过所选字符数时，逗号分隔的内容保持一行；否则每项单独一行。默认关闭。" }
 settings.row.format_joins.title:              { en: "JOIN on its own line", zh-CN: "JOIN 独立成行" }
 settings.row.format_joins.description:        { en: "Format Query starts each JOIN on a new line at the FROM level instead of indenting it under the first table.", zh-CN: "格式化查询让每个 JOIN 在 FROM 层级新起一行，而不是缩进在第一个表下面。" }
 settings.row.run_unreadable.title:            { en: "Run statements DBDelve can't parse", zh-CN: "执行 DBDelve 无法解析的语句" }
@@ -327,6 +331,8 @@ settings.format.keyword_case.lower:    { en: "Lower case", zh-CN: "小写" }
 settings.format.indent.two_spaces:     { en: "2 spaces", zh-CN: "2 空格" }
 settings.format.indent.four_spaces:    { en: "4 spaces", zh-CN: "4 空格" }
 settings.format.indent.tab:            { en: "Tab", zh-CN: "制表符" }
+settings.format.width_value:           { en: "%{width} chars", zh-CN: "%{width} 字符" }
+settings.format.compact_clauses.off:   { en: "Off", zh-CN: "关闭" }
 settings.reset:               { en: "Reset", zh-CN: "重置" }
 settings.reset_to:            { en: "Reset to %{default}", zh-CN: "重置为 %{default}" }
 settings.glass_only:          { en: " Glass themes only.", zh-CN: "仅毛玻璃主题。" }

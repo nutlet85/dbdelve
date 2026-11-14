@@ -8,7 +8,10 @@
 //! which applies the change and writes it to disk at once; there is no Save.
 
 use std::borrow::Cow;
-use std::{collections::HashMap, ops::Range};
+use std::{
+    collections::HashMap,
+    ops::{Range, RangeInclusive},
+};
 
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -26,10 +29,12 @@ use crate::{
     keybindings::{self, KeybindingSpec},
     palette::Mode as PaletteMode,
     scroller::{SmoothScrollable, smooth},
-    sql::{IndentStyle, KeywordCase},
+    sql::{
+        COMPACT_CLAUSES_MAX, EXPRESSION_WIDTH_MAX, EXPRESSION_WIDTH_MIN, IndentStyle, KeywordCase,
+    },
     theme::{
         Appearance, FontSlot, OPACITY_MAX, OPACITY_MIN, OPACITY_STEP, Theme, fonts, layout,
-        popup_theme,
+        popup_theme, theme,
     },
     ui::{
         Control, Tone, button, button_label, chord_hint, highlighted, icon_button, keycap_text,
@@ -108,6 +113,8 @@ enum SettingId {
     RunUnreadable,
     FormatKeywordCase,
     FormatIndent,
+    FormatExpressionWidth,
+    FormatCompactClauses,
     FormatJoins,
     Language,
     CheckForUpdates,
@@ -246,6 +253,34 @@ fn setting_rows() -> Vec<SettingRow> {
                 "缩进",
                 "空格",
                 "制表符",
+            ],
+        ),
+        row(
+            SettingId::FormatExpressionWidth,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_expression_width.title"),
+            t!("settings.row.format_expression_width.description"),
+            &[
+                "format",
+                "expression",
+                "width",
+                "wrap",
+                "parentheses",
+                "表达式",
+                "宽度",
+                "换行",
+                "括号",
+            ],
+        ),
+        row(
+            SettingId::FormatCompactClauses,
+            SettingsTab::General,
+            t!("settings.group.format"),
+            t!("settings.row.format_compact_clauses.title"),
+            t!("settings.row.format_compact_clauses.description"),
+            &[
+                "format", "compact", "clause", "list", "width", "紧凑", "子句", "列表", "宽度",
             ],
         ),
         row(
@@ -889,6 +924,49 @@ fn render_row(
     }
 }
 
+/// A number between two buttons: `−` steps down, `+` up, and the readout
+/// between them says what the number means.
+fn width_stepper(
+    id: &'static str,
+    value: usize,
+    range: RangeInclusive<usize>,
+    step: usize,
+    label: String,
+    set: fn(&mut Workspace, usize, &mut Context<Workspace>),
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
+    let (min, max) = (*range.start(), *range.end());
+    let t = *theme(cx);
+    let down = value.saturating_sub(step).max(min);
+    let up = value.saturating_add(step).min(max);
+    div()
+        .flex()
+        .items_center()
+        .gap(px(layout::SPACE_SM))
+        .child(
+            button((id, 0usize), "−", Tone::Quiet, Control::Compact, t)
+                .disabled(value <= min)
+                .on_click(cx.listener(move |workspace, _: &ClickEvent, _, cx| {
+                    set(workspace, down, cx);
+                })),
+        )
+        .child(
+            div()
+                .min_w(px(layout::chrome(64.)))
+                .text_center()
+                .text_size(px(layout::chrome(layout::TEXT_SM)))
+                .child(label),
+        )
+        .child(
+            button((id, 1usize), "+", Tone::Quiet, Control::Compact, t)
+                .disabled(value >= max)
+                .on_click(cx.listener(move |workspace, _: &ClickEvent, _, cx| {
+                    set(workspace, up, cx);
+                })),
+        )
+        .into_any_element()
+}
+
 fn render_control(
     workspace: &Workspace,
     id: SettingId,
@@ -1034,6 +1112,36 @@ fn render_control(
                     ))
                 }))
                 .into_any_element()
+        }
+        SettingId::FormatExpressionWidth => width_stepper(
+            "format-expression-width",
+            settings.format.expression_width,
+            EXPRESSION_WIDTH_MIN..=EXPRESSION_WIDTH_MAX,
+            10,
+            t!(
+                "settings.format.width_value",
+                width = settings.format.expression_width
+            )
+            .to_string(),
+            |workspace, width, cx| workspace.set_expression_width(width, cx),
+            cx,
+        ),
+        SettingId::FormatCompactClauses => {
+            let width = settings.format.compact_clauses.unwrap_or(0);
+            let label = if width == 0 {
+                t!("settings.format.compact_clauses.off").to_string()
+            } else {
+                t!("settings.format.width_value", width = width).to_string()
+            };
+            width_stepper(
+                "format-compact-clauses",
+                width,
+                0..=COMPACT_CLAUSES_MAX,
+                20,
+                label,
+                |workspace, width, cx| workspace.set_compact_clauses(width, cx),
+                cx,
+            )
         }
         SettingId::FormatJoins => switch(
             "format-joins-on-their-own-line",
@@ -1381,7 +1489,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 20);
+        assert_eq!(found("!keyboard").len(), 22);
     }
 
     #[test]

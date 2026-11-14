@@ -67,8 +67,11 @@ where the user can read it:
   result reads back as the same statements). Never an AST round-trip: that
   regenerates the statement and drops every comment the user wrote. Its
   style is app-wide: keyword case (`upper` by default, or `preserve`/`lower`),
-  indentation (two spaces, four, or a tab), and whether a JOIN starts a line
-  of its own. The keyword case is a second pass over the formatted text;
+  indentation (two spaces, four, or a tab), whether a JOIN starts a line
+  of its own, the widest parenthesized expression kept on one line (50
+  characters by default), and whether a short comma-separated clause keeps its
+  items on one line (off by default). The keyword case is a second pass over
+  the formatted text;
   tree-sitter-sequel marks the `keyword_*` nodes and only those spans are
   re-cased. `sqlformat`'s own `uppercase` is not used: it decides from a
   context-free reserved-word list, so a column called `status` comes back
