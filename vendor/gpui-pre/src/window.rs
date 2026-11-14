@@ -7060,6 +7060,17 @@ impl Window {
         self.a11y.debug_tree_json()
     }
 
+    /// dbdelve patch: a test window has no platform adapter to turn
+    /// accessibility on, so a test sets the flag directly and asks for the
+    /// frame that builds the tree.
+    #[cfg(debug_assertions)]
+    pub fn set_a11y_active_for_test(&mut self, active: bool) {
+        self.a11y.set_active_for_test(active);
+        if active {
+            self.refresh();
+        }
+    }
+
     /// Register a listener for an accessibility action on a specific node.
     /// The listener will be called when a screen reader requests the given
     /// action on the node identified by `node_id`.

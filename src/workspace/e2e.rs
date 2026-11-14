@@ -11,7 +11,7 @@ use gpui_component::{Root, input::InputState};
 
 use super::Workspace;
 use crate::{
-    actions::{CancelQuery, Disconnect, ImportRowsFromClipboard},
+    actions::{CancelQuery, Disconnect, ImportRowsFromClipboard, RunQuery},
     connection_form::ConnectionForm,
     db::{CancelToken, ConnectionConfig, Engine, ExternalConfig, Fetch, SshTunnel},
     explorer, keybindings,
@@ -347,6 +347,40 @@ fn the_cancel_chord_reaches_the_workspace_from_the_editor_and_the_grid(cx: &mut 
             assert_eq!(*resolved.borrow(), [true], "in grid: {in_grid}");
         }
 
+        quit(workspace, cx);
+    });
+}
+
+#[cfg(debug_assertions)]
+#[gpui::test]
+fn a_running_query_keeps_its_two_cancel_buttons_distinct_in_the_a11y_tree(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        cx.update(|window, _| window.set_a11y_active_for_test(true));
+        // Long enough to still be running when the tree below is built; the
+        // Cancel chord stops it once the tree has been read.
+        cx.simulate_input(
+            "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 20000000) SELECT count(*) FROM c;",
+        );
+        cx.update(|window, cx| window.dispatch_action(Box::new(RunQuery), cx));
+        query_tab(&workspace, cx, |tab, _, _| {
+            assert!(
+                matches!(tab.query, QueryState::Running { .. }),
+                "the query should still be running"
+            );
+        });
+        let tree = cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+            window.debug_a11y_tree_json()
+        });
+        let tree = tree.expect("the accessibility tree should be captured");
+        for id in ["cancel-query-pane", "cancel-query-status"] {
+            assert!(tree.contains(id), "the tree should contain {id}");
+        }
+        // The ids are distinct on purpose: the a11y builder panics on a
+        // duplicate node, and the check above catches either id changing.
+        cx.simulate_keystrokes("secondary-.");
+        settle(cx);
         quit(workspace, cx);
     });
 }

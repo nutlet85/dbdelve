@@ -221,6 +221,14 @@ impl A11y {
         self.active_this_frame
     }
 
+    /// dbdelve patch: a test window has no platform adapter to turn
+    /// accessibility on, so it sets the flag the adapter would have set.
+    #[cfg(debug_assertions)]
+    pub(crate) fn set_active_for_test(&mut self, active: bool) {
+        self.active_flag.store(active, Ordering::SeqCst);
+        self.sync_active_flag();
+    }
+
     pub(crate) fn set_focusable(&mut self, node_id: NodeId, focus_id: FocusId) {
         self.focus_ids.insert(node_id, focus_id);
     }
