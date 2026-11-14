@@ -2508,13 +2508,12 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(Self::open_logs_folder))
             .on_action(cx.listener(Self::copy_diagnostics))
-            // Unregistered under the import dialog, which stops only the
-            // mouse: these act on the tab it covers, out of sight, and their
-            // menu items grey out with them.
-            // A dialog with a buffer of its own holds the keyboard: the run,
-            // format and comment keys belong to that buffer's dialog, not to
-            // the query tab behind it, and a `cmd-enter` aimed at a definition
-            // must not run whatever statement is underneath.
+            // A dialog with a buffer of its own holds the keyboard: the run
+            // and comment keys belong to that buffer's dialog, not to the
+            // query tab behind it, and a `cmd-enter` aimed at a definition
+            // must not run whatever statement is underneath. Format Query is
+            // registered outside this gate: it formats the definition
+            // editor's own buffer when that dialog is open.
             .when(
                 profile.session.import_rows.is_none()
                     && profile.session.definition_editor.is_none()
@@ -2523,7 +2522,6 @@ impl Render for Workspace {
                 |root| {
                     root.on_action(cx.listener(Self::run_query))
                         .on_action(cx.listener(Self::explain_query))
-                        .on_action(cx.listener(Self::format_query))
                         .on_action(cx.listener(Self::toggle_comment))
                         .on_action(cx.listener(Self::cancel_query))
                         .on_action(cx.listener(Self::apply_edits))
@@ -2560,6 +2558,7 @@ impl Render for Workspace {
                         .on_action(cx.listener(Self::toggle_results_focus))
                 },
             )
+            .on_action(cx.listener(Self::format_query))
             .size_full()
             // The shell is the frost: titlebar, sidebar and status bar paint
             // nothing of their own, they are the glass the window root already

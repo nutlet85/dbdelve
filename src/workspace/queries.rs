@@ -5,6 +5,7 @@
 
 use std::ops::Range;
 
+use gpui_component::input::EditorState;
 use gpui_component::table::TableState;
 
 use crate::db::{Feed, Fetch, QueryResult, Row, Stopped};
@@ -3057,13 +3058,33 @@ impl Workspace {
         if self.import_covers() {
             return;
         }
-        let Some(profile) = self.profile() else {
+        let editor = {
+            let Some(profile) = self.profile() else {
+                return;
+            };
+            match profile.session.definition_editor.as_ref() {
+                Some(definition) => definition.editor.clone(),
+                None => profile
+                    .session
+                    .active_query_tab()
+                    .map(|tab| tab.editor.clone()),
+            }
+        };
+        let Some(editor) = editor else {
             return;
         };
-        let Some(tab) = profile.session.active_query_tab() else {
-            return;
-        };
-        let editor = tab.editor.clone();
+        self.format_editor(editor, window, cx);
+    }
+
+    /// Rewrite `editor`'s selection as formatted SQL, or its whole buffer when
+    /// nothing is selected. The query buffer and a definition dialog share it:
+    /// both are the user's SQL, and Format is the same command in either.
+    fn format_editor(
+        &mut self,
+        editor: Entity<EditorState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let (text, selection, cursor) = {
             let editor = editor.read(cx);
             (

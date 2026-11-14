@@ -39,7 +39,7 @@ pub(crate) struct DefinitionEditor {
     /// The statement the server's definition was rewritten into, which the
     /// editor is built over at the first frame after it lands.
     text: String,
-    editor: Option<Entity<EditorState>>,
+    pub(crate) editor: Option<Entity<EditorState>>,
     load: Load,
     pub(crate) error: Option<String>,
     pub(crate) applying: bool,
@@ -343,6 +343,20 @@ impl Workspace {
                                 .flex()
                                 .justify_end()
                                 .gap(px(layout::SPACE_SM))
+                                .child(
+                                    button(
+                                        "definition-format",
+                                        t!("editor.format_query"),
+                                        Tone::Quiet,
+                                        Control::Standard,
+                                        t,
+                                    )
+                                    .on_click(cx.listener(
+                                        |workspace, _: &ClickEvent, window, cx| {
+                                            workspace.format_query(&FormatQuery, window, cx);
+                                        },
+                                    )),
+                                )
                                 .child(
                                     self.choice(
                                         "definition-editor",
