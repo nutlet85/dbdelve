@@ -864,6 +864,13 @@ impl SchemaCompletions {
             return (Vec::new(), wanted);
         }
 
+        // A number is a literal, not an identifier being typed. Without this
+        // the fuzzy matcher finds the digits inside LOG10 and opens the
+        // function menu after `> 10`.
+        if !prefix.is_empty() && prefix.bytes().all(|byte| byte.is_ascii_digit()) {
+            return (Vec::new(), wanted);
+        }
+
         let statement = sql::Buffer::parse(sql)
             .statement_at(offset)
             .filter(|range| range.contains(&word.start) || range.end >= word.start)
@@ -1782,6 +1789,14 @@ mod tests {
             !offered.iter().any(|label| label == "AND"),
             "a relation position offered a keyword: {offered:?}"
         );
+    }
+
+    #[test]
+    fn a_number_does_not_open_the_function_menu() {
+        // Fuzzy matching would otherwise find the digits inside LOG10 and
+        // offer it after `> 10`, where a literal is being typed.
+        let offered = labels_on(Engine::SqlServer, "SELECT * FROM accounts WHERE id > 10|");
+        assert!(offered.is_empty(), "{offered:?}");
     }
 
     #[test]
