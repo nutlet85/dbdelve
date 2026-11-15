@@ -237,6 +237,8 @@ pub mod icon {
     pub const FORMAT: &str = "icons/wand-sparkles.svg";
     /// Toggle Line Comment: the quote a comment reads as.
     pub const COMMENT: &str = "icons/message-square-quote.svg";
+    /// The settings panel's Editor tab: the query buffer and its helpers.
+    pub const EDITOR: &str = "icons/square-pen.svg";
 }
 
 pub fn icon(path: &'static str) -> Icon {

@@ -245,29 +245,31 @@ settings.try_another:      { en: "Try another word.", zh-CN: "换个词试试。
 
 # —— 设置页：标签页（name / title / description）——
 settings.tab.general.name:             { en: "General", zh-CN: "常规" }
-settings.tab.general.title:            { en: "Results, sorting, formatting and updates", zh-CN: "结果、排序、格式化与更新" }
-settings.tab.general.description:      { en: "How much a query brings back, how a header click sorts, how Format Query lays out a statement, whether DBDelve looks for a new release, and how much it logs.", zh-CN: "一次查询取回多少行、表头点击如何排序、格式化查询如何排版语句、是否检查新版本，以及记录多少日志。" }
+settings.tab.general.title:            { en: "App-wide behaviour", zh-CN: "应用级行为" }
+settings.tab.general.description:      { en: "What DBDelve does as an app, rather than anything about one connection.", zh-CN: "DBDelve 作为整体应用的行为，与任何单个连接无关。" }
+settings.tab.editor.name:              { en: "Editor", zh-CN: "编辑器" }
+settings.tab.editor.title:             { en: "Completions and formatting", zh-CN: "补全与格式化" }
+settings.tab.editor.description:       { en: "How the query buffer completes names, and how Format Query lays out a statement.", zh-CN: "查询缓冲区如何补全名称，以及格式化查询如何排版语句。" }
 settings.tab.appearance.name:          { en: "Appearance", zh-CN: "外观" }
-settings.tab.appearance.title:         { en: "Theme, glass and titlebar", zh-CN: "主题、毛玻璃与标题栏" }
+settings.tab.appearance.title:         { en: "Theme, glass, fonts and titlebar", zh-CN: "主题、毛玻璃、字体与标题栏" }
 settings.tab.appearance.description:   { en: "What DBDelve looks like, and how much of the desktop shows through it.", zh-CN: "DBDelve 的外观，以及桌面透出多少。" }
-settings.tab.fonts.name:               { en: "Fonts", zh-CN: "字体" }
-settings.tab.fonts.title:              { en: "Faces and sizes", zh-CN: "字形与字号" }
-settings.tab.fonts.description:        { en: "The chrome, the editor and the grid each have their own face and size.", zh-CN: "界面、编辑器与表格网格各自拥有独立的字形与字号。" }
 settings.tab.keyboard.name:            { en: "Keyboard", zh-CN: "快捷键" }
 settings.tab.keyboard.title:           { en: "Shortcuts", zh-CN: "快捷键" }
-settings.tab.keyboard.description:     { en: "Every action you can bind. A change takes effect the next time DBDelve starts.", zh-CN: "所有可绑定的动作。更改在下次启动 DBDelve 时生效。" }
+settings.tab.keyboard.description:     { en: "Every action you can bind, applied the next time DBDelve starts.", zh-CN: "所有可绑定的动作，更改在下次启动时生效。" }
 
 # —— 设置页：分组 ——
 settings.group.results:         { en: "Results", zh-CN: "结果" }
 settings.group.language:        { en: "Language", zh-CN: "语言" }
-settings.group.editor:          { en: "Editor", zh-CN: "编辑器" }
+settings.group.completions:     { en: "Completions", zh-CN: "补全" }
 settings.group.format:          { en: "Formatting", zh-CN: "格式化" }
 settings.group.queries:         { en: "Queries", zh-CN: "查询" }
 settings.group.updates:         { en: "Updates", zh-CN: "更新" }
 settings.group.diagnostics:     { en: "Diagnostics", zh-CN: "诊断" }
 settings.group.theme:           { en: "Theme", zh-CN: "主题" }
 settings.group.window:          { en: "Window", zh-CN: "窗口" }
-settings.group.faces:           { en: "Faces", zh-CN: "字形" }
+settings.group.faces:           { en: "Fonts", zh-CN: "字体" }
+
+settings.group.editor:          { en: "Editor", zh-CN: "编辑器" }
 settings.group.everywhere:      { en: "Everywhere", zh-CN: "任意位置" }
 settings.group.palette:         { en: "Palette", zh-CN: "命令面板" }
 settings.group.results_grid:    { en: "Results grid", zh-CN: "结果表格" }
@@ -279,35 +281,35 @@ settings.group.explorer:        { en: "Sidebar", zh-CN: "边栏" }
 settings.row.row_limit.title:                 { en: "Row limit", zh-CN: "行数上限" }
 settings.row.row_limit.description:           { en: "The most rows a new tab keeps from one statement. Tabs already open keep theirs.", zh-CN: "一个新标签页从单条语句保留的最多行数。已打开的标签页保持各自的上限。" }
 settings.row.default_sorting.title:           { en: "Default sorting", zh-CN: "默认排序" }
-settings.row.default_sorting.description:     { en: "How a new tab sorts on a header click. Server runs the query again, sorted by the database; Client reorders the rows already loaded, so a table sorts only the page on screen. Tabs already open keep theirs; each can be switched from its status bar.", zh-CN: "新标签页在表头点击时如何排序。服务器：重新向数据库请求排序后的结果；客户端：只重排已加载的行，因此表格只对屏幕上这一页排序。已打开的标签页保持各自的设置；可在各自的状态栏切换。" }
+settings.row.default_sorting.description:     { en: "How a new tab sorts on a header click: Server asks the database again, Client reorders only the rows already loaded. Tabs already open keep theirs.", zh-CN: "新标签页点击表头时如何排序：服务器让数据库重新排序，客户端只重排已加载的行。已打开的标签页保持各自的设置。" }
 settings.row.language.title:                  { en: "Language", zh-CN: "语言" }
 settings.row.language.description:            { en: "Interface language; takes effect immediately.", zh-CN: "界面语言；立即生效。" }
-settings.row.alias_completions.title:         { en: "Alias tables and suggest joins", zh-CN: "表名带别名，并提示 JOIN 条件" }
-settings.row.alias_completions.description:   { en: "Completing a table after FROM or JOIN adds a short alias, and after JOIN offers the condition its foreign keys imply.", zh-CN: "在 FROM 或 JOIN 之后补全表名时会带上简短别名，在 JOIN 之后还会提示外键隐含的连接条件。" }
+settings.row.alias_completions.title:         { en: "Alias tables and suggest JOIN conditions", zh-CN: "表名带别名，并提示 JOIN 条件" }
+settings.row.alias_completions.description:   { en: "Completing a table name after FROM or JOIN adds a short alias; where a foreign key links it to a table already in the statement, the ON condition it would write is offered too.", zh-CN: "在 FROM 或 JOIN 后补全表名时附带简短别名；若该表与语句中已有的表存在外键，还会一并给出可写入的 ON 条件。" }
 settings.row.format_keyword_case.title:       { en: "Keyword case", zh-CN: "关键字大小写" }
-settings.row.format_keyword_case.description: { en: "Format Query writes keywords in this case. Identifiers, function names, quoted names, strings and comments are left as typed.", zh-CN: "格式化查询把关键字写成这个大小写。标识符、函数名、引号名、字符串和注释保持原样。" }
+settings.row.format_keyword_case.description: { en: "The case Format Query writes keywords in; everything else is left as typed.", zh-CN: "格式化查询书写关键字时使用的大小写；其余内容保持原样。" }
 settings.row.format_function_case.title:       { en: "Function case", zh-CN: "函数名大小写" }
-settings.row.format_function_case.description: { en: "Format Query writes function names in this case. Schema names, quoted names and arguments are left as typed.", zh-CN: "格式化查询把函数名写成这个大小写。模式名、引号名和参数保持原样。" }
+settings.row.format_function_case.description: { en: "The case Format Query writes function names in; everything else is left as typed.", zh-CN: "格式化查询书写函数名时使用的大小写；其余内容保持原样。" }
 settings.row.format_type_case.title:           { en: "Data type case", zh-CN: "数据类型大小写" }
-settings.row.format_type_case.description:     { en: "Format Query writes type names in this case, as in CAST(x AS int) or a column definition. A name that looks like a type but is used as an identifier is left alone.", zh-CN: "格式化查询把类型名写成这个大小写，例如 CAST(x AS int) 或列定义中的类型。用作标识符的类型同名词语保持原样。" }
+settings.row.format_type_case.description:     { en: "The case Format Query writes type names in, as in CAST(x AS int) or a column definition.", zh-CN: "格式化查询书写类型名时使用的大小写，例如 CAST(x AS int) 或列定义。" }
 settings.row.format_logical_operators.title:   { en: "AND/OR position", zh-CN: "AND/OR 位置" }
 settings.row.format_logical_operators.description: { en: "Where a broken line's AND or OR sits: at the start of the next line, or at the end of the line before it. A line comment on the previous line keeps the operator at the start.", zh-CN: "换行后的 AND 或 OR 放在下一行行首，还是上一行行尾。上一行有行注释时仍放在行首。" }
 settings.row.format_indent.title:             { en: "Indent", zh-CN: "缩进" }
 settings.row.format_indent.description:       { en: "The indentation Format Query uses for each level: two spaces, four spaces, or a tab.", zh-CN: "格式化查询每一级使用的缩进：两个空格、四个空格或一个制表符。" }
 settings.row.format_expression_width.title:       { en: "Expression width", zh-CN: "表达式宽度" }
-settings.row.format_expression_width.description: { en: "The longest parenthesized expression Format Query keeps on one line, in characters. Longer expressions are split; the rest of a line is not rewrapped.", zh-CN: "格式化查询在括号表达式的长度不超过这个字符数时保持一行，超过则拆成多行；它不会重新折行其余内容。" }
+settings.row.format_expression_width.description: { en: "The longest parenthesized expression, in characters, Format Query keeps on one line; longer ones are split.", zh-CN: "括号表达式不超过这个字符数时保持一行，超过则拆分。" }
 settings.row.format_compact_clauses.title:       { en: "Compact clauses", zh-CN: "紧凑子句" }
-settings.row.format_compact_clauses.description: { en: "Keeps a comma-separated clause on one line when the clause is no longer than the chosen width; otherwise every item gets its own line. Off by default.", zh-CN: "子句长度不超过所选字符数时，逗号分隔的内容保持一行；否则每项单独一行。默认关闭。" }
+settings.row.format_compact_clauses.description: { en: "Keeps a comma-separated clause on one line when it is no longer than the chosen width; otherwise every item gets its own line.", zh-CN: "子句长度不超过所选字符数时，逗号分隔的内容保持一行；否则每项单独一行。" }
 settings.row.format_joins.title:              { en: "JOIN on its own line", zh-CN: "JOIN 独立成行" }
 settings.row.format_joins.description:        { en: "Format Query starts each JOIN on a new line at the FROM level instead of indenting it under the first table.", zh-CN: "格式化查询让每个 JOIN 在 FROM 层级新起一行，而不是缩进在第一个表下面。" }
 settings.row.run_unreadable.title:            { en: "Run statements DBDelve can't parse", zh-CN: "执行 DBDelve 无法解析的语句" }
-settings.row.run_unreadable.description:      { en: "Runs a statement DBDelve can't parse without asking first. DBDelve can't tell whether such a statement reads, writes or drops, so it can't check it against the connection's mode: in Read-write or Full, that includes writes and drops. Where nothing on the server holds a connection to Read-only, it still asks to switch to Read-write.", zh-CN: "不再先询问就直接执行 DBDelve 无法解析的语句。这类语句究竟是读、写还是删除，DBDelve 判断不出来，因此也无法按连接的模式检查：在读写或完全模式下，其中就包含写入和删除。如果服务器侧没有任何东西把连接限制为只读，它仍会先询问是否切换到读写模式。" }
+settings.row.run_unreadable.description:      { en: "Runs a statement DBDelve can't parse without asking first; such a statement can read, write or drop anything.", zh-CN: "不先询问就执行 DBDelve 无法解析的语句；这类语句可能读、写或删除任何数据。" }
 settings.row.qualify_completions.title:       { en: "Qualify table names", zh-CN: "表名带模式" }
 settings.row.qualify_completions.description: { en: "Completing a table name inserts it with its schema, as schema.table.", zh-CN: "补全表名时连同模式一起插入，形如 schema.table。" }
 settings.row.check_for_updates.title:         { en: "Check for updates", zh-CN: "检查更新" }
 settings.row.check_for_updates.description:   { en: "One request to GitHub at launch to see whether a newer release exists. Nothing is sent about you or your databases.", zh-CN: "启动时向 GitHub 发一次请求，检查是否有新版本。不会发送关于你或你的数据库的任何信息。" }
 settings.row.verbose_logging.title:           { en: "Verbose logging", zh-CN: "详细日志" }
-settings.row.verbose_logging.description:     { en: "Adds hostnames, database names, connection errors (which can include the username) and database drivers' own messages to the log, from the moment it is switched on. Driver messages aren't filtered and can contain anything the server sends. Open Logs Folder in the Help menu shows the files.", zh-CN: "开启那一刻起，向日志追加主机名、数据库名、连接错误（可能包含用户名）以及数据库驱动自身的消息。驱动消息不经过滤，可能包含服务器发来的任何内容。帮助菜单里的打开日志文件夹可查看这些文件。" }
+settings.row.verbose_logging.description:     { en: "From the moment it is switched on, the log also holds hostnames, database names, connection errors and the drivers' own unfiltered messages.", zh-CN: "开启那一刻起，日志还会记录主机名、数据库名、连接错误以及驱动自身未过滤的消息。" }
 settings.row.match_system_appearance.title:   { en: "Match system appearance", zh-CN: "跟随系统外观" }
 settings.row.match_system_appearance.description: { en: "Switch themes when the system turns light or dark.", zh-CN: "系统切换浅色或深色时切换主题。" }
 settings.row.theme.title:                     { en: "Theme", zh-CN: "主题" }
@@ -317,7 +319,7 @@ settings.row.dark_theme.description:          { en: "Used while the system is da
 settings.row.light_theme.title:               { en: "Light theme", zh-CN: "浅色主题" }
 settings.row.light_theme.description:         { en: "Used while the system is light.", zh-CN: "系统处于浅色时使用。" }
 settings.row.opacity.title:                   { en: "Opacity", zh-CN: "透明度" }
-settings.row.opacity.description:             { en: "Everything else is relative to this. The chrome, the editor and the results grid are tints over the frost set here, so they move with it rather than being set apiece.", zh-CN: "其余一切都相对此值。界面、编辑器与结果表格都是盖在毛玻璃上的色层，在这里设定，随它一起移动，而非各自为政。" }
+settings.row.opacity.description:             { en: "How transparent the window's frosted base is; the chrome, the editor and the grid follow it.", zh-CN: "窗口毛玻璃底面的透明程度；界面、编辑器与表格都随之变化。" }
 settings.row.color_titlebar.title:            { en: "Color the titlebar", zh-CN: "标题栏着色" }
 settings.row.color_titlebar.description:      { en: "Paint the titlebar in the connection's color.", zh-CN: "用连接的颜色为标题栏上色。" }
 settings.row.fonts.chrome.title:              { en: "Chrome", zh-CN: "界面" }
