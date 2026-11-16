@@ -22,6 +22,7 @@
 
 use std::sync::Arc;
 
+use rust_i18n::t;
 use rustls::{
     ClientConfig, DigitallySignedStruct, Error, RootCertStore, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
@@ -68,31 +69,23 @@ impl SslMode {
         }
     }
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Disable => "Disable",
-            Self::Prefer => "Prefer",
-            Self::Require => "Require",
-            Self::VerifyCa => "Verify CA",
-            Self::VerifyFull => "Verify Full",
-        }
+    /// The mode's entry in the locale table, its slug with `-` spelled `_`.
+    fn key(self, part: &str) -> String {
+        format!(
+            "connection.sslmode.{}.{part}",
+            self.as_str().replace('-', "_")
+        )
+    }
+
+    pub fn label(self) -> String {
+        t!(self.key("label")).to_string()
     }
 
     /// What the mode actually promises, for the line under the selector. A
     /// person choosing between five words deserves to know that two of them
     /// encrypt without checking who answered.
-    pub fn explanation(self) -> &'static str {
-        match self {
-            Self::Disable => "Never encrypted.",
-            Self::Prefer => "Encrypted when the server offers it. The certificate is not checked.",
-            Self::Require => "Always encrypted. The certificate is not checked.",
-            Self::VerifyCa => {
-                "The certificate must be signed by a trusted authority. Its host name is not checked."
-            }
-            Self::VerifyFull => {
-                "The certificate must be signed by a trusted authority and issued for this host."
-            }
-        }
+    pub fn explanation(self) -> String {
+        t!(self.key("explanation")).to_string()
     }
 
     /// An empty value is the default rather than an error: that is what a URL

@@ -4,6 +4,8 @@
 //! next/previous connection keep to; nothing about a connection itself
 //! changes, so its tabs, saved queries and history come back as they were.
 
+use rust_i18n::t;
+
 use super::*;
 
 impl Workspace {
@@ -69,7 +71,8 @@ impl Workspace {
     ) {
         let prefill = renaming.clone().unwrap_or_default();
         let input = cx.new(|cx| {
-            let mut input = InputState::new(window, cx).placeholder("Project name");
+            let mut input =
+                InputState::new(window, cx).placeholder(t!("project.name_placeholder").to_string());
             input.set_value(prefill, window, cx);
             input
         });

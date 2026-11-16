@@ -271,7 +271,18 @@ fn setting_rows() -> Vec<SettingRow> {
             t!("settings.group.completions"),
             t!("settings.row.alias_completions.title"),
             t!("settings.row.alias_completions.description"),
-            &["autocomplete", "completion", "alias", "join", "foreign key"],
+            &[
+                "autocomplete",
+                "completion",
+                "alias",
+                "join",
+                "foreign key",
+                "on",
+                "别名",
+                "表名",
+                "补全",
+                "外键",
+            ],
         ),
         row(
             SettingId::FormatKeywordCase,
@@ -803,9 +814,22 @@ fn render_header(workspace: &Workspace, t: Theme, cx: &mut Context<Workspace>) -
         .child(
             div()
                 .flex_1()
-                .text_size(px(layout::chrome(layout::TEXT_LG)))
-                .font_weight(FontWeight::MEDIUM)
-                .child(t!("settings.title").to_string()),
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(1.))
+                .child(
+                    div()
+                        .text_size(px(layout::chrome(layout::TEXT_LG)))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(t!("settings.title").to_string()),
+                )
+                .child(
+                    div()
+                        .text_size(px(layout::chrome(layout::TEXT_XS)))
+                        .text_color(t.text_muted)
+                        .child(t!("settings.version", version = env!("CARGO_PKG_VERSION"))),
+                ),
         )
         .child(
             icon_button(
@@ -1113,8 +1137,8 @@ fn render_control(
             segmented(t)
                 .children(choices.map(|(index, code, label)| {
                     segmented_choice(("language", index), label, code == current, t).on_click(
-                        cx.listener(move |workspace, _: &ClickEvent, _, cx| {
-                            workspace.set_language(code.map(str::to_string), cx);
+                        cx.listener(move |workspace, _: &ClickEvent, window, cx| {
+                            workspace.set_language(code.map(str::to_string), window, cx);
                         }),
                     )
                 }))
@@ -1681,6 +1705,26 @@ mod tests {
                 SettingId::Opacity
             ]
         );
+    }
+
+    #[test]
+    fn the_alias_row_is_found_by_its_chinese_words() {
+        for word in ["别名", "表名", "补全", "外键"] {
+            assert!(found(word).contains(&SettingId::AliasCompletions), "{word}");
+        }
+    }
+
+    #[test]
+    fn the_alias_row_says_how_a_join_condition_is_offered() {
+        for locale in ["en", "zh-CN"] {
+            let text = t!(
+                "settings.row.alias_completions.description",
+                locale = locale
+            );
+            for word in ["FROM", "JOIN", "ON"] {
+                assert!(text.contains(word), "{locale}: {text}");
+            }
+        }
     }
 
     #[test]

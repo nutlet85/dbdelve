@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use gpui::{App, AppContext, Context, Entity, SharedString, Subscription, Task, TextAlign, Window};
 use gpui_component::input::{InputEvent, InputState};
+use rust_i18n::t;
 
 use crate::{
     Workspace,
@@ -123,9 +124,10 @@ pub(crate) struct ConnectionForm {
     /// the same ones, are there from the start rather than fading in again.
     pub(crate) backdrop_shown: bool,
     /// The target the target-dependent placeholders were last written for,
-    /// whether a service was typed then, the root certificate's, and the
-    /// password's.
-    pub(crate) placeholders_for: Option<(Target, bool, &'static str, &'static str)>,
+    /// whether a service was typed then, the root certificate's hint, and the
+    /// Password's. What the hints spell is read from the locale, so this
+    /// compares without allocating and a language change clears it.
+    pub(crate) placeholders_for: Option<(Target, bool, RootCertificateHint, PasswordHint)>,
     /// The URL field as of its last change, to tell a URL pasted whole from
     /// one being typed.
     pub(crate) last_url: SharedString,
@@ -214,7 +216,9 @@ impl ConnectionForm {
             _ => None,
         };
 
-        let url = cx.new(|cx| InputState::new(window, cx).placeholder("Paste a connection URL"));
+        let url = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("connection.placeholder.url").to_string())
+        });
         let name = cx.new(|cx| {
             InputState::new(window, cx).default_value(value(
                 server
@@ -230,7 +234,7 @@ impl ConnectionForm {
         });
         let connection = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("DSN or connection string")
+                .placeholder(t!("connection.placeholder.dsn").to_string())
                 .default_value(value(external.map(|external| external.connection.as_str())))
         });
         let host = cx.new(|cx| {
@@ -265,7 +269,7 @@ impl ConnectionForm {
         });
         let password = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Optional")
+                .placeholder(t!("connection.placeholder.optional").to_string())
                 .default_value(value(
                     server
                         .map(|server| server.password.as_str())
@@ -277,7 +281,7 @@ impl ConnectionForm {
         let command = server.and_then(|server| server.password_command.as_ref());
         let password_command = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("May use %HOSTNAME% %PORT% %USERNAME%")
+                .placeholder(t!("connection.placeholder.password_command").to_string())
                 .default_value(value(command.map(|command| command.command.as_str())))
         });
         let password_expires = cx.new(|cx| {
@@ -292,34 +296,40 @@ impl ConnectionForm {
 
         let root_certificate = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("System trust store")
+                .placeholder(t!("connection.placeholder.system_trust_store").to_string())
                 .default_value(value(
                     server.and_then(|server| server.root_certificate.as_deref()),
                 ))
         });
         let ssh = config.and_then(ConnectionConfig::ssh);
         let [ssh_host, ssh_port, ssh_user, ssh_identity_file, ssh_run_as] = ssh_fields(ssh);
-        let mut input = |placeholder: &'static str, value: String| {
+        let mut input = |placeholder: String, value: String| {
             cx.new(|cx| {
                 InputState::new(window, cx)
                     .placeholder(placeholder)
                     .default_value(value)
             })
         };
-        let ssh_host = input("Host or ~/.ssh/config alias", ssh_host);
-        let ssh_port = input("22", ssh_port);
-        let ssh_user = input("Optional", ssh_user);
-        let ssh_identity_file = input("SSH agent", ssh_identity_file);
-        let ssh_run_as = input("SSH user", ssh_run_as);
+        let ssh_host = input(t!("connection.placeholder.ssh_host").to_string(), ssh_host);
+        let ssh_port = input("22".to_string(), ssh_port);
+        let ssh_user = input(t!("connection.placeholder.optional").to_string(), ssh_user);
+        let ssh_identity_file = input(
+            t!("connection.placeholder.ssh_identity_file").to_string(),
+            ssh_identity_file,
+        );
+        let ssh_run_as = input(
+            t!("connection.placeholder.ssh_user").to_string(),
+            ssh_run_as,
+        );
         let ssh_passphrase = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Optional")
+                .placeholder(t!("connection.placeholder.optional").to_string())
                 .default_value(value(ssh.map(|ssh| ssh.passphrase.as_str())))
                 .masked(true)
         });
         let account_name = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Account identifier")
+                .placeholder(t!("connection.placeholder.account").to_string())
                 .default_value(value(account.map(|account| account.account.as_str())))
         });
         let private_key = cx.new(|cx| {
@@ -329,14 +339,14 @@ impl ConnectionForm {
         });
         let warehouse = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Optional")
+                .placeholder(t!("connection.placeholder.optional").to_string())
                 .default_value(value(
                     account.and_then(|account| account.warehouse.as_deref()),
                 ))
         });
         let role = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Optional")
+                .placeholder(t!("connection.placeholder.optional").to_string())
                 .default_value(value(account.and_then(|account| account.role.as_deref())))
         });
         let options = cx.new(|cx| {
@@ -346,13 +356,15 @@ impl ConnectionForm {
         });
         let service = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Optional")
+                .placeholder(t!("connection.placeholder.optional").to_string())
                 .default_value(value(config.and_then(ConnectionConfig::service)))
         });
-        let project_name = cx.new(|cx| InputState::new(window, cx).placeholder("Project name"));
+        let project_name = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("project.name_placeholder").to_string())
+        });
         let statement_timeout = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("No limit")
+                .placeholder(t!("row_limit.none").to_string())
                 .default_value(
                     config
                         .map(ConnectionConfig::statement_timeout)
@@ -524,7 +536,9 @@ impl ConnectionForm {
         }
         let statement_timeout = self.statement_timeout(cx)?;
         let file = || match read(&self.path) {
-            path if path.is_empty() => Err("Database file is required.".to_string()),
+            path if path.is_empty() => {
+                Err(t!("connection.error.database_file_required").to_string())
+            }
             path => Ok(path),
         };
         let config = match self.engine {
@@ -553,10 +567,10 @@ impl ConnectionForm {
             Engine::MariaDb => ConnectionConfig::MariaDb(self.server(cx)?),
             Engine::SqlServer => ConnectionConfig::SqlServer(self.server(cx)?),
             // A blank username sends none, and the server signs in `default`.
-            Engine::ClickHouse => ConnectionConfig::ClickHouse(self.server_requiring(&[], cx)?),
+            Engine::ClickHouse => ConnectionConfig::ClickHouse(self.server_requiring(false, cx)?),
             Engine::Snowflake => ConnectionConfig::Snowflake(self.account(cx)?),
             Engine::MongoDb => {
-                let mut server = self.server_requiring(&[], cx)?;
+                let mut server = self.server_requiring(false, cx)?;
                 // Hidden while SRV is on, so whatever it held is not asked for.
                 if self.srv {
                     server.port = None;
@@ -570,7 +584,7 @@ impl ConnectionForm {
             }
             // An ACL user and a password are both optional: a server with
             // neither configured takes any connection.
-            Engine::Redis => ConnectionConfig::Redis(self.server_requiring(&[], cx)?),
+            Engine::Redis => ConnectionConfig::Redis(self.server_requiring(false, cx)?),
             Engine::Generic => return Err(crate::db::GENERIC_REFUSAL.to_string()),
         };
         self.named(config, cx)
@@ -586,7 +600,7 @@ impl ConnectionForm {
             name => name.to_string(),
         };
         if name.is_empty() {
-            return Err("Display name is required.".into());
+            return Err(t!("connection.error.display_name_required").to_string());
         }
         Ok((name, config))
     }
@@ -655,15 +669,15 @@ impl ConnectionForm {
         };
         let passphrase = password_placeholder(false, self.editing.is_some());
         for (input, placeholder) in [
-            (&self.root_certificate, SharedString::from(root_certificate)),
-            (&self.password, password.into()),
-            (&self.ssh_passphrase, passphrase.into()),
-            (&self.name, SharedString::from(blank.name)),
-            (&self.host, blank.host.into()),
-            (&self.port, blank.port.into()),
-            (&self.database, blank.database.into()),
-            (&self.user, blank.user.into()),
-            (&self.path, blank.path.into()),
+            (&self.root_certificate, root_certificate.text()),
+            (&self.password, password.text()),
+            (&self.ssh_passphrase, passphrase.text()),
+            (&self.name, blank.name),
+            (&self.host, blank.host),
+            (&self.port, blank.port),
+            (&self.database, blank.database),
+            (&self.user, blank.user),
+            (&self.path, blank.path),
         ] {
             input.update(cx, |input, cx| {
                 input.set_placeholder(placeholder, window, cx)
@@ -688,7 +702,7 @@ impl ConnectionForm {
     }
 
     /// What Encryption means for what is typed.
-    pub(crate) fn encryption_explanation(&self, cx: &App) -> &'static str {
+    pub(crate) fn encryption_explanation(&self, cx: &App) -> String {
         encryption_explanation(self.sslmode, self.typed_service(cx).as_deref())
     }
 
@@ -723,7 +737,7 @@ impl ConnectionForm {
         }
         value
             .parse()
-            .map_err(|_| "Statement timeout must be a whole number of seconds.".to_string())
+            .map_err(|_| t!("connection.error.statement_timeout").to_string())
     }
 
     pub(crate) fn account(&self, cx: &App) -> Result<SnowflakeConfig, String> {
@@ -736,20 +750,20 @@ impl ConnectionForm {
         let database = read(&self.database);
 
         for (label, value) in [
-            ("Account", &account),
-            ("Username", &user),
-            ("Private key", &private_key),
-            ("Database", &database),
+            (t!("connection.field.account"), &account),
+            (t!("connection.field.username"), &user),
+            (t!("connection.field.private_key"), &private_key),
+            (t!("connection.field.database"), &database),
         ] {
             if value.is_empty() {
-                return Err(format!("{label} is required."));
+                return Err(t!("connection.error.required", field = label).to_string());
             }
         }
         // Absolute, because a relative one resolves against wherever the app
         // was launched from -- `/` for one opened from Finder -- and `~` is the
         // shell's to expand, not the file system's.
         if !private_key.starts_with('/') {
-            return Err("Private key must be an absolute path to the key file.".into());
+            return Err(t!("connection.error.private_key_absolute").to_string());
         }
 
         Ok(SnowflakeConfig {
@@ -768,13 +782,13 @@ impl ConnectionForm {
     }
 
     pub(crate) fn server(&self, cx: &App) -> Result<ServerConfig, String> {
-        self.server_requiring(&["Username"], cx)
+        self.server_requiring(true, cx)
     }
 
-    /// The server fields, with the host and whichever of `required` always
-    /// required: MongoDB asks for no username, since a server without
+    /// The server fields, with the host and, when `requires_user`, the
+    /// username: MongoDB asks for no username, since a server without
     /// authentication is an ordinary one there.
-    fn server_requiring(&self, required: &[&str], cx: &App) -> Result<ServerConfig, String> {
+    fn server_requiring(&self, requires_user: bool, cx: &App) -> Result<ServerConfig, String> {
         let read = |input: &Entity<InputState>| input.read(cx).value().trim().to_string();
         let host = read(&self.host);
         let database = read(&self.database);
@@ -785,14 +799,16 @@ impl ConnectionForm {
         // Blank database is the one the server signs the login into, which is
         // what a profile that moves between databases starts on. A service
         // answers for the rest, and says so on connect if it does not.
-        for (label, value) in [("Host", &host), ("Username", &user)] {
-            let needed = label == "Host" || required.contains(&label);
+        for (label, value, needed) in [
+            (t!("connection.field.host"), &host, true),
+            (t!("connection.field.username"), &user, requires_user),
+        ] {
             if value.is_empty() && needed && service.is_none() {
-                return Err(format!("{label} is required."));
+                return Err(t!("connection.error.required", field = label).to_string());
             }
         }
 
-        let port = parse_port("Port", &port)?;
+        let port = parse_port(&t!("connection.field.port"), &port)?;
 
         // Kept only where it is consulted. A path left behind by switching down
         // to `require` would be stored and shown as though it were in force.
@@ -870,11 +886,66 @@ pub(crate) fn starting_mode(copied_from: Option<Mode>) -> Mode {
 /// What a blank field means, field by field.
 pub(crate) struct Placeholders {
     pub(crate) name: String,
-    pub(crate) host: &'static str,
+    pub(crate) host: String,
     pub(crate) port: String,
-    pub(crate) database: &'static str,
-    pub(crate) user: &'static str,
-    pub(crate) path: &'static str,
+    pub(crate) database: String,
+    pub(crate) user: String,
+    pub(crate) path: String,
+}
+
+/// What the root certificate field says when it is blank. A hint rather than
+/// the text, so the per-frame comparison in `sync_placeholders` allocates
+/// nothing; the text is read from the locale when it is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RootCertificateHint {
+    SystemTrustStore,
+    Service,
+    ServiceElseSystem,
+}
+
+/// What a blank Password field says, and for the same reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PasswordHint {
+    FromCommand,
+    Unchanged,
+    Optional,
+}
+
+impl RootCertificateHint {
+    fn text(self) -> String {
+        match self {
+            Self::SystemTrustStore => t!("connection.placeholder.system_trust_store").to_string(),
+            Self::Service => t!("connection.placeholder.from_service").to_string(),
+            Self::ServiceElseSystem => {
+                t!("connection.placeholder.service_else_trust_store").to_string()
+            }
+        }
+    }
+}
+
+impl PasswordHint {
+    fn text(self) -> String {
+        match self {
+            Self::FromCommand => t!("connection.placeholder.from_command").to_string(),
+            Self::Unchanged => t!("connection.placeholder.unchanged").to_string(),
+            Self::Optional => t!("connection.placeholder.optional").to_string(),
+        }
+    }
+}
+
+/// The engine's hint in the language in force. `Hints` spells them once, in
+/// `db::spec`, where the engine's own answers live; only the ones DBDelve
+/// wrote translate, and a hint like `localhost` or `0` is passed through.
+fn hint(text: &'static str) -> String {
+    match text {
+        "Named after the database" => t!("connection.hint.named_after_database").to_string(),
+        "Named after the host" => t!("connection.hint.named_after_host").to_string(),
+        "Optional" => t!("connection.placeholder.optional").to_string(),
+        "Required" => t!("connection.hint.required").to_string(),
+        "Implied by the account" => t!("connection.hint.implied_by_account").to_string(),
+        "Blank for a database in memory" => t!("connection.hint.in_memory").to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// Read against `ConnectionConfig::server`, `account` and
@@ -889,36 +960,34 @@ pub(crate) fn placeholders(target: Target) -> Placeholders {
     Placeholders {
         name: match (target.fields(), plugin) {
             (Fields::ConnectionString, Some(plugin)) => external_name(plugin, engine),
-            (Fields::File, _) => "Named after the file".into(),
-            _ => hints.name.into(),
+            (Fields::File, _) => t!("connection.placeholder.named_after_file").to_string(),
+            _ => hint(hints.name),
         },
-        host: hints.host,
+        host: hint(hints.host),
         port: engine
             .default_port()
             .map(|port| port.to_string())
             .unwrap_or_default(),
-        database: hints.database,
+        database: hint(hints.database),
         // A plugin's driver decides, and a DSN can carry one of its own.
         user: if plugin.is_some() {
-            "Optional"
+            t!("connection.placeholder.optional").to_string()
         } else {
-            hints.user
+            hint(hints.user)
         },
-        path: hints.path,
+        path: hint(hints.path),
     }
 }
-
-const FROM_THE_SERVICE: &str = "From the service";
 
 /// Beside a service, a blank host, port, database or user is its to fill. The
 /// port field is too narrow for the whole phrase.
 fn from_the_service(blank: Placeholders) -> Placeholders {
     Placeholders {
-        name: "Database, else the service".into(),
-        host: FROM_THE_SERVICE,
-        port: "Service".to_string(),
-        database: FROM_THE_SERVICE,
-        user: FROM_THE_SERVICE,
+        name: t!("connection.placeholder.database_else_service").to_string(),
+        host: t!("connection.placeholder.from_service").to_string(),
+        port: t!("connection.placeholder.service").to_string(),
+        database: t!("connection.placeholder.from_service").to_string(),
+        user: t!("connection.placeholder.from_service").to_string(),
         ..blank
     }
 }
@@ -926,28 +995,21 @@ fn from_the_service(blank: Placeholders) -> Placeholders {
 /// A file the service names replaces the trust store. A mode that does not
 /// verify never reaches that store on its own, so beside a service whether
 /// anything is checked is the service's to say.
-fn root_certificate_placeholder(mode: SslMode, beside_a_service: bool) -> &'static str {
+fn root_certificate_placeholder(mode: SslMode, beside_a_service: bool) -> RootCertificateHint {
     match (beside_a_service, mode.checks_certificate()) {
-        (false, _) => "System trust store",
-        (true, true) => "Service, else system trust store",
-        (true, false) => FROM_THE_SERVICE,
+        (false, _) => RootCertificateHint::SystemTrustStore,
+        (true, true) => RootCertificateHint::ServiceElseSystem,
+        (true, false) => RootCertificateHint::Service,
     }
 }
 
 /// The line under the selector. The default stands for "not said" beside a
 /// service, so what the selector shows may not be the mode that connects, and
 /// a root certificate makes `require` check.
-fn encryption_explanation(mode: SslMode, service: Option<&str>) -> &'static str {
+fn encryption_explanation(mode: SslMode, service: Option<&str>) -> String {
     match (mode, service) {
-        (SslMode::Prefer, Some(_)) => {
-            "The mode the service or PGSSLMODE sets applies, even disable. If neither \
-             sets one, encrypted when the server offers it, without checking the \
-             certificate, and a root certificate needs Require or stricter."
-        }
-        (SslMode::Require, Some(_)) => {
-            "Always encrypted. A root certificate from here, the service or PGSSLROOTCERT \
-             is checked as Verify CA. Without one, the certificate is not checked."
-        }
+        (SslMode::Prefer, Some(_)) => t!("connection.sslmode.prefer.service").to_string(),
+        (SslMode::Require, Some(_)) => t!("connection.sslmode.require.service").to_string(),
         _ => mode.explanation(),
     }
 }
@@ -983,7 +1045,9 @@ pub(crate) struct Typed<'a> {
 pub(crate) fn summary(target: Target, srv: bool, typed: &Typed) -> Option<String> {
     let engine = target.engine;
     let tunnelled = |line: String| match typed.tunnel {
-        Some(tunnel) if !tunnel.is_empty() => format!("{line} via {tunnel}"),
+        Some(tunnel) if !tunnel.is_empty() => {
+            t!("connection.summary.via", place = line, tunnel = tunnel).to_string()
+        }
         _ => line,
     };
     let signed_in = |place: String| match typed.user {
@@ -1017,7 +1081,9 @@ pub(crate) fn summary(target: Target, srv: bool, typed: &Typed) -> Option<String
             // An SRV name takes no port, so whatever the hidden field holds
             // is not where it points.
             let place = match (typed.host, typed.port, typed.service) {
-                ("", _, Some(service)) => format!("service {service}"),
+                ("", _, Some(service)) => {
+                    t!("connection.summary.service", name = service).to_string()
+                }
                 (host, port, _) if !port.is_empty() && !(srv && engine.resolves_srv()) => {
                     format!("{host}:{port}")
                 }
@@ -1050,7 +1116,7 @@ pub(crate) fn dialects() -> Vec<Engine> {
 /// one host and port can be pointed at the forward.
 fn checked_external(config: ExternalConfig) -> Result<ExternalConfig, String> {
     if config.connection.is_empty() {
-        return Err("DSN or connection string is required.".into());
+        return Err(t!("connection.error.dsn_required").to_string());
     }
     odbc_string::storable(&config.connection).map_err(|refusal| refusal.0)?;
     if config.ssh.is_some() {
@@ -1063,14 +1129,29 @@ fn checked_external(config: ExternalConfig) -> Result<ExternalConfig, String> {
 pub(crate) fn tunnel_line(connection: &str) -> Result<String, String> {
     let endpoint = odbc_string::endpoint(connection).map_err(|refusal| refusal.0)?;
     let keys = match endpoint.keys.as_slice() {
-        [key] => format!("{key} is"),
-        [leading @ .., last] => format!("{} and {last} are", leading.join(", ")),
+        [key] => {
+            return Ok(t!(
+                "connection.tunnel_line.one",
+                host = endpoint.host,
+                port = endpoint.port,
+                key = key
+            )
+            .to_string());
+        }
+        [leading @ .., last] => format!(
+            "{} {} {last}",
+            leading.join(", "),
+            t!("connection.list.and")
+        ),
         [] => unreachable!("an endpoint is found in at least one key"),
     };
-    Ok(format!(
-        "The tunnel forwards to {}:{}; {keys} pointed at it when connecting.",
-        endpoint.host, endpoint.port
-    ))
+    Ok(t!(
+        "connection.tunnel_line.many",
+        host = endpoint.host,
+        port = endpoint.port,
+        keys = keys
+    )
+    .to_string())
 }
 
 /// The built-in dialect the driver's reported DBMS belongs to, when it is not
@@ -1103,10 +1184,10 @@ fn ssh_tunnel(
         return Ok(None);
     }
     if host.is_empty() {
-        return Err("SSH host is required.".into());
+        return Err(t!("connection.error.ssh_host_required").to_string());
     }
     if host.starts_with('-') {
-        return Err("SSH host must not start with '-'.".into());
+        return Err(t!("connection.error.ssh_host_dash").to_string());
     }
     let identity_file = Some(identity_file).filter(|path| !path.is_empty());
     if let Some(error) = identity_file
@@ -1117,7 +1198,7 @@ fn ssh_tunnel(
     }
     Ok(Some(SshTunnel {
         host,
-        port: parse_port("SSH port", &port)?,
+        port: parse_port(&t!("connection.field.ssh_port"), &port)?,
         user,
         identity_file,
         run_as: Some(run_as).filter(|user| takes_run_as && !user.is_empty()),
@@ -1147,28 +1228,28 @@ fn login(
         "" => 0,
         seconds => seconds
             .parse()
-            .map_err(|_| "Expires after must be a whole number of seconds.".to_string())?,
+            .map_err(|_| t!("connection.error.expires").to_string())?,
     };
     Ok((String::new(), Some(PasswordCommand { command, expires })))
 }
 
 /// What a blank Password field means: an edited profile's blank keeps the
 /// password saved for it.
-fn password_placeholder(from_command: bool, editing: bool) -> &'static str {
+fn password_placeholder(from_command: bool, editing: bool) -> PasswordHint {
     match (from_command, editing) {
-        (true, _) => "From the command",
-        (false, true) => "Unchanged",
-        (false, false) => "Optional",
+        (true, _) => PasswordHint::FromCommand,
+        (false, true) => PasswordHint::Unchanged,
+        (false, false) => PasswordHint::Optional,
     }
 }
 
 /// Blank is the default port.
-fn parse_port(label: &str, value: &str) -> Result<Option<u16>, String> {
+fn parse_port(field: &str, value: &str) -> Result<Option<u16>, String> {
     if value.is_empty() {
         return Ok(None);
     }
     match value.parse() {
-        Ok(0) | Err(_) => Err(format!("{label} must be a number from 1 to 65535.")),
+        Ok(0) | Err(_) => Err(t!("connection.error.port_range", field = field).to_string()),
         Ok(port) => Ok(Some(port)),
     }
 }
@@ -1197,7 +1278,12 @@ impl Reported {
     }
 
     pub(crate) fn sentence(&self) -> String {
-        format!("Connected to {} through {}.", self.dbms, self.driver)
+        t!(
+            "connection.test.passed",
+            dbms = self.dbms,
+            driver = self.driver
+        )
+        .to_string()
     }
 }
 
@@ -1285,6 +1371,7 @@ pub(crate) fn password_to_persist(config: &ConnectionConfig, origin: Origin) -> 
 mod tests {
     use super::*;
     use crate::db::{ConnectionConfig, ServerConfig, SslMode};
+    use rust_i18n::t;
 
     fn fields(host: &str, port: &str) -> [String; 5] {
         [
@@ -1549,7 +1636,7 @@ mod tests {
         let postgres = placeholders(Target::built_in(Engine::Postgres));
         assert_eq!(postgres.port, "5432");
         assert_eq!(postgres.database, "postgres");
-        // `server` asks for a user here, and `server_requiring(&[])` there.
+        // `server` asks for a user here, and `server_requiring(false, ..)` there.
         assert_eq!(postgres.user, "Required");
         let beside_a_service = from_the_service(postgres);
         assert_eq!(beside_a_service.host, "From the service");
@@ -1559,15 +1646,15 @@ mod tests {
         assert_eq!(beside_a_service.name, "Database, else the service");
         assert_eq!(
             root_certificate_placeholder(SslMode::Require, true),
-            "From the service"
+            RootCertificateHint::Service
         );
         assert_eq!(
             root_certificate_placeholder(SslMode::Require, false),
-            "System trust store"
+            RootCertificateHint::SystemTrustStore
         );
         assert_eq!(
             root_certificate_placeholder(SslMode::VerifyFull, true),
-            "Service, else system trust store"
+            RootCertificateHint::ServiceElseSystem
         );
         assert_eq!(
             placeholders(Target::built_in(Engine::MongoDb)).user,
@@ -1667,9 +1754,9 @@ mod tests {
 
     #[test]
     fn a_blank_password_says_what_blank_means() {
-        assert_eq!(password_placeholder(false, false), "Optional");
-        assert_eq!(password_placeholder(false, true), "Unchanged");
-        assert_eq!(password_placeholder(true, true), "From the command");
+        assert_eq!(password_placeholder(false, false), PasswordHint::Optional);
+        assert_eq!(password_placeholder(false, true), PasswordHint::Unchanged);
+        assert_eq!(password_placeholder(true, true), PasswordHint::FromCommand);
     }
 
     #[test]
@@ -1981,6 +2068,29 @@ mod tests {
         assert_eq!(
             encryption_explanation(SslMode::VerifyFull, Some("harness")),
             SslMode::VerifyFull.explanation()
+        );
+    }
+
+    #[test]
+    fn the_connection_form_speaks_chinese() {
+        assert_eq!(t!("connection.title.new", locale = "zh-CN"), "新建连接");
+        assert_eq!(t!("connection.field.host", locale = "zh-CN"), "主机");
+        assert_eq!(t!("connection.field.password", locale = "zh-CN"), "密码");
+        assert_eq!(t!("connection.button.connect", locale = "zh-CN"), "连接");
+        assert_eq!(
+            t!(
+                "connection.error.required",
+                locale = "zh-CN",
+                field = "主机"
+            ),
+            "主机不能为空。"
+        );
+        assert_eq!(
+            t!(
+                "connection.sslmode.verify_full.explanation",
+                locale = "zh-CN"
+            ),
+            "证书必须由受信任的机构签发，且签发给此主机。"
         );
     }
 

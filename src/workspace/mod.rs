@@ -35,7 +35,6 @@ use gpui_component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
 pub(crate) use definition_editor::{DefinitionEditor, DefinitionTarget};
 pub(crate) use import_dialog::PreviewGrid;
 pub(crate) use profiles::unavailable_reason;
-pub(crate) use projects::project_name_refusal;
 pub(crate) use queries::error_in_buffer;
 pub(crate) use routine_call::RoutineCall;
 pub(crate) use structure_editor::StructureEditor;
@@ -423,7 +422,7 @@ impl Workspace {
         )
         .detach();
         let settings_search =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search settings"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("settings.search").to_string()));
         cx.subscribe(&settings_search, |workspace, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 workspace.search_settings(cx);
@@ -432,7 +431,7 @@ impl Workspace {
         .detach();
         let welcome_url = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Paste a connection URL")
+                .placeholder(t!("welcome.url_placeholder").to_string())
                 .clean_on_escape()
         });
         cx.subscribe_in(
@@ -1374,15 +1373,60 @@ impl Workspace {
     /// were read at construction -- while the context and dropdown menus are
     /// built fresh each time they open, so the locale change reaches them on
     /// its own.
-    pub(crate) fn set_language(&mut self, code: Option<String>, cx: &mut Context<Self>) {
+    ///
+    /// A palette on screen was built in the language it was opened in: its
+    /// scope pills, its field's placeholder and its group headers were read
+    /// once and not again. Taking it down hands the keyboard back to whatever
+    /// put it up, and the next one opens reading the chosen language.
+    pub(crate) fn set_language(
+        &mut self,
+        code: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.settings.language == code {
             return;
+        }
+        if self.palette.is_some() {
+            self.close_palette(window, cx);
         }
         self.settings.language = code.clone();
         crate::locale::apply(code.as_deref());
         cx.set_menus(crate::app_menus(self.menu_imports_rows));
+        // Rows built once, at construction, hold the language they were built
+        // in: their placeholders are rewritten here, and the rows the settings
+        // search found are worked out again from the new titles.
+        self.relocalize_placeholders(window, cx);
+        if self.settings_matches.is_some() {
+            self.search_settings(cx);
+        }
         self.remember_profiles(cx);
         cx.notify();
+    }
+
+    /// The fields whose placeholder was read once, when they were built. Every
+    /// one of them is written here, in the language just applied; nothing else
+    /// reads the locale again for a field that is already mounted.
+    fn relocalize_placeholders(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_search.update(cx, |input, cx| {
+            input.set_placeholder(t!("settings.search").to_string(), window, cx)
+        });
+        self.welcome_url.update(cx, |input, cx| {
+            input.set_placeholder(t!("welcome.url_placeholder").to_string(), window, cx)
+        });
+        self.row_panel.search.update(cx, |input, cx| {
+            input.set_placeholder(t!("grid.filter_placeholder").to_string(), window, cx)
+        });
+        for profile in &mut self.profiles {
+            profile.session.relocalize(window, cx);
+        }
+        if let Some(form) = &mut self.form {
+            // The target-dependent placeholders are compared against what they
+            // were last written for, so forgetting that is what makes the next
+            // frame write them again -- in the language now in force.
+            form.placeholders_for = None;
+            form.sync_placeholders(window, cx);
+        }
     }
 
     /// Rebuilt on every profile now rather than at its next catalog load, which
@@ -2635,7 +2679,7 @@ impl Render for Workspace {
                         Control::Compact,
                         t,
                     )
-                    .tooltip("Settings")
+                    .tooltip(t!("settings.title").to_string())
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(OpenSettings), cx);
                     })

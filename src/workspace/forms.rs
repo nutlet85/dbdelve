@@ -124,14 +124,14 @@ impl Workspace {
         let target = form.target();
         let brand = theme::engine_brand(target.engine, t, &t.logo_planes());
         let title = match form.name.read(cx).value().trim() {
-            "" if form.editing.is_some() => "Edit connection".to_string(),
-            "" => "New connection".to_string(),
+            "" if form.editing.is_some() => t!("connection.title.edit").to_string(),
+            "" => t!("connection.title.new").to_string(),
             name => name.to_string(),
         };
         let mono = fonts(cx).family(FontSlot::Editor).clone();
         let close = match ui::chord_hint("show_editor", &self.settings.custom_keybindings) {
-            hint if hint.is_empty() => "Close".to_string(),
-            hint => format!("Close ({hint})"),
+            hint if hint.is_empty() => t!("settings.close").to_string(),
+            hint => t!("settings.close_hint", hint = hint).to_string(),
         };
         div()
             .flex_shrink_0()
@@ -191,7 +191,7 @@ impl Workspace {
                     .px(px(layout::SPACE_SM))
                     .border_1()
                     .border_color(t.border)
-                    .tooltip("Change engine")
+                    .tooltip(t!("connection.tooltip.change_engine").to_string())
                     .child(
                         div()
                             .flex()
@@ -252,8 +252,16 @@ impl Workspace {
                     .into_any_element(),
             );
         }
-        connection
-            .push(field_row("name", "Name", &form.name, bare(&form.name), t).into_any_element());
+        connection.push(
+            field_row(
+                "name",
+                t!("connection.field.name").to_string(),
+                &form.name,
+                bare(&form.name),
+                t,
+            )
+            .into_any_element(),
+        );
         match fields {
             // An engine that is a file has no host, no credentials and no
             // transport, so those fields are absent rather than present and
@@ -262,7 +270,7 @@ impl Workspace {
             Fields::File => connection.push(
                 field_row(
                     "path",
-                    "Database file",
+                    t!("connection.field.database_file").to_string(),
                     &form.path,
                     mono_field(&form.path),
                     t,
@@ -275,15 +283,50 @@ impl Workspace {
             // file is the credential.
             Fields::Account => {
                 for (id, label, input, monospace) in [
-                    ("account", "Account", &form.account, false),
-                    ("user", "User", &form.user, false),
-                    ("private-key", "Private key file", &form.private_key, true),
-                    ("database", "Database", &form.database, false),
-                    ("warehouse", "Warehouse", &form.warehouse, false),
-                    ("role", "Role", &form.role, false),
+                    (
+                        "account",
+                        t!("connection.field.account").to_string(),
+                        &form.account,
+                        false,
+                    ),
+                    (
+                        "user",
+                        t!("connection.field.user").to_string(),
+                        &form.user,
+                        false,
+                    ),
+                    (
+                        "private-key",
+                        t!("connection.field.private_key").to_string(),
+                        &form.private_key,
+                        true,
+                    ),
+                    (
+                        "database",
+                        t!("connection.field.database").to_string(),
+                        &form.database,
+                        false,
+                    ),
+                    (
+                        "warehouse",
+                        t!("connection.field.warehouse").to_string(),
+                        &form.warehouse,
+                        false,
+                    ),
+                    (
+                        "role",
+                        t!("connection.field.role").to_string(),
+                        &form.role,
+                        false,
+                    ),
                     // Last, because it is nearly always blank: the account
                     // names its own host.
-                    ("host", "Host", &form.host, false),
+                    (
+                        "host",
+                        t!("connection.field.host").to_string(),
+                        &form.host,
+                        false,
+                    ),
                 ] {
                     let control = if monospace {
                         mono_field(input)
@@ -304,21 +347,28 @@ impl Workspace {
                 // own.
                 let srv = form.srv && form.engine.resolves_srv();
                 connection.push(
-                    field_row("host", "Host", &form.host, bare(&form.host), t)
-                        .when(!srv, |row| row.child(port_field(&form.port, t)))
-                        .into_any_element(),
+                    field_row(
+                        "host",
+                        t!("connection.field.host").to_string(),
+                        &form.host,
+                        bare(&form.host),
+                        t,
+                    )
+                    .when(!srv, |row| row.child(port_field(&form.port, t)))
+                    .into_any_element(),
                 );
                 if form.engine.resolves_srv() {
                     connection.push(
                         ui::option_row(
-                            "SRV host",
-                            Some("The host is a DNS name whose records list the servers (mongodb+srv).".into()),
+                            t!("connection.row.srv_host").to_string(),
+                            Some(t!("connection.row.srv_host.description").to_string().into()),
                             ui::switch("srv-host", form.srv, t).on_click(cx.listener(
                                 |workspace, _, window, cx| {
                                     if let Some(form) = &mut workspace.form {
                                         form.srv = !form.srv;
                                         // The port going takes the focus with it.
-                                        if form.srv && form.port.focus_handle(cx).is_focused(window) {
+                                        if form.srv && form.port.focus_handle(cx).is_focused(window)
+                                        {
                                             form.needs_focus = Some(form.host.clone());
                                         }
                                         form.test = None;
@@ -341,13 +391,25 @@ impl Workspace {
                     [
                         field_row(
                             "database",
-                            "Database",
+                            t!("connection.field.database").to_string(),
                             &form.database,
                             bare(&form.database),
                             t,
                         ),
-                        field_row("user", "User", &form.user, bare(&form.user), t),
-                        field_row("password", "Password", &form.password, password_input, t),
+                        field_row(
+                            "user",
+                            t!("connection.field.user").to_string(),
+                            &form.user,
+                            bare(&form.user),
+                            t,
+                        ),
+                        field_row(
+                            "password",
+                            t!("connection.field.password").to_string(),
+                            &form.password,
+                            password_input,
+                            t,
+                        ),
                     ]
                     .map(IntoElement::into_any_element),
                 );
@@ -357,7 +419,7 @@ impl Workspace {
                     connection.push(
                         field_row(
                             "password-command",
-                            "Password command",
+                            t!("connection.field.password_command").to_string(),
                             &form.password_command,
                             mono_field(&form.password_command),
                             t,
@@ -366,10 +428,10 @@ impl Workspace {
                     );
                     connection.push(
                         ui::option_row(
-                            "Expires after",
+                            t!("connection.row.password_expires").to_string(),
                             Some(
-                                "How long the command's password is reused for. 0 runs it \
-                                 at every login."
+                                t!("connection.row.password_expires.description")
+                                    .to_string()
                                     .into(),
                             ),
                             seconds_field(&form.password_expires, t),
@@ -380,15 +442,21 @@ impl Workspace {
                 }
                 if form.engine.takes_service() {
                     connection.push(
-                        field_row("service", "Service", &form.service, bare(&form.service), t)
-                            .into_any_element(),
+                        field_row(
+                            "service",
+                            t!("connection.field.service").to_string(),
+                            &form.service,
+                            bare(&form.service),
+                            t,
+                        )
+                        .into_any_element(),
                     );
                 }
                 if form.engine.takes_options() {
                     connection.push(
                         field_row(
                             "options",
-                            "Options",
+                            t!("connection.field.options").to_string(),
                             &form.options,
                             mono_field(&form.options),
                             t,
@@ -403,7 +471,7 @@ impl Workspace {
                 connection.push(
                     field_row(
                         "connection",
-                        "Connection",
+                        t!("connection.field.connection").to_string(),
                         &form.connection,
                         mono_field(&form.connection),
                         t,
@@ -429,10 +497,16 @@ impl Workspace {
                 }
                 connection.extend(
                     [
-                        field_row("user", "User", &form.user, bare(&form.user), t),
+                        field_row(
+                            "user",
+                            t!("connection.field.user").to_string(),
+                            &form.user,
+                            bare(&form.user),
+                            t,
+                        ),
                         field_row(
                             "password",
-                            "Password",
+                            t!("connection.field.password").to_string(),
                             &form.password,
                             bare(&form.password).mask_toggle(),
                             t,
@@ -442,10 +516,10 @@ impl Workspace {
                 );
                 connection.push(
                     ui::option_row(
-                        "SQL dialect",
+                        t!("connection.field.sql_dialect").to_string(),
                         Some(
-                            "How DBDelve writes SQL for this connection: quoting, paging and the \
-                             Read-only hold."
+                            t!("connection.row.sql_dialect.description")
+                                .to_string()
                                 .into(),
                         ),
                         self.dialect_dropdown(cx),
@@ -461,7 +535,7 @@ impl Workspace {
         if fields == Fields::Server {
             security.push(
                 ui::option_row(
-                    "Encryption",
+                    t!("connection.row.encryption").to_string(),
                     // Five words do not say which ones check who answered,
                     // and that is the whole difference between them.
                     Some(form.encryption_explanation(cx).into()),
@@ -478,7 +552,7 @@ impl Workspace {
                 security.push(
                     field_row(
                         "root-certificate",
-                        "Root certificate",
+                        t!("connection.field.root_certificate").to_string(),
                         &form.root_certificate,
                         mono_field(&form.root_certificate),
                         t,
@@ -500,15 +574,13 @@ impl Workspace {
             // read as this machine's view of the network.
             let socket = form.target().reaches_socket_over_ssh();
             let hint = if socket {
-                "Host and port are as the SSH host sees them: localhost is the SSH host \
-                 itself. A Host such as /var/run/postgresql is its Unix socket directory; \
-                 Run as is the OS user sudo opens the socket as, for peer authentication."
+                t!("connection.row.ssh_tunnel.description.socket").to_string()
             } else {
-                "Host and port are as the SSH host sees them: localhost is the SSH host itself."
+                t!("connection.row.ssh_tunnel.description").to_string()
             };
             security.push(
                 ui::option_row(
-                    "SSH tunnel",
+                    t!("connection.row.ssh_tunnel").to_string(),
                     Some(hint.into()),
                     ui::switch("ssh-tunnel", form.ssh, t)
                         .debug_selector(|| "ssh-tunnel".into())
@@ -520,18 +592,28 @@ impl Workspace {
             if form.ssh {
                 let reveal = !cx.reduce_motion();
                 let nested = |id: &'static str,
-                              label: &'static str,
+                              label: String,
                               input: &Entity<InputState>,
                               control: Input| {
                     nested_field_row(layout::SPACE_MD, id, label, input, control, t)
                 };
                 let mut rows = vec![
-                    nested("ssh-host", "SSH host", &form.ssh_host, bare(&form.ssh_host))
-                        .child(port_field(&form.ssh_port, t)),
-                    nested("ssh-user", "SSH user", &form.ssh_user, bare(&form.ssh_user)),
+                    nested(
+                        "ssh-host",
+                        t!("connection.field.ssh_host").to_string(),
+                        &form.ssh_host,
+                        bare(&form.ssh_host),
+                    )
+                    .child(port_field(&form.ssh_port, t)),
+                    nested(
+                        "ssh-user",
+                        t!("connection.field.ssh_user").to_string(),
+                        &form.ssh_user,
+                        bare(&form.ssh_user),
+                    ),
                     nested(
                         "identity-file",
-                        "Identity file",
+                        t!("connection.field.identity_file").to_string(),
                         &form.ssh_identity_file,
                         mono_field(&form.ssh_identity_file),
                     )
@@ -543,7 +625,7 @@ impl Workspace {
                     )),
                     nested(
                         "ssh-passphrase",
-                        "Key passphrase",
+                        t!("connection.field.key_passphrase").to_string(),
                         &form.ssh_passphrase,
                         bare(&form.ssh_passphrase).mask_toggle(),
                     ),
@@ -551,7 +633,7 @@ impl Workspace {
                 if socket {
                     rows.push(nested(
                         "ssh-run-as",
-                        "Run as",
+                        t!("connection.field.run_as").to_string(),
                         &form.ssh_run_as,
                         bare(&form.ssh_run_as),
                     ));
@@ -581,8 +663,13 @@ impl Workspace {
                     }))
             });
             behaviour.push(
-                ui::option_row("Access", None, ui::segmented(t).children(access), t)
-                    .into_any_element(),
+                ui::option_row(
+                    t!("connection.row.access").to_string(),
+                    None,
+                    ui::segmented(t).children(access),
+                    t,
+                )
+                .into_any_element(),
             );
         }
         // The colour only ever labels a connection, so nothing here can make
@@ -602,7 +689,7 @@ impl Workspace {
             });
         behaviour.push(
             ui::option_row(
-                "Color",
+                t!("connection.row.color").to_string(),
                 None,
                 div()
                     .flex()
@@ -613,13 +700,20 @@ impl Workspace {
             )
             .into_any_element(),
         );
-        behaviour
-            .push(ui::option_row("Project", None, self.project_dropdown(cx), t).into_any_element());
+        behaviour.push(
+            ui::option_row(
+                t!("connection.row.project").to_string(),
+                None,
+                self.project_dropdown(cx),
+                t,
+            )
+            .into_any_element(),
+        );
         // Every engine can stop a statement, and this is the only place a
         // profile has to say for how long.
         behaviour.push(
             ui::option_row(
-                "Statement timeout",
+                t!("connection.row.statement_timeout").to_string(),
                 None,
                 seconds_field(&form.statement_timeout, t),
                 t,
@@ -627,7 +721,7 @@ impl Workspace {
             .into_any_element(),
         );
 
-        let section = |label: &'static str, rows: Vec<AnyElement>| {
+        let section = |label: String, rows: Vec<AnyElement>| {
             div()
                 .flex()
                 .flex_col()
@@ -635,7 +729,7 @@ impl Workspace {
                 .child(
                     div()
                         .px(px(layout::SPACE_XS))
-                        .child(section_label(t, label)),
+                        .child(section_label(t, &label)),
                 )
                 .child(ui::well(t, rows))
         };
@@ -645,11 +739,20 @@ impl Workspace {
             .gap(px(layout::FORM_SECTION_GAP))
             .px(px(layout::FORM_PADDING))
             .pb(px(layout::FORM_PADDING))
-            .child(section("Connection", connection))
+            .child(section(
+                t!("connection.section.connection").to_string(),
+                connection,
+            ))
             .when(!security.is_empty(), |body| {
-                body.child(section("Security", security))
+                body.child(section(
+                    t!("connection.section.security").to_string(),
+                    security,
+                ))
             })
-            .child(section("Behaviour", behaviour))
+            .child(section(
+                t!("connection.section.behaviour").to_string(),
+                behaviour,
+            ))
     }
 
     /// Test and what it last said, then the way out and the way in.
@@ -661,9 +764,9 @@ impl Workspace {
             form.test.as_ref(),
         );
         let commit = if form.editing.is_some() {
-            "Save"
+            t!("connection.button.save").to_string()
         } else {
-            "Connect"
+            t!("connection.button.connect").to_string()
         };
         div()
             .flex_shrink_0()
@@ -675,10 +778,16 @@ impl Workspace {
             .border_t_1()
             .border_color(t.border)
             .child(
-                button("test-connection", "Test", Tone::Quiet, Control::Standard, t)
-                    .border_1()
-                    .border_color(t.border)
-                    .on_click(cx.listener(Self::test_connection)),
+                button(
+                    "test-connection",
+                    t!("connection.button.test").to_string(),
+                    Tone::Quiet,
+                    Control::Standard,
+                    t,
+                )
+                .border_1()
+                .border_color(t.border)
+                .on_click(cx.listener(Self::test_connection)),
             )
             .child(
                 div()
@@ -708,8 +817,14 @@ impl Workspace {
                     })),
             )
             .child(
-                button("cancel", "Cancel", Tone::Quiet, Control::Standard, t)
-                    .on_click(cx.listener(|workspace, _, _, cx| workspace.close_form(cx))),
+                button(
+                    "cancel",
+                    t!("button.cancel").to_string(),
+                    Tone::Quiet,
+                    Control::Standard,
+                    t,
+                )
+                .on_click(cx.listener(|workspace, _, _, cx| workspace.close_form(cx))),
             )
             .child(
                 ui::accent_button("connect", commit, t, cx)
@@ -770,19 +885,21 @@ impl Workspace {
         };
         let built_in = engine.has_built_in_driver().then(|| {
             let more = match through_plugin.edits_rows() {
-                true => "imports rows and copies DDL",
-                false => "can edit rows",
+                true => t!("connection.dialect.more.imports"),
+                false => t!("connection.dialect.more.edits"),
             };
-            format!(
-                "DBDelve also has a built-in {} driver, which {more}.",
-                engine.label()
+            t!(
+                "connection.dialect.built_in",
+                engine = engine.label(),
+                more = more
             )
+            .to_string()
             .into()
         });
         let take = engine.speaks_through_plugins().then(|| {
             button(
                 "use-dialect",
-                format!("Use {}'s SQL", engine.label()),
+                t!("connection.dialect.use", engine = engine.label()).to_string(),
                 Tone::Quiet,
                 Control::Standard,
                 t,
@@ -801,7 +918,7 @@ impl Workspace {
         });
         Some(
             ui::option_row(
-                format!("The driver reports {}", reported.dbms),
+                t!("connection.dialect.reported", dbms = reported.dbms).to_string(),
                 built_in,
                 div().children(take),
                 t,
@@ -848,7 +965,7 @@ impl Workspace {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Choose".into()),
+            prompt: Some(t!("connection.prompt.choose").to_string().into()),
         });
         cx.spawn_in(window, async move |workspace, cx| {
             let chosen = chosen.await;
@@ -2353,7 +2470,7 @@ impl Workspace {
         if profile.config.target().switches_database() {
             let database = profile
                 .active_database()
-                .unwrap_or_else(|| "Database".into());
+                .unwrap_or_else(|| t!("target.database").to_string());
             steps.push(separator());
             steps.push(
                 segment("database-switcher", database, false)
@@ -2364,13 +2481,14 @@ impl Workspace {
             );
         }
         if profile.config.target().picks_schema() {
-            let schema = profile.active_schema();
+            let schema = profile.active_schema().map(str::to_string);
+            let missing = schema.is_none();
             steps.push(separator());
             steps.push(
                 segment(
                     "schema-switcher",
-                    schema.unwrap_or("Schema").to_string(),
-                    schema.is_none(),
+                    schema.unwrap_or_else(|| t!("target.schema").to_string()),
+                    missing,
                 )
                 .on_click(cx.listener(|workspace, _, window, cx| {
                     workspace.select_schema(window, cx);
@@ -3626,7 +3744,7 @@ fn crumb_separator(t: Theme) -> AnyElement {
 /// the row. The label focuses the field, as a form's label does.
 fn field_row(
     id: &'static str,
-    label: &'static str,
+    label: String,
     input: &Entity<InputState>,
     control: impl IntoElement,
     t: Theme,
@@ -3640,7 +3758,7 @@ fn field_row(
 fn nested_field_row(
     indent: f32,
     id: &'static str,
-    label: &'static str,
+    label: String,
     input: &Entity<InputState>,
     control: impl IntoElement,
     t: Theme,
@@ -3693,7 +3811,7 @@ fn seconds_field(input: &Entity<InputState>, t: Theme) -> gpui::Div {
             div()
                 .text_size(px(layout::chrome(layout::TEXT_SM)))
                 .text_color(t.text_faint)
-                .child("s"),
+                .child(t!("connection.unit.seconds").to_string()),
         )
 }
 
@@ -3730,7 +3848,7 @@ fn browse_button(
     let input = input.clone();
     icon_button(id, icon::BROWSE, Tone::Quiet, Control::Compact, t)
         .ml(px(layout::SPACE_SM))
-        .tooltip("Choose a file")
+        .tooltip(t!("connection.tooltip.choose_file").to_string())
         .on_click(cx.listener(move |workspace, _, window, cx| {
             workspace.browse_into(input.clone(), window, cx);
         }))
@@ -3792,14 +3910,16 @@ fn footer_status(
     }
     match (error, test) {
         (Some(error), _) => Some((Status::Failed, one_line(error))),
-        (None, Some(ConnectionTest::Running(_))) => {
-            Some((Status::Connecting, "Testing connection…".to_string()))
-        }
+        (None, Some(ConnectionTest::Running(_))) => Some((
+            Status::Connecting,
+            t!("connection.test.running").to_string(),
+        )),
         (None, Some(ConnectionTest::Passed(reported))) => Some((
             Status::Connected,
-            reported
-                .as_ref()
-                .map_or_else(|| "Connection succeeded.".to_string(), Reported::sentence),
+            reported.as_ref().map_or_else(
+                || t!("connection.test.succeeded").to_string(),
+                Reported::sentence,
+            ),
         )),
         (None, Some(ConnectionTest::Failed(message))) => Some((Status::Failed, one_line(message))),
         (None, None) => None,
