@@ -40,9 +40,9 @@ use crate::{
     actions::{
         AcceptCompletion, AddFilter, CancelQuery, CopyCell, CopySelection, CustomRowLimit,
         ExplainQuery, FormatQuery, ImportRows, ImportRowsFromClipboard, LimitTarget, NewQuery,
-        NewRow, NextPage, PreviousPage, RemoveFilter, RunQuery, SaveQuery, SetDefaultRowLimit,
-        SetFilterColumn, SetFilterOperator, SetFilterRaw, SetQueryLimit, SetRowLimit,
-        ToggleComment, ToggleFilterJoin, ToggleNextJoin, ToggleRowPanel,
+        NewRow, NextPage, PreviousPage, RemoveFilter, RunQuery, SaveQuery, SelectDatabase,
+        SetDefaultRowLimit, SetFilterColumn, SetFilterOperator, SetFilterRaw, SetQueryLimit,
+        SetRowLimit, ToggleComment, ToggleFilterJoin, ToggleNextJoin, ToggleRowPanel,
     },
     db,
     db::{Engine, ExplainMode, RoutineKind, Target},
@@ -391,7 +391,7 @@ fn render_query_surface(
         &tab.editor,
         editor_font_size,
         &tab.query,
-        render_query_toolbar(&profile.session, profile.config.target(), custom_limit, cx),
+        render_query_toolbar(profile, custom_limit, cx),
         bottom,
         cx,
     )
@@ -3208,8 +3208,8 @@ fn render_tab_strip(
             let open_workspace = workspace.clone();
             let close_workspace = workspace.clone();
             let label = match index {
-                0 => "New Query".to_string(),
-                _ => format!("New Query {}", index + 1),
+                0 => t!("tab.new_query").to_string(),
+                _ => t!("tab.new_query_numbered", number = index + 1).to_string(),
             };
             chip(session.active == Tab::Query(id))
                 .id(("unsaved-query-tab", id as usize))
@@ -3483,14 +3483,106 @@ fn render_tab_strip(
         .into_any_element()
 }
 
+/// The database and schema a statement runs in, or the endpoint for an engine
+/// that has neither: `dbdelve_dev / public`, `dbdelve_dev`, `/tmp/app.db`.
+fn target_label(database: Option<&str>, schema: Option<&str>, fallback: &str) -> String {
+    match (database, schema) {
+        (Some(database), Some(schema)) => format!("{database} / {schema}"),
+        (Some(database), None) => database.to_string(),
+        (None, _) => fallback.to_string(),
+    }
+}
+
+/// Where the statements in this tab go, in the toolbar rather than only in the
+/// titlebar's breadcrumb: a query run against the wrong database is the mistake
+/// this is here to prevent. Clicking it opens the picker that changes what it
+/// says, where the engine has one.
+fn render_execution_target(profile: &Profile, cx: &mut Context<Workspace>) -> AnyElement {
+    let t = *theme(cx);
+    let target = profile.config.target();
+    let endpoint = profile.config.listed_endpoint();
+    let label = target_label(
+        profile.active_database().as_deref(),
+        profile.active_schema(),
+        &endpoint,
+    );
+    let chip = control("query-execution-target", Tone::Quiet, Control::Compact)
+        .debug_selector(|| "query-execution-target".into())
+        .px(px(layout::SPACE_SM))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.element_hover)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(layout::SPACE_XS))
+                .min_w_0()
+                .child(
+                    icon(icon::DATABASE)
+                        .size(px(layout::chrome(layout::ICON_SIZE)))
+                        .text_color(t.accent),
+                )
+                .child(
+                    div()
+                        .max_w(px(layout::SIDEBAR_DEFAULT_WIDTH))
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .text_color(t.text_muted)
+                        .child(label),
+                ),
+        );
+    let connection = profile.name.as_str();
+    match (target.switches_database(), target.picks_schema()) {
+        (true, _) => chip
+            .tooltip(
+                t!(
+                    "target.tooltip.database",
+                    connection = connection,
+                    endpoint = endpoint.as_str()
+                )
+                .to_string(),
+            )
+            .on_click(cx.listener(|workspace, _, window, cx| {
+                workspace.select_database(&SelectDatabase, window, cx);
+            }))
+            .into_any_element(),
+        (false, true) => chip
+            .tooltip(
+                t!(
+                    "target.tooltip.schema",
+                    connection = connection,
+                    endpoint = endpoint.as_str()
+                )
+                .to_string(),
+            )
+            .on_click(cx.listener(|workspace, _, window, cx| {
+                workspace.select_schema(window, cx);
+            }))
+            .into_any_element(),
+        (false, false) => chip
+            .tooltip(
+                t!(
+                    "target.tooltip",
+                    connection = connection,
+                    endpoint = endpoint.as_str()
+                )
+                .to_string(),
+            )
+            .into_any_element(),
+    }
+}
+
 /// What acts on a query's buffer, between the editor and the rows it produces:
-/// the Data/Plan pair on the left, saving and running it on the right.
+/// where those statements run, the Data/Plan pair, and saving and running it.
 fn render_query_toolbar(
-    session: &Session,
-    target: Target,
+    profile: &Profile,
     custom_limit: Option<&(LimitTarget, Entity<InputState>)>,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
+    let session = &profile.session;
+    let target = profile.config.target();
     let engine = target.engine;
     let t = *theme(cx);
     let workspace = cx.entity().downgrade();
@@ -3519,9 +3611,9 @@ fn render_query_toolbar(
                     t,
                 )
                 .tooltip(if naming_a_rename {
-                    "Rename query"
+                    t!("tooltip.rename_query").to_string()
                 } else {
-                    "Save query"
+                    t!("tooltip.save_query").to_string()
                 })
                 .on_click(move |_, window, cx| {
                     _ = confirm_workspace.update(cx, |workspace, cx| {
@@ -3582,6 +3674,7 @@ fn render_query_toolbar(
         .border_t_1()
         .border_color(t.border)
         .text_size(px(layout::chrome(layout::TEXT_SM)))
+        .child(render_execution_target(profile, cx))
         .children(plan_toggle)
         .child(div().flex_1())
         .children(naming)
@@ -3962,5 +4055,18 @@ mod tests {
             assert_eq!(editor.read(cx).value(), "customer_name");
             assert_eq!(submissions.get(), 1);
         });
+    }
+
+    #[test]
+    fn the_execution_target_names_the_database_and_schema() {
+        assert_eq!(
+            target_label(Some("dbdelve_dev"), Some("public"), "/tmp/app.db"),
+            "dbdelve_dev / public"
+        );
+        assert_eq!(
+            target_label(Some("dbdelve_dev"), None, "/tmp/app.db"),
+            "dbdelve_dev"
+        );
+        assert_eq!(target_label(None, None, "/tmp/app.db"), "/tmp/app.db");
     }
 }

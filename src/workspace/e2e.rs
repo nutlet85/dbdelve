@@ -195,6 +195,22 @@ fn raise_run_once_prompt(workspace: &Entity<Workspace>, cx: &mut VisualTestConte
 }
 
 #[gpui::test]
+fn a_query_tab_names_the_target_it_runs_on(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        settle(cx);
+        let bounds = cx
+            .debug_bounds("query-execution-target")
+            .expect("the query toolbar names the execution target");
+        assert!(
+            bounds.size.width > gpui::px(20.),
+            "the target chip draws its label, not just its box: {bounds:?}"
+        );
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
 fn a_query_typed_and_run_from_the_keyboard_lands_its_rows(cx: &mut TestAppContext) {
     store::tests::with_home(|| {
         let (workspace, cx) = launch_on_sqlite(cx);
@@ -1650,6 +1666,37 @@ fn tab_reaches_the_default_sorting_choice_in_settings(cx: &mut TestAppContext) {
     });
 }
 
+#[gpui::test]
+fn a_format_setting_changes_the_next_format_query(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        cx.simulate_input("SELECT a FROM t");
+        settle(cx);
+        cx.simulate_keystrokes("secondary-,");
+        settle(cx);
+        cx.simulate_input("Keyword case");
+        settle(cx);
+        // Preserve, Upper, Lower; the row starts on Upper.
+        cx.simulate_keystrokes("tab tab tab");
+        settle(cx);
+        press(cx, "space");
+        settle(cx);
+        workspace.read_with(cx, |workspace, _| {
+            assert_eq!(
+                workspace.settings.format.keyword_case,
+                crate::sql::CaseStyle::Lower
+            );
+        });
+
+        cx.simulate_keystrokes("secondary-shift-f");
+        settle(cx);
+        let text = buffer(&workspace, cx);
+        assert!(text.starts_with("select"), "{text}");
+        assert!(!text.contains("SELECT"), "{text}");
+        quit(workspace, cx);
+    });
+}
+
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn an_existing_cmd_m_binding_can_be_recaptured_in_settings(cx: &mut TestAppContext) {
@@ -1930,9 +1977,91 @@ fn a_clicked_box_leaves_the_ring_in_charge_of_the_keyboard(cx: &mut TestAppConte
     });
 }
 
-/// A session moved on behind the modeless save panel still gets its rows, under
-/// every column they hold, rather than what its connection now says of a table
-/// of that name.
+#[gpui::test]
+fn format_query_reaches_the_definition_editor(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let directory = store::dbdelve_directory().expect("the test home has a data directory");
+        std::fs::create_dir_all(&directory).expect("the data directory must be creatable");
+        let database = directory.join("definition.duckdb");
+        ::duckdb::Connection::open(&database)
+            .and_then(|connection| {
+                connection.execute_batch(
+                    "CREATE TABLE items (id INTEGER PRIMARY KEY); \
+                     INSERT INTO items (id) VALUES (1); \
+                     create view item_view as select id from items;",
+                )
+            })
+            .expect("the schema must apply");
+        std::fs::write(
+            directory.join("profiles.toml"),
+            format!(
+                "active = \"e2e\"\n\
+                 [settings]\n\
+                 check_for_updates = false\n\
+                 [[profiles]]\n\
+                 id = \"e2e\"\n\
+                 name = \"E2E\"\n\
+                 host = \"\"\n\
+                 database = \"\"\n\
+                 user = \"\"\n\
+                 engine = \"duckdb\"\n\
+                 path = {:?}\n",
+                database.display().to_string()
+            ),
+        )
+        .expect("profiles.toml must be writable");
+        let (workspace, cx) = launch(cx);
+        cx.executor().allow_parking();
+        workspace.update(cx, |workspace, cx| {
+            let index = workspace
+                .profiles
+                .iter()
+                .position(|profile| profile.config.engine() == Engine::DuckDb)
+                .expect("the saved DuckDB profile is restored");
+            workspace.activate(index, cx);
+        });
+        cx.run_until_parked();
+        workspace.update(cx, |workspace, cx| {
+            workspace.edit_definition(
+                super::definition_editor::DefinitionTarget::Relation {
+                    schema: "main".into(),
+                    name: "item_view".into(),
+                    kind: crate::db::RelationKind::View,
+                },
+                cx,
+            );
+        });
+        settle(cx);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+
+        let editor = workspace.read_with(cx, |workspace, _| {
+            workspace
+                .profile()
+                .expect("the DuckDB profile is open")
+                .session
+                .definition_editor
+                .as_ref()
+                .expect("the definition editor is open")
+                .editor
+                .clone()
+                .expect("the definition editor has a buffer")
+        });
+        cx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.focus_handle(cx).focus(window, cx);
+            });
+        });
+        cx.simulate_keystrokes("secondary-shift-f");
+        settle(cx);
+        let formatted = cx.update(|_, cx| editor.read(cx).value().to_string());
+        assert!(formatted.contains("CREATE"), "{formatted}");
+        assert!(formatted.contains("SELECT"), "{formatted}");
+        assert!(formatted.contains("FROM"), "{formatted}");
+
+        quit(workspace, cx);
+    });
+}
+
 #[gpui::test]
 fn a_session_changed_behind_the_save_panel_is_not_asked_about_the_table(cx: &mut TestAppContext) {
     store::tests::with_home(|| {
@@ -2202,7 +2331,7 @@ fn the_history_scope_filters_and_sorts_its_runs_from_the_keyboard(cx: &mut TestA
         settle(cx);
         assert_eq!(history_view(&workspace, cx), HistoryView::default());
 
-        cx.simulate_keystrokes("tab tab");
+        cx.simulate_keystrokes("tab tab tab");
         settle(cx);
         assert!(palette_mode(&workspace, cx) == Some(PaletteMode::Search(Scope::History)));
         cx.simulate_keystrokes("secondary-k f secondary-k o secondary-k o");
@@ -2221,6 +2350,48 @@ fn the_history_scope_filters_and_sorts_its_runs_from_the_keyboard(cx: &mut TestA
         cx.simulate_keystrokes("secondary-p");
         settle(cx);
         assert_eq!(history_view(&workspace, cx), HistoryView::default());
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
+fn the_definitions_scope_lands_empty_on_a_catalog_that_carries_no_view_text(
+    cx: &mut TestAppContext,
+) {
+    use crate::session::DefinitionIndex;
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        cx.simulate_keystrokes("secondary-p");
+        settle(cx);
+        // Objects, then Definitions.
+        cx.simulate_keystrokes("tab");
+        settle(cx);
+        assert!(
+            palette_mode(&workspace, cx) == Some(PaletteMode::Search(Scope::Definitions)),
+            "tab did not reach the Definitions scope"
+        );
+        // SQLite's catalog carries no view text and has no routines to hold
+        // any of their own, so the index is answered with nothing rather than
+        // left loading: the scope is empty and the palette still takes keys.
+        workspace.read_with(cx, |workspace, _| {
+            let definitions = &workspace.profile().unwrap().session.definitions;
+            assert!(
+                matches!(definitions, DefinitionIndex::Loaded(read) if read.is_empty()),
+                "the definitions were left waiting"
+            );
+        });
+        cx.simulate_input("view");
+        settle(cx);
+        // Typing narrows the scope it is on rather than closing it, and the
+        // empty state it draws is the one for a search with no results.
+        assert!(
+            palette_mode(&workspace, cx) == Some(PaletteMode::Search(Scope::Definitions)),
+            "typing left the Definitions scope"
+        );
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+        assert!(palette_mode(&workspace, cx).is_none());
 
         quit(workspace, cx);
     });
