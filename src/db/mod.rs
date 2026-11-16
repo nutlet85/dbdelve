@@ -1765,6 +1765,21 @@ impl Connection {
         }
     }
 
+    /// What each view is written as, for the palette's definition search: the
+    /// statement a view runs, read on demand rather than with the catalog.
+    ///
+    /// Empty on an engine whose catalog cannot say
+    /// ([`Target::searches_view_definitions`](super::Target::searches_view_definitions)),
+    /// and on a plugin, whose catalog is its own driver's.
+    pub fn view_definitions(&self) -> Result<Vec<ViewDefinition>, DbError> {
+        match self {
+            Self::Postgres(connection) => connection.view_definitions(),
+            Self::MySql(connection) => connection.view_definitions(),
+            Self::SqlServer(connection) => connection.view_definitions(),
+            _ => Ok(Vec::new()),
+        }
+    }
+
     /// Each table's on-disk bytes and row estimate, for [`Catalog::set_sizes`]
     /// to write onto the relations already on screen.
     ///
@@ -2419,6 +2434,24 @@ pub struct Routine {
     pub result_type: String,
     pub language: String,
     pub definition: String,
+}
+
+/// What a view is written as, read on demand rather than with the catalog:
+/// the text is only wanted by the palette's definition search, and a server
+/// with thousands of views would pay for every one of them at connect.
+///
+/// Held by schema and name rather than by index: the catalog it is matched
+/// against is replaced by every refresh, and an index into the old one names
+/// the wrong relation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ViewDefinition {
+    pub schema: String,
+    pub name: String,
+    pub kind: RelationKind,
+    /// The server's own text for the view, emptied of nothing. What a comment
+    /// in it looks like is the server's business: `pg_get_viewdef` rebuilds a
+    /// statement, so comments in a Postgres view are usually not here.
+    pub definition: Arc<str>,
 }
 
 /// Which way a parameter carries its value, as the catalog spells it.
@@ -3081,15 +3114,7 @@ pub(super) fn assemble_catalog(
     for row in &relations.rows {
         let schema_name = required_cell(&relations, row, "schema_name")?;
         let name = required_cell(&relations, row, "relation_name")?;
-        let kind = match required_cell(&relations, row, "relation_kind")? {
-            "table" => RelationKind::Table,
-            "partitioned_table" => RelationKind::PartitionedTable,
-            "view" => RelationKind::View,
-            "materialized_view" => RelationKind::MaterializedView,
-            "foreign_table" => RelationKind::ForeignTable,
-            "dictionary" => RelationKind::Dictionary,
-            kind => return Err(unexpected_catalog_value("relation kind", kind)),
-        };
+        let kind = relation_kind(required_cell(&relations, row, "relation_kind")?)?;
 
         schema(&mut schemas, schema_name).relations.push(Relation {
             name: name.to_string(),
@@ -3123,6 +3148,41 @@ pub(super) fn assemble_catalog(
         schemas: schemas.into_values().collect(),
         database: None,
     })
+}
+
+/// A catalog's word for a relation kind, as [`RelationKind`].
+fn relation_kind(value: &str) -> Result<RelationKind, DbError> {
+    match value {
+        "table" => Ok(RelationKind::Table),
+        "partitioned_table" => Ok(RelationKind::PartitionedTable),
+        "view" => Ok(RelationKind::View),
+        "materialized_view" => Ok(RelationKind::MaterializedView),
+        "foreign_table" => Ok(RelationKind::ForeignTable),
+        "dictionary" => Ok(RelationKind::Dictionary),
+        kind => Err(unexpected_catalog_value("relation kind", kind)),
+    }
+}
+
+/// What each view is written as, by schema and name. A view whose definition
+/// the login may not read is left out rather than listed under an empty text:
+/// a row that searches nothing is a row that should not be there.
+pub(super) fn assemble_view_definitions(
+    result: QueryResult,
+) -> Result<Vec<ViewDefinition>, DbError> {
+    let mut definitions = Vec::with_capacity(result.rows.len());
+    for row in &result.rows {
+        let definition = optional_cell(&result, row, "definition").unwrap_or("");
+        if definition.trim().is_empty() {
+            continue;
+        }
+        definitions.push(ViewDefinition {
+            schema: required_cell(&result, row, "schema_name")?.to_string(),
+            name: required_cell(&result, row, "relation_name")?.to_string(),
+            kind: relation_kind(required_cell(&result, row, "relation_kind")?)?,
+            definition: Arc::from(definition),
+        });
+    }
+    Ok(definitions)
 }
 
 /// A row with neither number (a null `DATA_LENGTH` and `TABLE_ROWS`) is left
@@ -5110,6 +5170,78 @@ mod tests {
         assert_eq!(
             error.message,
             "Catalog query returned unknown relation kind unknown."
+        );
+    }
+
+    #[test]
+    fn a_view_definition_keeps_its_schema_kind_and_text() {
+        let definitions = assemble_view_definitions(result(
+            &[
+                "schema_name",
+                "relation_name",
+                "relation_kind",
+                "definition",
+            ],
+            &[
+                &[
+                    Some("public"),
+                    Some("account_overview"),
+                    Some("view"),
+                    Some(" SELECT accounts.id\n   FROM accounts;"),
+                ],
+                &[
+                    Some("public"),
+                    Some("account_totals"),
+                    Some("materialized_view"),
+                    Some("SELECT count(*) FROM accounts;"),
+                ],
+                // A login without VIEW DEFINITION reads a null text, and one
+                // that reads nothing is left out rather than listed empty.
+                &[Some("public"), Some("hidden"), Some("view"), None],
+            ],
+        ))
+        .unwrap();
+
+        assert_eq!(
+            definitions,
+            vec![
+                ViewDefinition {
+                    schema: "public".into(),
+                    name: "account_overview".into(),
+                    kind: RelationKind::View,
+                    definition: " SELECT accounts.id\n   FROM accounts;".into(),
+                },
+                ViewDefinition {
+                    schema: "public".into(),
+                    name: "account_totals".into(),
+                    kind: RelationKind::MaterializedView,
+                    definition: "SELECT count(*) FROM accounts;".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_view_definition_of_an_unknown_kind_is_refused() {
+        let error = assemble_view_definitions(result(
+            &[
+                "schema_name",
+                "relation_name",
+                "relation_kind",
+                "definition",
+            ],
+            &[&[
+                Some("public"),
+                Some("mystery"),
+                Some("materialised"),
+                Some("SELECT 1;"),
+            ]],
+        ))
+        .unwrap_err();
+
+        assert_eq!(
+            error.message,
+            "Catalog query returned unknown relation kind materialised."
         );
     }
 

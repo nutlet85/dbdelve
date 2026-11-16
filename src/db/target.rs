@@ -300,6 +300,14 @@ impl Target {
     pub fn executes_routines(self) -> bool {
         self.driver == Driver::BuiltIn && self.abilities().executes_routines
     }
+
+    /// Whether the palette can search this connection's views by their text,
+    /// which needs the catalog to say what each view is written as. A plugin's
+    /// catalog is its own driver's, whose view text is spelled however it
+    /// likes, so it never does.
+    pub fn searches_view_definitions(self) -> bool {
+        self.driver == Driver::BuiltIn && self.abilities().view_definitions
+    }
 }
 
 /// Whether `error` is the user's Cancel landing, in the words each engine's
@@ -448,6 +456,7 @@ mod tests {
                 target.catalog_is_per_database(),
                 target.exact_row_estimates(),
                 target.takes_service(),
+                target.searches_view_definitions(),
             ]
             .into_iter()
             .chain(
@@ -538,6 +547,30 @@ mod tests {
                 assert_ne!(engine.fields(), Fields::ConnectionString, "{engine:?}");
             }
         }
+    }
+
+    #[test]
+    fn only_the_four_engines_whose_catalog_holds_a_views_text_search_it() {
+        let searching: Vec<_> = Engine::ALL
+            .into_iter()
+            .filter(|&engine| Target::built_in(engine).searches_view_definitions())
+            .collect();
+        assert_eq!(
+            searching,
+            [
+                Engine::Postgres,
+                Engine::MySql,
+                Engine::MariaDb,
+                Engine::SqlServer,
+            ]
+        );
+        // A plugin's catalog is its own driver's, whatever dialect the profile
+        // speaks: its view text is never read here.
+        let plugin = Target {
+            engine: Engine::Postgres,
+            driver: Driver::Plugin(odbc()),
+        };
+        assert!(!plugin.searches_view_definitions());
     }
 
     #[test]

@@ -667,6 +667,10 @@ pub struct Abilities {
     pub alters_type_using: bool,
     /// A routine may be called with arguments from the Run dialog.
     pub executes_routines: bool,
+    /// The catalog can say what each view is written as, so the palette can
+    /// search a view by its text and not only by its name
+    /// ([`super::Connection::view_definitions`]).
+    pub view_definitions: bool,
 }
 
 /// How a view's or a routine's definition is rewritten, which decides what the
@@ -705,6 +709,7 @@ impl Abilities {
         routine_definition: DefinitionEditing::Unsafe,
         alters_type_using: false,
         executes_routines: false,
+        view_definitions: false,
     };
 
     /// [`Target::takes_inserts`](super::Target::takes_inserts).
@@ -801,6 +806,7 @@ pub(crate) const POSTGRES: EngineSpec = EngineSpec {
         routine_definition: DefinitionEditing::InPlace,
         alters_type_using: true,
         executes_routines: true,
+        view_definitions: true,
         ..Abilities::NONE
     },
     hooks: Hooks::NONE,
@@ -868,6 +874,7 @@ pub(crate) const MYSQL: EngineSpec = EngineSpec {
         // dropping the routine first, which dbdelve does not do unasked.
         routine_definition: DefinitionEditing::QueryTab,
         executes_routines: true,
+        view_definitions: true,
         ..Abilities::NONE
     },
     hooks: Hooks {
@@ -935,6 +942,7 @@ pub(crate) const MARIADB: EngineSpec = EngineSpec {
         view_definition: DefinitionEditing::InPlace,
         routine_definition: DefinitionEditing::InPlace,
         executes_routines: true,
+        view_definitions: true,
         ..Abilities::NONE
     },
     hooks: Hooks {
@@ -1255,6 +1263,7 @@ pub(crate) const SQL_SERVER: EngineSpec = EngineSpec {
         view_definition: DefinitionEditing::InPlace,
         routine_definition: DefinitionEditing::InPlace,
         executes_routines: true,
+        view_definitions: true,
         ..Abilities::NONE
     },
     hooks: Hooks {

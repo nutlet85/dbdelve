@@ -21,6 +21,10 @@ use unicode_segmentation::UnicodeSegmentation;
 pub struct Query {
     pattern: Pattern,
     empty: bool,
+    /// What was typed, verbatim: a definition is searched for it as a plain
+    /// substring, where fzf's atoms (`^`, `!`) would be read as syntax and a
+    /// subsequence would match letters scattered across a whole statement.
+    text: String,
 }
 
 impl Query {
@@ -28,12 +32,60 @@ impl Query {
         Self {
             pattern: Pattern::parse(text, CaseMatching::Ignore, Normalization::Smart),
             empty: text.trim().is_empty(),
+            text: text.to_string(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.empty
     }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+/// Where `needle` first appears in `haystack`, ignoring case, as a byte range
+/// of the original text.
+///
+/// A plain substring rather than [`Fuzzy`]: a subsequence match would find a
+/// fragment by letters scattered through a whole view, which says nothing
+/// about where in it the reader should look. Characters are compared one at a
+/// time so the range always lands on character boundaries; empty `needle` is
+/// `None`.
+pub fn fragment(haystack: &str, needle: &str) -> Option<Range<usize>> {
+    let mut wanted = needle.chars();
+    let first = wanted.next()?;
+    for (start, character) in haystack.char_indices() {
+        if !same_letter(character, first) {
+            continue;
+        }
+        let mut end = start;
+        let mut matched = true;
+        let mut rest = haystack[start..].chars();
+        for want in std::iter::once(first).chain(wanted.clone()) {
+            match rest.next() {
+                Some(got) if same_letter(got, want) => end += got.len_utf8(),
+                _ => {
+                    matched = false;
+                    break;
+                }
+            }
+        }
+        if matched {
+            return Some(start..end);
+        }
+    }
+    None
+}
+
+/// Whether two characters are the same letter in any case. Compared through
+/// each one's own lowercase, so no byte offsets are ever rewritten and the
+/// match can be reported against the text as it was read. The ASCII path is
+/// the one that matters: it is taken for nearly every character of SQL, and
+/// the Unicode one only where the two differ.
+fn same_letter(a: char, b: char) -> bool {
+    a.eq_ignore_ascii_case(&b) || a.to_lowercase().eq(b.to_lowercase())
 }
 
 pub struct Fuzzy {
@@ -280,5 +332,53 @@ mod tests {
             marked("SELECT 1;\r\nFROM t", "from"),
             "SELECT 1;\r\n[FROM] t"
         );
+    }
+
+    /// The range a fragment is reported at has to be usable as a slice of the
+    /// text it was found in: a view is cut around it to show where the match
+    /// landed, and a byte offset inside a character would panic there.
+    fn found<'a>(haystack: &'a str, needle: &str) -> Option<&'a str> {
+        let range = fragment(haystack, needle)?;
+        Some(&haystack[range.clone()])
+    }
+
+    #[test]
+    fn a_fragment_is_found_whole_and_in_any_case() {
+        let text = "CREATE VIEW v AS\n  SELECT id FROM accounts -- total per account";
+        assert_eq!(found(text, "total per account"), Some("total per account"));
+        // The range is of the text as it is written, not as it was typed.
+        assert_eq!(found(text, "TOTAL"), Some("total"));
+        assert_eq!(found(text, "from"), Some("FROM"));
+        assert_eq!(found(text, "no such word"), None);
+        // Empty is not a match: every row would carry the same one.
+        assert_eq!(fragment(text, ""), None);
+    }
+
+    #[test]
+    fn a_fragment_lands_on_character_boundaries() {
+        let text = "SELECT '合同总额' AS 名称 -- 注释：合同总额";
+        assert_eq!(found(text, "合同总额"), Some("合同总额"));
+        assert_eq!(found(text, "注释"), Some("注释"));
+        assert_eq!(found(text, "café"), None);
+        let cafe = "SELECT 1 -- Café orders";
+        assert_eq!(found(cafe, "café"), Some("Café"));
+    }
+
+    #[test]
+    fn scattered_letters_are_not_a_fragment() {
+        // What the definition search must not do: `aot` as a subsequence would
+        // match nearly every statement that mentions an account total.
+        let text = "SELECT accounts.owner FROM accounts_total";
+        assert_eq!(fragment(text, "aot"), None);
+        assert_eq!(found(text, "accounts.owner"), Some("accounts.owner"));
+    }
+
+    #[test]
+    fn a_query_keeps_what_was_typed_as_it_was_typed() {
+        assert_eq!(
+            Query::new("  Total per Account ").text(),
+            "  Total per Account "
+        );
+        assert_eq!(Query::new("").text(), "");
     }
 }

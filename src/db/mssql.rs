@@ -36,8 +36,9 @@ use super::ssh::{Tunnel, tunnelled};
 use super::{
     Catalog, Cell, Column, DbError, EditTarget, Engine, Fetch, QueryResult, Reference,
     RelationKind, Routine, RoutineParameter, Row, ServerConfig, SslMode, Stopped, Structure,
-    assemble_catalog, assemble_databases, assemble_foreign_keys, assemble_parameters,
-    assemble_references, assemble_structure, create_table, plain_error, required_cell, terminated,
+    ViewDefinition, assemble_catalog, assemble_databases, assemble_foreign_keys,
+    assemble_parameters, assemble_references, assemble_structure, assemble_view_definitions,
+    create_table, plain_error, required_cell, terminated,
 };
 
 const DATABASES_SQL: &str = "
@@ -105,6 +106,22 @@ SELECT
 FROM sys.objects AS o
 JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 WHERE o.type IN ('FN', 'IF', 'TF', 'FS', 'FT', 'P', 'PC')
+    AND o.is_ms_shipped = 0
+ORDER BY s.name, o.name
+";
+
+// Read on demand by the palette's definition search: `sys.sql_modules` holds
+// the text as it was written, comments and all, and is null for a view this
+// login has no `VIEW DEFINITION` on.
+const VIEWS_SQL: &str = "
+SELECT s.name AS schema_name,
+       o.name AS relation_name,
+       'view' AS relation_kind,
+       COALESCE(m.definition, N'') AS definition
+FROM sys.objects AS o
+JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+JOIN sys.sql_modules AS m ON m.object_id = o.object_id
+WHERE o.type = 'V'
     AND o.is_ms_shipped = 0
 ORDER BY s.name, o.name
 ";
@@ -1237,6 +1254,14 @@ impl Connection {
             QueryResult::default(),
             self.internal_query(&ROUTINES_SQL.replace("{type}", TYPE_SQL))?,
         )
+    }
+
+    /// What each view is written as, for the palette's definition search, on
+    /// the side session so the load never queues behind a statement the user
+    /// is running.
+    pub fn view_definitions(&self) -> Result<Vec<ViewDefinition>, DbError> {
+        let side = self.alongside();
+        assemble_view_definitions(side.internal_query(VIEWS_SQL)?)
     }
 
     pub fn references(&self, schema: &str, relation: &str) -> Result<Vec<Reference>, DbError> {

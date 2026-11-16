@@ -234,6 +234,17 @@ The shape a change to the main pane has to fit (`session.rs`, with the
 - **A `QueryTab` owns its own editor, grid, `QueryState`, saved-query name
   (`open_query`) and `last_query`.** Do not reintroduce a single shared editor
   for anything.
+- **A query tab's toolbar names where its statements run**
+  (`views::render_execution_target`): the database and schema as
+  `dbdelve_dev / public`, or the endpoint where the engine has neither, so a
+  query is never run against the wrong database without the database being on
+  screen beside it. Clicking it opens the database picker where
+  `Target::switches_database`, the schema picker where it only
+  `picks_schema`, and does nothing where it has neither. The schema of an
+  engine that does both is still changed from the titlebar's breadcrumb, so
+  one click has one meaning. The titlebar breadcrumb keeps its own
+  placeholders (`target.database` / `target.schema`) for the same reason: an
+  unpicked database or schema reads as what it is, in the reader's language.
 - **A selection holding more than one statement runs each of them in turn, one
   chip per result set, unless every one is a plain read, when they run at
   once.** `sql::queued_statements` splits it and `Queue` on
@@ -316,6 +327,27 @@ The shape a change to the main pane has to fit (`session.rs`, with the
   statement by statement (the slot's live state for the slot, `done` for the
   rest), and the switcher offers a Messages chip once any statement said
   something, with or without a queue.
+- **The Definitions scope searches what an object is written as**, and reads
+  it on demand. Routine bodies already ride on the catalog
+  (`Routine::definition`), so every routine with a body is listed there
+  whatever the engine; a view's text does not, and
+  `Connection::view_definitions` asks for
+  it the first time the scope is entered on that catalog
+  (`Workspace::ensure_definitions`, on the side session so the load is never
+  queued behind the user's own statement). Only Postgres, MySQL, MariaDB and
+  SQL Server answer (`Abilities::view_definitions`,
+  `Target::searches_view_definitions`): nowhere else is there a view text the
+  engines' catalogs agree on, and a plugin's catalog is its own driver's. The
+  answer is held as `Session::definitions`, thrown away whenever
+  `Workspace::catalog_replaced` puts a new catalog in place, and stamped
+  (`next_definition_load`) so an answer for the index it replaced is dropped
+  rather than written over it. A side session that will not open is a `Failed`
+  index the scope shows, with a retry on entering it again. Rows are matched by
+  name through `Fuzzy` and by text through `fuzzy::fragment`, a plain
+  case-insensitive substring: a subsequence would find a view by letters
+  scattered across its whole statement. Every name match comes before any text
+  match, the rows are drawn two lines tall (`palette::snippet`), they are
+  outside All (`Item::beyond_all`), and the scope draws no group header.
 - **History is what a buffer sent, each statement once, with its last run.**
   `store::HistoryEntry` is a line per event in `.history.jsonl`: one as a run
   is sent (`sql` and `at`) and one as it lands, under the same pair, with its
@@ -734,3 +766,14 @@ it refuses. Test reports what the driver reached ("Connected to DB2/LINUXX8664
 through …") and, when that names a built-in dialect other than the one picked,
 offers it in one click, never switching unasked. An unnamed profile is called
 "ODBC (Generic SQL)", since the string can carry nothing safe to name it by.
+
+**Its words come from the locale table** (`locales/app.yml`, `connection.*`),
+and so do the placeholders that say what a blank field means. Only the hints
+DBDelve wrote translate (`connection_form::hint`); an example like `localhost`,
+`0` or `/path/to/app.sqlite` is a literal, and a server's or driver's message is
+shown in its own words. The fields' placeholders are read when the form is
+built, which is the language in force because the settings panel and the form
+are never open together; the ones that depend on the target are compared each
+frame against a hint rather than against text, so nothing allocates for the
+comparison and `Workspace::relocalize_placeholders` clears the cached hints to
+have them written again in a language just switched to.

@@ -31,9 +31,10 @@ use super::ssh::{Tunnel, tunnelled};
 use super::{
     Catalog, Column, DbError, EditTarget, Engine, Fetch, Index, IndexKind, QueryResult, Reference,
     RelationKind, Routine, RoutineKind, RoutineParameter, RowBuilder, ServerConfig, Sizes, SslMode,
-    Stopped, Structure, assemble_catalog, assemble_databases, assemble_foreign_keys,
-    assemble_parameters, assemble_references, assemble_sizes, assemble_structure, non_utf8_error,
-    optional_cell, plain_error, required_cell,
+    Stopped, Structure, ViewDefinition, assemble_catalog, assemble_databases,
+    assemble_foreign_keys, assemble_parameters, assemble_references, assemble_sizes,
+    assemble_structure, assemble_view_definitions, non_utf8_error, optional_cell, plain_error,
+    required_cell,
 };
 
 /// Without this the driver waits out the OS SYN retry budget, so a host that
@@ -123,6 +124,19 @@ FROM information_schema.ROUTINES AS routine
 WHERE routine.ROUTINE_SCHEMA NOT IN {system}
   AND routine.ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
 ORDER BY routine.ROUTINE_SCHEMA, routine.ROUTINE_NAME
+";
+
+// Read on demand by the palette's definition search, and only when it is
+// asked for: `VIEW_DEFINITION` is the statement the server stores, and it is
+// null for a login without the privilege to read it.
+const VIEWS_SQL: &str = "
+SELECT TABLE_SCHEMA AS schema_name,
+       TABLE_NAME AS relation_name,
+       'view' AS relation_kind,
+       COALESCE(VIEW_DEFINITION, '') AS definition
+FROM information_schema.VIEWS
+WHERE TABLE_SCHEMA NOT IN {system}
+ORDER BY TABLE_SCHEMA, TABLE_NAME
 ";
 
 /// One row per argument, in the routine's own order. A function's parameters
@@ -760,6 +774,17 @@ impl Connection {
     pub fn routines(&self) -> Result<Catalog, DbError> {
         let routines = self.internal_query(&ROUTINES_SQL.replace("{system}", SYSTEM_SCHEMAS))?;
         assemble_catalog(QueryResult::default(), routines)
+    }
+
+    /// What each view is written as, for the palette's definition search, on
+    /// the side session so the load never queues behind a statement the user
+    /// is running. MariaDB reads it the same way: `information_schema.VIEWS`
+    /// is the same table there.
+    pub fn view_definitions(&self) -> Result<Vec<ViewDefinition>, DbError> {
+        let side = self.alongside()?;
+        assemble_view_definitions(
+            side.internal_query(&VIEWS_SQL.replace("{system}", SYSTEM_SCHEMAS))?,
+        )
     }
 
     /// On a connection of its own, as [`Self::cancel`] is, so opening every

@@ -136,6 +136,8 @@ pub mod layout {
     pub const PALETTE_CHROME_HEIGHT: f32 = 180.0;
     pub const PALETTE_INPUT_HEIGHT: f32 = 52.0;
     pub const PALETTE_ROW_HEIGHT: f32 = 40.0;
+    /// A row that carries a definition's own text under the object's name.
+    pub const PALETTE_DEFINITION_ROW_HEIGHT: f32 = 56.0;
     pub const PALETTE_HEADER_HEIGHT: f32 = 28.0;
     pub const PALETTE_TILE_SIZE: f32 = 26.0;
     pub const PALETTE_ACCENT_BAR_WIDTH: f32 = 3.0;

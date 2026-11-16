@@ -20,9 +20,10 @@ use super::ssh::{self, Bridged, SocketBridge, Tunnel, tunnelled};
 use super::{
     Catalog, Column, DbError, EditTarget, Engine, Feed, Fetch, QueryResult, Reference,
     RelationKind, Routine, RoutineParameter, Row, RowBuilder, ServerConfig, Sizes, Stopped,
-    Structure, assemble_catalog, assemble_databases, assemble_foreign_keys, assemble_parameters,
-    assemble_references, assemble_sizes, assemble_structure, create_table, non_utf8_error,
-    optional_cell, plain_error, required_cell, terminated,
+    Structure, ViewDefinition, assemble_catalog, assemble_databases, assemble_foreign_keys,
+    assemble_parameters, assemble_references, assemble_sizes, assemble_structure,
+    assemble_view_definitions, create_table, non_utf8_error, optional_cell, plain_error,
+    required_cell, terminated,
 };
 
 mod pgpass;
@@ -184,6 +185,24 @@ WHERE procedure.prokind IN ('f', 'p')
             AND dependency.deptype = 'e'
     )
 ORDER BY namespace.nspname, procedure.proname, identity_arguments
+";
+
+// Read on demand by the palette's definition search, not with the catalog:
+// `pg_get_viewdef` rebuilds each statement, so comments in a view are usually
+// not in it -- what is searched is the text the server itself keeps.
+const VIEWS_SQL: &str = "
+SELECT
+    namespace.nspname AS schema_name,
+    class.relname AS relation_name,
+    CASE class.relkind WHEN 'm' THEN 'materialized_view' ELSE 'view' END AS relation_kind,
+    COALESCE(pg_catalog.pg_get_viewdef(class.oid, true), '') AS definition
+FROM pg_catalog.pg_class AS class
+JOIN pg_catalog.pg_namespace AS namespace
+    ON namespace.oid = class.relnamespace
+WHERE class.relkind IN ('v', 'm')
+    AND namespace.nspname <> 'information_schema'
+    AND namespace.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'
+ORDER BY namespace.nspname, class.relname
 ";
 
 const PARAMETERS_SQL: &str = "
@@ -1398,6 +1417,18 @@ impl Connection {
     pub fn sizes(&self) -> Result<Sizes, DbError> {
         let side = Self::connect(&self.server(), self.route.clone())?;
         assemble_sizes(side.internal_query(SIZES_SQL)?)
+    }
+
+    /// What each view is written as, for the palette's definition search.
+    ///
+    /// On the side session, as [`Self::alongside`] opens it, so a definition
+    /// load is never queued behind a statement the user is running: the
+    /// palette asks for it while they wait. A side session that cannot be
+    /// opened is an error rather than a fallback to this one, which would put
+    /// the load in front of the next statement.
+    pub fn view_definitions(&self) -> Result<Vec<ViewDefinition>, DbError> {
+        let side = self.alongside()?;
+        assemble_view_definitions(side.internal_query(VIEWS_SQL)?)
     }
 
     pub fn references(&self, schema: &str, relation: &str) -> Result<Vec<Reference>, DbError> {
