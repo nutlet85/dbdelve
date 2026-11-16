@@ -3835,7 +3835,7 @@ fn update_items(update: &update::Update) -> Vec<Item> {
     let version = &update.release.version;
     let download = || {
         command(
-            &format!("Download dbdelve {version}"),
+            &t!("update.palette.download", version = version),
             icon::LINK,
             Command::DownloadUpdate(update.release.url.clone()),
             WINDOW,
@@ -3843,14 +3843,14 @@ fn update_items(update: &update::Update) -> Vec<Item> {
     };
     match &update.state {
         update::State::Ready(_) => vec![command(
-            &format!("Update to dbdelve {version} and restart"),
+            &t!("update.palette.update_and_restart", version = version),
             icon::REFRESH,
             Command::InstallUpdate,
             WINDOW,
         )],
         update::State::Failed(..) => vec![
             command(
-                &format!("Try updating to dbdelve {version} again"),
+                &t!("update.palette.try_again", version = version),
                 icon::REFRESH,
                 Command::InstallUpdate,
                 WINDOW,
@@ -3858,7 +3858,7 @@ fn update_items(update: &update::Update) -> Vec<Item> {
             download(),
         ],
         update::State::Superseded(installed) => vec![command(
-            &format!("Restart dbdelve to finish updating to {version}"),
+            &t!("update.palette.restart", version = version),
             icon::REFRESH,
             Command::RestartIntoUpdate(installed.clone()),
             WINDOW,

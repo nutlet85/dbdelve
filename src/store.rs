@@ -536,6 +536,10 @@ pub struct StoredSettings {
     pub opacity: Option<f32>,
     #[serde(default)]
     pub check_for_updates: Option<bool>,
+    /// Where the update check reads release metadata from, absent for GitHub
+    /// itself.
+    #[serde(default)]
+    pub update_feed: Option<String>,
     #[serde(default)]
     pub color_titlebar: Option<bool>,
     #[serde(default)]
@@ -3992,6 +3996,7 @@ open_objects = []
                 preview_rows: Some(500),
                 opacity: Some(0.8),
                 check_for_updates: Some(false),
+                update_feed: Some("https://mirror.test/latest".into()),
                 color_titlebar: Some(false),
                 client_sort: Some(true),
                 qualify_completions: Some(true),

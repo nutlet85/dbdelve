@@ -309,6 +309,9 @@ settings.row.qualify_completions.title:       { en: "Qualify table names", zh-CN
 settings.row.qualify_completions.description: { en: "Completing a table name inserts it with its schema, as schema.table.", zh-CN: "补全表名时连同模式一起插入，形如 schema.table。" }
 settings.row.check_for_updates.title:         { en: "Check for updates", zh-CN: "检查更新" }
 settings.row.check_for_updates.description:   { en: "One request to GitHub at launch to see whether a newer release exists. Nothing is sent about you or your databases.", zh-CN: "启动时向 GitHub 发一次请求，检查是否有新版本。不会发送关于你或你的数据库的任何信息。" }
+settings.row.update_feed.title:               { en: "Update source", zh-CN: "更新源" }
+settings.row.update_feed.description:         { en: "Leave empty for GitHub's own releases; a mirror or proxy serving the same JSON goes here. Downloads are still checked against the release signature.", zh-CN: "留空使用 GitHub 官方发布；可填返回同样 JSON 的镜像或代理地址。下载内容仍会校验发行签名。" }
+settings.row.update_feed.placeholder:         { en: "Empty for GitHub", zh-CN: "留空使用 GitHub 官方地址" }
 settings.row.verbose_logging.title:           { en: "Verbose logging", zh-CN: "详细日志" }
 settings.row.verbose_logging.description:     { en: "From the moment it is switched on, the log also holds hostnames, database names, connection errors and the drivers' own unfiltered messages.", zh-CN: "开启那一刻起，日志还会记录主机名、数据库名、连接错误以及驱动自身未过滤的消息。" }
 settings.row.match_system_appearance.title:   { en: "Match system appearance", zh-CN: "跟随系统外观" }
@@ -329,6 +332,36 @@ settings.row.fonts.editor.title:              { en: "Editor", zh-CN: "编辑器"
 settings.row.fonts.editor.description:        { en: "The query buffer and the other views that show code.", zh-CN: "查询缓冲区与其他显示代码的视图。" }
 settings.row.fonts.grid.title:                { en: "Grid", zh-CN: "表格" }
 settings.row.fonts.grid.description:          { en: "Result cells, their headers and the row inspector.", zh-CN: "结果单元格、表头与行检查器。" }
+
+# —— 更新 ——
+update.available:              { en: "DBDelve %{version} available", zh-CN: "DBDelve %{version} 可用" }
+update.managed_one:            { en: "Update it with your package manager,", zh-CN: "可以用包管理器更新，" }
+update.managed_two:            { en: "or download it from GitHub.", zh-CN: "或从 GitHub 下载。" }
+update.download_version:       { en: "Download %{version}", zh-CN: "下载 %{version}" }
+update.update_and_restart:     { en: "Update and restart", zh-CN: "更新并重启" }
+update.release_notes:          { en: "Release notes", zh-CN: "发布说明" }
+update.try_again:              { en: "Try again", zh-CN: "重试" }
+update.restart_to_update:      { en: "Restart to update", zh-CN: "重启以完成更新" }
+update.updated_since_start:    { en: "DBDelve was updated since it started.", zh-CN: "DBDelve 在启动之后已被更新。" }
+update.restart:                { en: "Restart DBDelve", zh-CN: "重启 DBDelve" }
+update.preparing:              { en: "Preparing…", zh-CN: "准备中…" }
+update.downloading:            { en: "Downloading… %{percent}%", zh-CN: "下载中… %{percent}%" }
+update.installing:             { en: "Installing…", zh-CN: "安装中…" }
+update.opens_once_installed:   { en: "DBDelve %{version} opens once it is installed.", zh-CN: "DBDelve %{version} 安装完成后会自动打开。" }
+update.keep_using:             { en: "You can keep using DBDelve while it downloads.", zh-CN: "下载期间可以继续使用 DBDelve。" }
+update.palette.download:       { en: "Download dbdelve %{version}", zh-CN: "下载 dbdelve %{version}" }
+update.palette.update_and_restart: { en: "Update to dbdelve %{version} and restart", zh-CN: "更新到 dbdelve %{version} 并重启" }
+update.palette.try_again:      { en: "Try updating to dbdelve %{version} again", zh-CN: "重试更新到 dbdelve %{version}" }
+update.palette.restart:        { en: "Restart dbdelve to finish updating to %{version}", zh-CN: "重启 dbdelve 以完成更新到 %{version}" }
+update.failed.download:        { en: "The update could not be downloaded.", zh-CN: "更新包下载失败。" }
+update.failed.signature:       { en: "The download's signature did not check out.", zh-CN: "下载内容的签名校验未通过。" }
+update.failed.unpack:          { en: "The downloaded update could not be opened.", zh-CN: "下载的更新包无法打开。" }
+update.failed.not_the_app:     { en: "The downloaded app is not the release it should be.", zh-CN: "下载的应用不是应有的发行版本。" }
+update.failed.replace:         { en: "The installed app could not be replaced.", zh-CN: "无法替换已安装的应用。" }
+update.failed.scratch:         { en: "There was nowhere to put the download.", zh-CN: "找不到存放下载内容的位置。" }
+update.failed.already_running: { en: "Another DBDelve is already installing an update.", zh-CN: "另一个 DBDelve 正在安装更新。" }
+update.failed.already_updated: { en: "DBDelve was updated since it started. Restart it to run that version.", zh-CN: "DBDelve 启动后已被更新。重启它即可运行新版本。" }
+update.failed.cancelled:       { en: "The update was cancelled before anything was installed.", zh-CN: "更新在安装任何内容之前被取消。" }
 
 # —— 设置页：控件 ——
 settings.sorting.server:      { en: "Server", zh-CN: "服务器" }

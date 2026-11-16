@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     io,
     path::{Component, Path, PathBuf},
+    sync::LazyLock,
 };
 #[cfg(windows)]
 use std::{ffi::OsString, process::Stdio, sync::OnceLock};
@@ -13,8 +14,8 @@ use minisign_verify::PublicKey;
 use super::Progress;
 #[cfg(windows)]
 use super::download::{
-    ALREADY_RUNNING, COULD_NOT_DOWNLOAD, NO_SCRATCH, NOT_SIGNED, Scratch, agent, download,
-    fetch_signature, hold, lock, release_key, verify_contents, writable,
+    ALREADY_RUNNING, COULD_NOT_DOWNLOAD, NO_SCRATCH, NOT_SIGNED, agent, download, fetch_signature,
+    hold, lock, release_key, scratch_for, verify_contents, writable,
 };
 use super::{
     Asset,
@@ -22,7 +23,7 @@ use super::{
     identity::{ALREADY_UPDATED, Identity, unchanged},
 };
 
-pub(super) const CANCELLED: &str = "The update was cancelled before anything was installed.";
+pub(super) const CANCELLED: &str = "update.failed.cancelled";
 
 const EXE: &str = "dbdelve.exe";
 
@@ -72,6 +73,9 @@ pub(crate) struct Installer {
     version: String,
     asset: Asset,
     key: PublicKey,
+    /// Where the download lives, made when an install first starts and kept
+    /// for a retry, so an interrupted download resumes instead of restarting.
+    scratch: LazyLock<Result<super::download::Scratch, String>>,
 }
 
 /// Which of the installer's two install modes put DBDelve where it is.
@@ -230,6 +234,7 @@ pub(super) fn installer(version: &str, asset: impl Fn(&str) -> Option<Asset>) ->
         version: version.to_string(),
         asset,
         key,
+        scratch: LazyLock::new(super::download::Scratch::new),
     })
 }
 
@@ -332,6 +337,7 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
         version,
         asset,
         key,
+        scratch,
     } = installer;
     let installed = kind.installed();
     let Some(folder) = installed.parent() else {
@@ -341,8 +347,8 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     let _lock = lock(&installed).map_err(failed(ALREADY_RUNNING))?;
     unchanged(&installed, *running).map_err(|(reason, detail)| failed(reason)(detail))?;
 
-    let scratch = Scratch::new().map_err(failed(NO_SCRATCH))?;
-    let file = scratch.0.join(&asset.name);
+    let scratch = scratch_for(scratch).map_err(failed(NO_SCRATCH))?;
+    let file = scratch.join(&asset.name);
     let agent = agent();
     // First, so a release whose signature is missing fails before the
     // download rather than after it.
@@ -352,7 +358,14 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     download(&agent, &asset.url, asset.size, &file, progress)
         .map_err(failed(COULD_NOT_DOWNLOAD))?;
     let held = hold(&file).map_err(failed(COULD_NOT_DOWNLOAD))?;
-    verify_contents(&held, &signature, key, &asset.name).map_err(failed(NOT_SIGNED))?;
+    // A complete file that does not verify would answer every retry: it is
+    // what a retry would resume into. Dropped, so the next one downloads
+    // afresh. The hold goes first, or Windows will not delete it.
+    if let Err(detail) = verify_contents(&held, &signature, key, &asset.name) {
+        drop(held);
+        remove(&file);
+        return Err(failed(NOT_SIGNED)(detail));
+    }
     tracing::info!("the update's signature verified");
     // Again, just before anything changes: another user, or an installer run
     // by hand, may have replaced this install while the download ran.
@@ -361,7 +374,7 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     progress.installing();
     match kind {
         Kind::Setup { scope, .. } => {
-            run_setup(&file, *scope, folder, &scratch.0.join("setup.log"))?;
+            run_setup(&file, *scope, folder, &scratch.join("setup.log"))?;
         }
         Kind::Portable { .. } => put_in_place(
             &file,
@@ -373,6 +386,9 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     }
     drop(held);
     replaced(&installed, *running).map_err(failed(COULD_NOT_REPLACE))?;
+    // Nothing is left to resume: the update is in place, and the process
+    // restarts into it before any scratch Drop could run.
+    remove(scratch);
     tracing::info!(version, path = %installed.display(), "update installed");
     Ok(installed)
 }
@@ -1470,6 +1486,7 @@ mod tests {
                     "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
                 )
                 .unwrap(),
+                scratch: std::sync::LazyLock::new(crate::update::download::Scratch::new),
             })
         };
         assert!(matches!(

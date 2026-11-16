@@ -4,6 +4,7 @@ use std::{
     os::unix::ffi::OsStrExt as _,
     path::{Path, PathBuf},
     process::Command,
+    sync::LazyLock,
 };
 
 use minisign_verify::PublicKey;
@@ -12,8 +13,8 @@ use super::{
     Asset, CURRENT, Progress,
     download::{
         ALREADY_RUNNING, COULD_NOT_DOWNLOAD, COULD_NOT_REPLACE, COULD_NOT_UNPACK, NO_SCRATCH,
-        NOT_SIGNED, NOT_THE_APP, Scratch, agent, download, failed, fetch_signature, lock,
-        release_key, remove, run, verify, writable,
+        NOT_SIGNED, NOT_THE_APP, agent, download, failed, fetch_signature, lock, release_key,
+        remove, run, scratch_for, verify, writable,
     },
     is_newer,
 };
@@ -31,6 +32,9 @@ pub(crate) struct Installer {
     version: String,
     dmg: Asset,
     key: PublicKey,
+    /// Where the download lives, made when an install first starts and kept
+    /// for a retry, so an interrupted download resumes instead of restarting.
+    scratch: LazyLock<Result<super::download::Scratch, String>>,
 }
 
 /// The installer for `version`, when this install may replace itself with it.
@@ -68,6 +72,7 @@ pub(super) fn installer(version: &str, dmg: Option<Asset>) -> Option<Installer> 
         version: version.to_string(),
         dmg,
         key,
+        scratch: LazyLock::new(super::download::Scratch::new),
     })
 }
 
@@ -134,6 +139,7 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
         version,
         dmg,
         key,
+        scratch,
     } = installer;
     tracing::info!(version, bundle = %bundle.display(), "update started");
     let _lock = lock(bundle).map_err(failed(ALREADY_RUNNING))?;
@@ -141,8 +147,8 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     // What an earlier attempt left when it was killed before it could clean up.
     remove(&staged);
 
-    let scratch = Scratch::new().map_err(failed(NO_SCRATCH))?;
-    let file = scratch.0.join(&dmg.name);
+    let scratch = scratch_for(scratch).map_err(failed(NO_SCRATCH))?;
+    let file = scratch.join(&dmg.name);
     let agent = agent();
     // First, so a release whose signature is missing fails before the
     // download rather than after it.
@@ -150,11 +156,17 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
         fetch_signature(&agent, &dmg.signature_url).map_err(failed(COULD_NOT_DOWNLOAD))?;
     tracing::info!(url = dmg.url, size = dmg.size, "downloading the update");
     download(&agent, &dmg.url, dmg.size, &file, progress).map_err(failed(COULD_NOT_DOWNLOAD))?;
-    verify(&file, &signature, key, &dmg.name).map_err(failed(NOT_SIGNED))?;
+    // A complete file that does not verify would answer every retry: it is
+    // what a retry would resume into. Dropped, so the next one downloads
+    // afresh.
+    verify(&file, &signature, key, &dmg.name).map_err(|detail| {
+        remove(&file);
+        failed(NOT_SIGNED)(detail)
+    })?;
     tracing::info!("the update's signature verified");
 
     progress.installing();
-    let installed = stage(&file, &scratch.0.join("mnt"), &staged)
+    let installed = stage(&file, &scratch.join("mnt"), &staged)
         .map_err(failed(COULD_NOT_UNPACK))
         .and_then(|()| check(&staged, bundle, version).map_err(failed(NOT_THE_APP)))
         .and_then(|()| {
@@ -166,6 +178,9 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     // Either way it is what is left over.
     remove(&staged);
     installed?;
+    // Nothing is left to resume: the update is in place, and the process
+    // restarts into it before any scratch Drop could run.
+    remove(scratch);
     tracing::info!(version, bundle = %bundle.display(), "update installed");
     Ok(bundle.clone())
 }

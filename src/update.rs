@@ -15,6 +15,7 @@ use std::{
     time::Duration,
 };
 
+use rust_i18n::t;
 use serde::Deserialize;
 
 #[cfg(any(target_os = "macos", target_os = "linux", windows))]
@@ -38,7 +39,11 @@ pub(crate) use macos::{Installer, install};
 #[cfg(windows)]
 pub(crate) use windows::{Installer, install};
 
-const LATEST: &str = "https://api.github.com/repos/nutlet85/dbdelve/releases/latest";
+/// Where the check reads release metadata from, unless the settings name
+/// another. The asset and signature URLs come from that JSON, so a proxy or a
+/// mirror of it replaces every address the update uses.
+pub(crate) const DEFAULT_FEED: &str =
+    "https://api.github.com/repos/nutlet85/dbdelve/releases/latest";
 
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
@@ -102,17 +107,25 @@ impl Progress {
         self.installing.store(true, Ordering::Relaxed);
     }
 
-    /// What the titlebar pill reads while the update runs.
+    pub(crate) fn is_installing(&self) -> bool {
+        self.installing.load(Ordering::Relaxed)
+    }
+
+    /// What the titlebar pill reads while the update runs. Three stages
+    /// rather than one word: before the first byte there is no percentage to
+    /// show, and saying the app is installing before the download has started
+    /// reads as if the replacement were already under way.
     pub(crate) fn label(&self) -> String {
-        if self.installing.load(Ordering::Relaxed) {
-            return "Installing\u{2026}".into();
+        if self.is_installing() {
+            return t!("update.installing").to_string();
         }
         let total = self.total.load(Ordering::Relaxed);
-        let received = self.received.load(Ordering::Relaxed);
-        match (received * 100).checked_div(total) {
-            Some(percent) => format!("Updating\u{2026} {}%", percent.min(100)),
-            None => "Updating\u{2026}".into(),
+        if total == 0 {
+            return t!("update.preparing").to_string();
         }
+        let received = self.received.load(Ordering::Relaxed);
+        let percent = ((received * 100) / total).min(100);
+        t!("update.downloading", percent = percent).to_string()
     }
 }
 
@@ -143,14 +156,16 @@ pub(crate) struct Asset {
 /// The latest release, if it is newer than this build, and whether this install
 /// can put it in place itself. Blocking, so it belongs on the background
 /// executor. Any failure is `None`: being offline is not something to tell
-/// anyone about.
-pub(crate) fn newer_release() -> Option<Update> {
+/// anyone about. `custom_feed` comes from the settings, empty for GitHub
+/// itself; a mirror is safe to read, since whatever it serves still has to
+/// verify against the release key compiled in.
+pub(crate) fn newer_release(custom_feed: &str) -> Option<Update> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(10)))
         .user_agent(concat!("dbdelve/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
-    let feed = feed();
+    let feed = feed(custom_feed);
     let latest: Latest = match agent
         .get(&feed)
         .header("Accept", "application/vnd.github+json")
@@ -193,9 +208,11 @@ pub(crate) fn remember_install() {
     windows::remember_install();
 }
 
-/// Only a test build reads its feed from the environment, so a shipped one
-/// cannot be pointed anywhere but the real releases.
-fn feed() -> String {
+/// The feed the check reads: the settings' source when one is set, GitHub
+/// itself otherwise. Only a test build also takes it from the environment, so
+/// a shipped one changes sources through its own settings, and whatever it is
+/// pointed at still has to satisfy the release key.
+fn feed(custom: &str) -> String {
     #[cfg(feature = "update-test-hooks")]
     if let Some(feed) = std::env::var("DBDELVE_UPDATE_FEED")
         .ok()
@@ -203,7 +220,12 @@ fn feed() -> String {
     {
         return feed;
     }
-    LATEST.to_string()
+    let custom = custom.trim();
+    if custom.is_empty() {
+        DEFAULT_FEED.to_string()
+    } else {
+        custom.to_string()
+    }
 }
 
 /// Whether a found update installs without anyone clicking: only a test build
@@ -362,12 +384,23 @@ mod tests {
     }
 
     #[test]
-    fn progress_reads_as_a_percentage_then_installing() {
+    fn progress_reads_preparing_then_a_percentage_then_installing() {
         let progress = Progress::default();
-        assert_eq!(progress.label(), "Updating\u{2026}");
+        assert_eq!(progress.label(), "Preparing\u{2026}");
         progress.downloaded(21, 50);
-        assert_eq!(progress.label(), "Updating\u{2026} 42%");
+        assert_eq!(progress.label(), "Downloading\u{2026} 42%");
         progress.installing();
         assert_eq!(progress.label(), "Installing\u{2026}");
+    }
+
+    #[test]
+    fn the_feed_is_the_settings_source_or_github() {
+        use super::{DEFAULT_FEED, feed};
+        assert_eq!(feed(""), DEFAULT_FEED);
+        assert_eq!(feed("   "), DEFAULT_FEED);
+        assert_eq!(
+            feed(" https://mirror.test/latest "),
+            "https://mirror.test/latest"
+        );
     }
 }

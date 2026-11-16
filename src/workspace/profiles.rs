@@ -65,6 +65,8 @@ impl Workspace {
             preview_rows: Some(self.settings.row_limit.unwrap_or(0)),
             opacity: Some(self.settings.opacity),
             check_for_updates: Some(self.settings.check_for_updates),
+            update_feed: (!self.settings.update_feed.is_empty())
+                .then(|| self.settings.update_feed.clone()),
             color_titlebar: Some(self.settings.color_titlebar),
             client_sort: Some(self.settings.client_sort),
             qualify_completions: Some(self.settings.qualify_completions),

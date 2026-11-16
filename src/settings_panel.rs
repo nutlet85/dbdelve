@@ -127,6 +127,7 @@ enum SettingId {
     FormatJoins,
     Language,
     CheckForUpdates,
+    UpdateFeed,
     VerboseLogging,
     MatchSystemAppearance,
     Theme,
@@ -226,6 +227,24 @@ fn setting_rows() -> Vec<SettingRow> {
             t!("settings.row.check_for_updates.title"),
             t!("settings.row.check_for_updates.description"),
             &["update", "release", "version", "github", "更新", "版本"],
+        ),
+        row(
+            SettingId::UpdateFeed,
+            SettingsTab::General,
+            t!("settings.group.updates"),
+            t!("settings.row.update_feed.title"),
+            t!("settings.row.update_feed.description"),
+            &[
+                "update",
+                "source",
+                "mirror",
+                "proxy",
+                "feed",
+                "github",
+                "更新源",
+                "镜像",
+                "代理",
+            ],
         ),
         row(
             SettingId::VerboseLogging,
@@ -1150,6 +1169,10 @@ fn render_control(
                 workspace.set_check_for_updates(check, cx);
             }))
             .into_any_element(),
+        SettingId::UpdateFeed => div()
+            .w(px(200.))
+            .child(Input::new(&workspace.update_feed_input).small())
+            .into_any_element(),
         SettingId::VerboseLogging => switch("verbose-logging", settings.verbose_logging, t)
             .on_click(cx.listener(|workspace, _: &ClickEvent, _, cx| {
                 let verbose = !workspace.settings.verbose_logging;
@@ -1621,7 +1644,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 25);
+        assert_eq!(found("!keyboard").len(), 26);
     }
 
     #[test]

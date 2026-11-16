@@ -11,10 +11,12 @@ use std::{
     fs::{self, File},
     io::{Read, Write as _},
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::LazyLock,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use minisign_verify::{PublicKey, Signature};
+use rust_i18n::t;
 
 use super::Progress;
 
@@ -33,13 +35,13 @@ const RELEASE_PUBLIC_KEY: &str = "RWRguEdmxhPDYPCPXxyHqIWXQPlI0W2jb7Hl5Hiz1IZeDv
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 const MAX_SIGNATURE: u64 = 4 * 1024;
 
-pub(super) const COULD_NOT_DOWNLOAD: &str = "The update could not be downloaded.";
-pub(super) const NOT_SIGNED: &str = "The download's signature did not check out.";
-pub(super) const COULD_NOT_UNPACK: &str = "The downloaded update could not be opened.";
-pub(super) const NOT_THE_APP: &str = "The downloaded app is not the release it should be.";
-pub(super) const COULD_NOT_REPLACE: &str = "The installed app could not be replaced.";
-pub(super) const NO_SCRATCH: &str = "There was nowhere to put the download.";
-pub(super) const ALREADY_RUNNING: &str = "Another DBDelve is already installing an update.";
+pub(super) const COULD_NOT_DOWNLOAD: &str = "update.failed.download";
+pub(super) const NOT_SIGNED: &str = "update.failed.signature";
+pub(super) const COULD_NOT_UNPACK: &str = "update.failed.unpack";
+pub(super) const NOT_THE_APP: &str = "update.failed.not_the_app";
+pub(super) const COULD_NOT_REPLACE: &str = "update.failed.replace";
+pub(super) const NO_SCRATCH: &str = "update.failed.scratch";
+pub(super) const ALREADY_RUNNING: &str = "update.failed.already_running";
 
 /// Only a test build takes its key from the environment, so a shipped one
 /// trusts nothing but the release key.
@@ -152,7 +154,7 @@ pub(super) fn unique() -> String {
 
 pub(super) fn failed(reason: &'static str) -> impl FnOnce(String) -> &'static str {
     move |detail| {
-        tracing::warn!("update failed: {reason} {detail}");
+        tracing::warn!("update failed: {} {detail}", t!(reason));
         reason
     }
 }
@@ -180,7 +182,9 @@ pub(super) struct Scratch(pub(super) PathBuf);
 
 impl Scratch {
     pub(super) fn new() -> Result<Self, String> {
-        let path = scratch_root()?.join(format!("dbdelve-update-{}", unique()));
+        let root = scratch_root()?;
+        sweep_stale(&root);
+        let path = root.join(format!("dbdelve-update-{}", unique()));
         #[cfg(unix)]
         let builder = {
             let mut builder = fs::DirBuilder::new();
@@ -193,6 +197,37 @@ impl Scratch {
             .create(&path)
             .map_err(|error| format!("{}: {error}", path.display()))?;
         Ok(Self(path))
+    }
+}
+
+/// How long a scratch directory may outlive the update it was made for. A
+/// check replaces the update within six hours, so anything this old is what a
+/// killed process left and nothing will resume from it.
+const STALE_SCRATCH: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+/// Leftovers of processes that died before their scratch could go, swept when
+/// the next one is made. Best effort: a directory in use by a running install
+/// is under a day old.
+fn sweep_stale(root: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_string_lossy().starts_with("dbdelve-update-") {
+            continue;
+        }
+        let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        let stale = metadata.modified().is_ok_and(|modified| {
+            SystemTime::now()
+                .duration_since(modified)
+                .is_ok_and(|age| age > STALE_SCRATCH)
+        });
+        if stale {
+            remove(&entry.path());
+        }
     }
 }
 
@@ -260,16 +295,50 @@ pub(super) fn download(
     if size > MAX_DOWNLOAD {
         return Err(format!("the release lists it at {size} bytes"));
     }
-    let mut response = agent.get(url).call().map_err(|error| error.to_string())?;
+    // What an interrupted attempt left. The finished file is verified against
+    // the release key either way, so resuming from it decides nothing.
+    let mut offset = fs::metadata(to).map(|metadata| metadata.len()).unwrap_or(0);
+    if offset > size {
+        remove(to);
+        offset = 0;
+    }
+    if offset == size {
+        progress.downloaded(size, size);
+        return Ok(());
+    }
+    let started = Instant::now();
+    if offset > 0 {
+        tracing::info!(offset, size, "resuming the update's download");
+    }
+    let mut request = agent.get(url);
+    if offset > 0 {
+        request = request.header("Range", format!("bytes={offset}-"));
+    }
+    let mut response = request.call().map_err(|error| error.to_string())?;
+    if offset > 0 && response.status().as_u16() != 206 {
+        // The whole file rather than the rest of it: start over instead of
+        // appending one to the other.
+        tracing::info!("the update's server ignored the range request; starting over");
+        offset = 0;
+    }
+    if response.status().as_u16() == 206 && offset == 0 {
+        return Err("a partial answer to a request for the whole file".into());
+    }
     let mut body = response
         .body_mut()
         .with_config()
         .limit(MAX_DOWNLOAD)
         .reader();
-    let mut file = File::create_new(to).map_err(|error| error.to_string())?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(offset > 0)
+        .truncate(offset == 0)
+        .open(to)
+        .map_err(|error| error.to_string())?;
     let mut buffer = vec![0; 256 * 1024];
-    let mut received = 0;
-    progress.downloaded(0, size);
+    let mut received = offset;
+    progress.downloaded(received, size);
     loop {
         let read = body.read(&mut buffer).map_err(|error| error.to_string())?;
         if read == 0 {
@@ -290,7 +359,22 @@ pub(super) fn download(
             "{received} of the {size} bytes the release lists arrived"
         ));
     }
-    file.sync_all().map_err(|error| error.to_string())
+    file.sync_all().map_err(|error| error.to_string())?;
+    tracing::info!(
+        bytes = received,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "the update downloaded"
+    );
+    Ok(())
+}
+
+/// The scratch directory for one update, made on first use and kept by the
+/// installer for its whole life so a retry resumes the download rather than
+/// starting over. A successful install removes it itself.
+pub(super) fn scratch_for(cell: &LazyLock<Result<Scratch, String>>) -> Result<&Path, String> {
+    cell.as_ref()
+        .map(|scratch| scratch.0.as_path())
+        .map_err(Clone::clone)
 }
 
 pub(super) fn fetch_signature(agent: &ureq::Agent, url: &str) -> Result<String, String> {
@@ -550,6 +634,129 @@ pub(super) mod tests {
         remove(&folder);
         assert!(!folder.exists());
         remove(&directory.join("never-there"));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// One answer from a throwaway HTTP server, and the request that asked
+    /// for it. `cut` is how much of the body goes out before the connection
+    /// closes: a line dropping mid-answer. `honour_range` decides whether a
+    /// `Range: bytes=N-` request gets the rest of the file or all of it.
+    fn serve_once(
+        listener: &std::net::TcpListener,
+        body: &[u8],
+        cut: Option<usize>,
+        honour_range: bool,
+    ) {
+        use std::{
+            io::{BufRead as _, BufReader, Write as _},
+            net::TcpStream,
+        };
+
+        fn read_request(stream: &TcpStream) -> String {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request = String::new();
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 0 {
+                let done = line == "\r\n";
+                request.push_str(&line);
+                line.clear();
+                if done {
+                    break;
+                }
+            }
+            request
+        }
+
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = read_request(&stream);
+        let offset = request
+            .lines()
+            .find_map(|line| line.strip_prefix("Range: bytes="))
+            .and_then(|value| value.trim().trim_end_matches('-').parse::<usize>().ok())
+            .filter(|_| honour_range)
+            .unwrap_or(0);
+        let slice = &body[offset..];
+        let head = if offset > 0 {
+            format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {offset}-{}/{}\r\nConnection: close\r\n\r\n",
+                slice.len(),
+                body.len() - 1,
+                body.len()
+            )
+        } else {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                slice.len()
+            )
+        };
+        stream.write_all(head.as_bytes()).unwrap();
+        let sent = cut.map_or(slice.len(), |cut| cut.min(slice.len()));
+        stream.write_all(&slice[..sent]).unwrap();
+        stream.flush().unwrap();
+    }
+
+    /// A download cut short leaves what arrived on disk, and the next attempt
+    /// asks the server only for the rest.
+    #[test]
+    fn a_dropped_download_resumes_where_it_stopped() {
+        use std::{net::TcpListener, thread};
+
+        use super::{agent, download};
+        use crate::update::Progress;
+
+        let body = b"0123456789".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn({
+            let body = body.clone();
+            move || {
+                serve_once(&listener, &body, Some(4), false);
+                serve_once(&listener, &body, None, true);
+            }
+        });
+        let directory = scratch("resume");
+        let file = directory.join("update");
+        let url = format!("http://{address}/update");
+        let progress = Progress::default();
+        let agent = agent();
+        assert!(download(&agent, &url, body.len() as u64, &file, &progress).is_err());
+        assert_eq!(fs::read(&file).unwrap().len(), 4, "what arrived stays");
+        download(&agent, &url, body.len() as u64, &file, &progress).unwrap();
+        assert_eq!(fs::read(&file).unwrap(), body);
+        server.join().unwrap();
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A server that answers a range request with the whole file (200 rather
+    /// than 206) gets the file rewritten from the start instead of appended
+    /// to the partial one.
+    #[test]
+    fn a_server_that_ignores_the_range_gets_a_fresh_download() {
+        use std::{net::TcpListener, thread};
+
+        use super::{agent, download};
+        use crate::update::Progress;
+
+        let body = b"0123456789".to_vec();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn({
+            let body = body.clone();
+            move || {
+                serve_once(&listener, &body, Some(4), false);
+                // The range is ignored: the whole file again.
+                serve_once(&listener, &body, None, false);
+            }
+        });
+        let directory = scratch("resume-ignored");
+        let file = directory.join("update");
+        let url = format!("http://{address}/update");
+        let progress = Progress::default();
+        let agent = agent();
+        assert!(download(&agent, &url, body.len() as u64, &file, &progress).is_err());
+        download(&agent, &url, body.len() as u64, &file, &progress).unwrap();
+        assert_eq!(fs::read(&file).unwrap(), body);
+        server.join().unwrap();
         fs::remove_dir_all(directory).unwrap();
     }
 }

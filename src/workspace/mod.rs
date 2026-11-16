@@ -71,6 +71,10 @@ pub(crate) struct Settings {
     /// One request to GitHub at launch. Off switch because local-first users
     /// get to say no to the only request DBDelve makes on its own.
     pub(crate) check_for_updates: bool,
+    /// Where the update check reads release metadata from: empty for GitHub
+    /// itself, anything else a mirror or proxy serving the same JSON. The
+    /// signatures make it safe to read, not trusted.
+    pub(crate) update_feed: String,
     /// Some people want the connection colour on the switcher only, not a
     /// painted band across the window.
     pub(crate) color_titlebar: bool,
@@ -130,6 +134,7 @@ impl Default for Settings {
                 .name
                 .to_string(),
             check_for_updates: true,
+            update_feed: String::new(),
             color_titlebar: true,
             client_sort: false,
             qualify_completions: false,
@@ -374,6 +379,9 @@ pub(crate) struct Workspace {
     /// with the card, because an input is state the user is part-way through
     /// typing into and a fresh one every frame would swallow the keystroke.
     pub(crate) opacity_input: Entity<InputState>,
+    /// The update source field in the settings panel, kept here for the same
+    /// reason as the opacity one.
+    pub(crate) update_feed_input: Entity<InputState>,
     /// The window's own focus, for the moments when nothing inside it can hold
     /// any. See [`Focus::Window`].
     pub(crate) focus: FocusHandle,
@@ -458,6 +466,20 @@ impl Workspace {
             },
         )
         .detach();
+        let update_feed_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!("settings.row.update_feed.placeholder").to_string())
+        });
+        cx.subscribe_in(
+            &update_feed_input,
+            window,
+            |workspace, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    workspace.commit_update_feed_input(window, cx);
+                }
+            },
+        )
+        .detach();
         cx.observe_window_appearance(window, |workspace, window, cx| {
             workspace.follow_system_appearance(window, cx);
         })
@@ -536,6 +558,7 @@ impl Workspace {
             collapsed_projects: HashSet::new(),
             theme_before_preview: None,
             opacity_input,
+            update_feed_input,
             focus: cx.focus_handle(),
             explorer_focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
@@ -617,6 +640,12 @@ impl Workspace {
                 workspace.settings.row_limit = stored_settings.row_limit();
                 workspace.settings.check_for_updates =
                     stored_settings.check_for_updates.unwrap_or(true);
+                workspace.settings.update_feed =
+                    stored_settings.update_feed.clone().unwrap_or_default();
+                let feed = workspace.settings.update_feed.clone();
+                workspace.update_feed_input.update(cx, |input, cx| {
+                    input.set_value(feed, window, cx);
+                });
                 workspace.settings.color_titlebar = stored_settings.color_titlebar.unwrap_or(true);
                 workspace.settings.client_sort = stored_settings.client_sort.unwrap_or(false);
                 workspace.settings.qualify_completions =
@@ -1060,11 +1089,58 @@ impl Workspace {
         cx.notify();
     }
 
+    /// The source the update check reads, empty for GitHub itself. A change
+    /// drops an update the old source found and asks the new one at once:
+    /// waiting six hours for the first answer would read as the setting having
+    /// done nothing.
+    pub(crate) fn set_update_feed(&mut self, feed: String, cx: &mut Context<Self>) {
+        let feed = feed.trim().to_string();
+        if self.settings.update_feed == feed {
+            return;
+        }
+        self.settings.update_feed = feed;
+        let running = self
+            .update
+            .as_ref()
+            .is_some_and(|update| matches!(update.state, update::State::Running(_)));
+        if !running {
+            self.update = None;
+            self.update_checks = self
+                .settings
+                .check_for_updates
+                .then(|| Self::check_for_updates(cx));
+        }
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    /// What the typed source means, once the user is done typing it. Enter and
+    /// blur both count as done.
+    pub(crate) fn commit_update_feed_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = self.update_feed_input.read(cx).value().to_string();
+        let trimmed = typed.trim().to_string();
+        if typed != trimmed {
+            self.update_feed_input
+                .update(cx, |input, cx| input.set_value(trimmed.clone(), window, cx));
+        }
+        self.set_update_feed(trimmed, cx);
+    }
+
     /// At launch and every [`update::RECHECK`] after it.
     fn check_for_updates(cx: &mut Context<Self>) -> gpui::Task<()> {
         cx.spawn(async move |workspace, cx| {
             loop {
-                let found = spawn_blocking(cx.background_executor(), update::newer_release).await;
+                // Read each round rather than once: the settings can change
+                // between two checks, and the new source answers the next one.
+                let Ok(feed) =
+                    workspace.update(cx, |workspace, _| workspace.settings.update_feed.clone())
+                else {
+                    return;
+                };
+                let found = spawn_blocking(cx.background_executor(), move || {
+                    update::newer_release(&feed)
+                })
+                .await;
                 let open = workspace.update(cx, |workspace, cx| {
                     // A check that comes back while an update is being
                     // installed must not take its progress away.
@@ -1095,6 +1171,7 @@ impl Workspace {
             return;
         };
         let progress = std::sync::Arc::new(update::Progress::default());
+        tracing::info!(version = %update.release.version, "installing the update");
         let state = std::mem::replace(&mut update.state, update::State::Running(progress.clone()));
         let (update::State::Ready(installer) | update::State::Failed(_, installer)) = state else {
             update.state = state;
@@ -1161,71 +1238,90 @@ impl Workspace {
         let url = update.release.url.clone();
         let (label, menu): (String, Rc<dyn Fn(PopupMenu) -> PopupMenu>) = match &update.state {
             update::State::Link => (
-                format!("DBDelve {version} available"),
+                t!("update.available", version = version).to_string(),
                 Rc::new(move |menu| {
-                    menu.label("Update it with your package manager,")
-                        .label("or download it from GitHub.")
+                    menu.label(t!("update.managed_one").to_string())
+                        .label(t!("update.managed_two").to_string())
                         .separator()
-                        .link(format!("Download {version}"), url.clone())
+                        .link(
+                            t!("update.download_version", version = version).to_string(),
+                            url.clone(),
+                        )
                 }),
             ),
             update::State::Ready(_) => {
                 let workspace = cx.weak_entity();
                 (
-                    format!("DBDelve {version} available"),
+                    t!("update.available", version = version).to_string(),
                     Rc::new(move |menu| {
                         let workspace = workspace.clone();
-                        menu.item(PopupMenuItem::new("Update and restart").on_click(
-                            move |_, _, cx| {
-                                _ = workspace
-                                    .update(cx, |workspace, cx| workspace.install_update(cx));
-                            },
-                        ))
+                        menu.item(
+                            PopupMenuItem::new(t!("update.update_and_restart").to_string())
+                                .on_click(move |_, _, cx| {
+                                    _ = workspace
+                                        .update(cx, |workspace, cx| workspace.install_update(cx));
+                                }),
+                        )
                         .separator()
-                        .link("Release notes", url.clone())
+                        .link(t!("update.release_notes").to_string(), url.clone())
                     }),
                 )
             }
             update::State::Running(progress) => {
-                let status = format!("DBDelve {version} opens once it is installed.");
+                // Only the install stage means the app is about to reopen.
+                // Saying it while the download is still running is what made
+                // a stalled download read as an install underway.
+                let status = if progress.is_installing() {
+                    t!("update.opens_once_installed", version = version).to_string()
+                } else {
+                    t!("update.keep_using").to_string()
+                };
                 (
                     progress.label(),
                     Rc::new(move |menu| {
                         menu.label(status.clone())
                             .separator()
-                            .link("Release notes", url.clone())
+                            .link(t!("update.release_notes").to_string(), url.clone())
                     }),
                 )
             }
             &update::State::Failed(reason, _) => {
                 let workspace = cx.weak_entity();
                 (
-                    format!("DBDelve {version} available"),
+                    t!("update.available", version = version).to_string(),
                     Rc::new(move |menu| {
                         let workspace = workspace.clone();
-                        menu.label(reason)
-                            .item(PopupMenuItem::new("Try again").on_click(move |_, _, cx| {
-                                _ = workspace
-                                    .update(cx, |workspace, cx| workspace.install_update(cx));
-                            }))
+                        menu.label(t!(reason).to_string())
+                            .item(
+                                PopupMenuItem::new(t!("update.try_again").to_string()).on_click(
+                                    move |_, _, cx| {
+                                        _ = workspace.update(cx, |workspace, cx| {
+                                            workspace.install_update(cx)
+                                        });
+                                    },
+                                ),
+                            )
                             .separator()
-                            .link(format!("Download {version}"), url.clone())
+                            .link(
+                                t!("update.download_version", version = version).to_string(),
+                                url.clone(),
+                            )
                     }),
                 )
             }
             update::State::Superseded(installed) => {
                 let installed = installed.clone();
                 (
-                    "Restart to update".into(),
+                    t!("update.restart_to_update").to_string(),
                     Rc::new(move |menu| {
                         let installed = installed.clone();
-                        menu.label("DBDelve was updated since it started.")
+                        menu.label(t!("update.updated_since_start").to_string())
                             .item(
-                                PopupMenuItem::new("Restart DBDelve")
+                                PopupMenuItem::new(t!("update.restart").to_string())
                                     .on_click(move |_, _, cx| restart_into(installed.clone(), cx)),
                             )
                             .separator()
-                            .link("Release notes", url.clone())
+                            .link(t!("update.release_notes").to_string(), url.clone())
                     }),
                 )
             }
@@ -1416,6 +1512,13 @@ impl Workspace {
         });
         self.row_panel.search.update(cx, |input, cx| {
             input.set_placeholder(t!("grid.filter_placeholder").to_string(), window, cx)
+        });
+        self.update_feed_input.update(cx, |input, cx| {
+            input.set_placeholder(
+                t!("settings.row.update_feed.placeholder").to_string(),
+                window,
+                cx,
+            )
         });
         for profile in &mut self.profiles {
             profile.session.relocalize(window, cx);
@@ -2684,6 +2787,7 @@ impl Render for Workspace {
                         window.dispatch_action(Box::new(OpenSettings), cx);
                     })
                     .into_any_element(),
+                    ui::version_badge(t),
                 ],
             ))
             .child(self.beside_settings(main_pane, cx))
@@ -2787,7 +2891,6 @@ pub(crate) fn spawn_blocking<T: Send + 'static>(
     }
     executor.spawn(blocking::unblock(work))
 }
-                    ui::version_badge(t),
 
 /// A Cancel, on a thread of its own started at once rather than on
 /// [`spawn_blocking`]'s pool, which the statements it cancels may be filling.

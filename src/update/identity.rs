@@ -2,8 +2,7 @@ use std::{fs, io, path::Path};
 
 use super::download::COULD_NOT_REPLACE;
 
-pub(super) const ALREADY_UPDATED: &str =
-    "DBDelve was updated since it started. Restart it to run that version.";
+pub(super) const ALREADY_UPDATED: &str = "update.failed.already_updated";
 
 /// A file, whatever path it is reached by or renamed to.
 #[derive(Clone, Copy, Debug, PartialEq)]

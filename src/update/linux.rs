@@ -5,7 +5,7 @@ use std::{
     os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _},
     path::{Path, PathBuf},
     process::Command,
-    sync::OnceLock,
+    sync::{LazyLock, OnceLock},
 };
 
 use flate2::read::GzDecoder;
@@ -15,8 +15,8 @@ use super::{
     Asset, Progress,
     download::{
         ALREADY_RUNNING, COULD_NOT_DOWNLOAD, COULD_NOT_REPLACE, COULD_NOT_UNPACK, NO_SCRATCH,
-        NOT_SIGNED, NOT_THE_APP, Scratch, agent, download, failed, fetch_signature, lock,
-        release_key, remove, run, verify, writable,
+        NOT_SIGNED, NOT_THE_APP, agent, download, failed, fetch_signature, lock, release_key,
+        remove, run, scratch_for, verify, writable,
     },
     identity::{Identity, unchanged},
 };
@@ -31,6 +31,9 @@ pub(crate) struct Installer {
     version: String,
     asset: Asset,
     key: PublicKey,
+    /// Where the download lives, made when an install first starts and kept
+    /// for a retry, so an interrupted download resumes instead of restarting.
+    scratch: LazyLock<Result<super::download::Scratch, String>>,
 }
 
 /// The two ways of installing DBDelve on Linux that can replace themselves.
@@ -236,6 +239,7 @@ pub(super) fn installer(version: &str, asset: impl Fn(&str) -> Option<Asset>) ->
         version: version.to_string(),
         asset,
         key,
+        scratch: LazyLock::new(super::download::Scratch::new),
     })
 }
 
@@ -351,14 +355,15 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
         version,
         asset,
         key,
+        scratch,
     } = installer;
     let installed = kind.installed();
     tracing::info!(version, path = %installed.display(), "update started");
     let _lock = lock(&installed).map_err(failed(ALREADY_RUNNING))?;
     unchanged(&installed, *running).map_err(|(reason, detail)| failed(reason)(detail))?;
 
-    let scratch = Scratch::new().map_err(failed(NO_SCRATCH))?;
-    let file = scratch.0.join(&asset.name);
+    let scratch = scratch_for(scratch).map_err(failed(NO_SCRATCH))?;
+    let file = scratch.join(&asset.name);
     let agent = agent();
     // First, so a release whose signature is missing fails before the
     // download rather than after it.
@@ -367,7 +372,13 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
     tracing::info!(url = asset.url, size = asset.size, "downloading the update");
     download(&agent, &asset.url, asset.size, &file, progress)
         .map_err(failed(COULD_NOT_DOWNLOAD))?;
-    verify(&file, &signature, key, &asset.name).map_err(failed(NOT_SIGNED))?;
+    // A complete file that does not verify would answer every retry: it is
+    // what a retry would resume into. Dropped, so the next one downloads
+    // afresh.
+    verify(&file, &signature, key, &asset.name).map_err(|detail| {
+        remove(&file);
+        failed(NOT_SIGNED)(detail)
+    })?;
     tracing::info!("the update's signature verified");
 
     progress.installing();
@@ -376,7 +387,7 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
         Kind::Tarball { home } => {
             let release = unpack(
                 &file,
-                &scratch.0.join("unpacked"),
+                &scratch.join("unpacked"),
                 &release_directory(version, std::env::consts::ARCH),
             )
             .map_err(|error| error.to_string())
@@ -385,6 +396,9 @@ pub(crate) fn install(installer: &Installer, progress: &Progress) -> Result<Path
             run(&mut bundled_installer(&release, home)).map_err(failed(COULD_NOT_REPLACE))?;
         }
     }
+    // Nothing is left to resume: the update is in place, and the process
+    // restarts into it before any scratch Drop could run.
+    remove(scratch);
     tracing::info!(version, path = %installed.display(), "update installed");
     Ok(installed)
 }
@@ -749,6 +763,7 @@ mod tests {
                     "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3",
                 )
                 .unwrap(),
+                scratch: std::sync::LazyLock::new(crate::update::download::Scratch::new),
             })
         };
         assert!(matches!(
