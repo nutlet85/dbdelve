@@ -27,12 +27,14 @@ use gpui_component::{
     table::TableState,
     tree::{TreeEvent, TreeState},
 };
+use rust_i18n::t;
 
 use crate::{
     Workspace, completion,
     db::{
         CancelToken, Catalog, Connection, ConnectionConfig, Databases, DbError, Engine,
         ExplainMode, QueryResult, Relation, RelationKind, Routine, Row, Structure, Syntax, Target,
+        ViewDefinition,
     },
     explain::{self, Plan},
     explorer::{
@@ -608,6 +610,32 @@ pub(crate) struct Session {
     /// time: a second Apply while the first is in flight would run against a
     /// structure neither of them has read back yet.
     pub(crate) ddl_in_flight: bool,
+    /// What each view is written as, read on demand by the palette's
+    /// definition search rather than with the catalog.
+    pub(crate) definitions: DefinitionIndex,
+    /// Stamps each definition load, so one still in flight when a refresh
+    /// invalidates the index cannot write its answer over the newer state.
+    /// Never reset: two loads issued either side of a reconnect must not wear
+    /// the same number.
+    pub(crate) next_definition_load: u64,
+}
+
+/// What the palette's definition search has of this connection's view texts.
+///
+/// Read on demand because the palette is the only thing that wants them, and
+/// thrown away whenever the catalog they are matched against is replaced
+/// (`Workspace::catalog_replaced`): a view that was created, dropped or
+/// redefined since would otherwise be searched under its old text.
+#[derive(Default)]
+pub(crate) enum DefinitionIndex {
+    #[default]
+    Unloaded,
+    /// On its way, stamped so a late answer for an older index is dropped.
+    Loading(u64),
+    Loaded(Arc<Vec<ViewDefinition>>),
+    /// Why the server or its side session would not say. The palette shows it
+    /// and offers a retry by being entered again.
+    Failed(String),
 }
 
 /// A generated statement waiting to be read and run.
@@ -966,8 +994,9 @@ impl Session {
         window: &mut Window,
         cx: &mut Context<Workspace>,
     ) -> Self {
-        let explorer_filter =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Filter queries and objects…"));
+        let explorer_filter = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("explorer.filter_placeholder").to_string())
+        });
         cx.subscribe(&explorer_filter, {
             let id = id.clone();
             move |workspace, _, event: &InputEvent, cx| {
@@ -987,7 +1016,9 @@ impl Session {
         })
         .detach();
 
-        let save_name = cx.new(|cx| InputState::new(window, cx).placeholder("Query name"));
+        let save_name = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(t!("query.name_placeholder").to_string())
+        });
         // Subscribed with the window, because confirming a save can swap the
         // editor's buffer and that cannot be done without one.
         cx.subscribe_in(
@@ -1079,7 +1110,21 @@ impl Session {
             definition_editor: None,
             routine_call: None,
             ddl_in_flight: false,
+            definitions: DefinitionIndex::default(),
+            next_definition_load: 0,
         }
+    }
+
+    /// The fields whose placeholder was read once, in the language the session
+    /// was built in. Rewritten when the language changes, since nothing else
+    /// reads the locale again for them.
+    pub(crate) fn relocalize(&mut self, window: &mut Window, cx: &mut App) {
+        self.explorer_filter.update(cx, |input, cx| {
+            input.set_placeholder(t!("explorer.filter_placeholder").to_string(), window, cx)
+        });
+        self.save_name.update(cx, |input, cx| {
+            input.set_placeholder(t!("query.name_placeholder").to_string(), window, cx)
+        });
     }
 
     /// The status bar's notice: the session's, or else one about the tab in

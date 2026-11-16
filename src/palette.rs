@@ -1,15 +1,21 @@
 //! `cmd+p` and `cmd+shift+p`: one palette, one matcher, several scopes.
 //!
 //! The palette searches everything the active profile can reach -- its verbs,
-//! its tables and routines, its saved queries, the statements it has run and
-//! the other connections -- and the scope pills narrow it to one of those.
-//! `cmd+p` opens on Objects, `cmd+shift+p` on Commands, and the titlebar's
+//! its tables and routines, what its views and routines are written as, its
+//! saved queries, the statements it has run and the other connections -- and
+//! the scope pills narrow it to one of those. `cmd+p` opens on Objects,
+//! `cmd+shift+p` on Commands, and the titlebar's
 //! connection name on Connections, a tree of every project and the
 //! connections in it; `tab` moves between scopes, and so do `left` and
 //! `right` once the caret is at the field's edge. The pickers a command opens (themes, fonts, databases,
 //! schemas, columns, projects) are the same card over a list of their own,
 //! and so is what can be done to one connection or one project, which
 //! `shift-enter` puts up from its row.
+//!
+//! The scopes, the field's placeholder, the group headers, the footer hints
+//! and the empty states are named by locale keys (`palette.*` in
+//! `locales/app.yml`); the rows themselves -- a command's label, an object's
+//! kind, a count or a time -- are English, and so is a server's own words.
 //!
 //! The command scope offers only the verbs that apply to what is on screen: a
 //! Run on a tab with no buffer is a row to read past.
@@ -22,6 +28,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::Range,
     rc::Rc,
+    sync::Arc,
 };
 
 use gpui::{
@@ -44,16 +51,18 @@ use crate::{
         PaletteHistoryFilter, PaletteHistorySort, PaletteNext, PaletteNextScope, PalettePrevious,
         PalettePreviousScope, PaletteRowActions, PaletteScopeLeft, PaletteScopeRight,
     },
-    db::{ConnectionConfig, ExplainMode, RelationKind, RoutineKind, Syntax},
+    db::{
+        Catalog, ConnectionConfig, ExplainMode, RelationKind, RoutineKind, Syntax, ViewDefinition,
+    },
     explorer::ROW_LIMITS,
     explorer::{ExplorerTarget, ObjectKind},
     export::{ClipboardFormat, FileAs, Format, RowsAs},
-    fuzzy::{Fuzzy, Query},
+    fuzzy::{Fuzzy, Query, fragment},
     icons::{icon, saved_query_icon},
     import::Source,
     session::{
-        CatalogState, ObjectBody, Profile, QueryState, RowCount, Session, StructureState, Tab,
-        routine_name,
+        CatalogState, DefinitionIndex, ObjectBody, Profile, QueryState, RowCount, Session,
+        StructureState, Tab, routine_name,
     },
     sql,
     store::{HistoryEntry, StoredProject},
@@ -79,6 +88,12 @@ const RECENT_ROWS: usize = 5;
 /// How many confirmed rows the workspace remembers for the Recent group.
 pub const RECENTS_KEPT: usize = 8;
 const RECENT_GROUP: &str = "Recent";
+/// How much of a definition a row shows beside the object's name: the first
+/// line of a text nothing in it matched, and the words around the match when
+/// something did.
+const SNIPPET_LINE: usize = 100;
+const SNIPPET_BEFORE: usize = 60;
+const SNIPPET_AFTER: usize = 100;
 /// The hover group of every row, for its actions button to show by.
 const ROW_GROUP: &str = "palette-row";
 
@@ -88,41 +103,58 @@ pub enum Scope {
     All,
     Commands,
     Objects,
+    /// Objects found by what they are written as: a view's statement or a
+    /// routine's body, read off the server when the scope is first entered.
+    Definitions,
     Queries,
     History,
     Connections,
 }
 
 impl Scope {
-    pub const ALL: [Scope; 6] = [
+    pub const ALL: [Scope; 7] = [
         Scope::All,
         Scope::Commands,
         Scope::Objects,
+        Scope::Definitions,
         Scope::Queries,
         Scope::History,
         Scope::Connections,
     ];
 
-    pub fn title(self) -> &'static str {
+    /// The locale key this scope is named by. The variant is the identity and
+    /// the key is the name it is drawn under, so a scope is never told apart by
+    /// what its pill happens to read in one language.
+    pub fn key(self) -> &'static str {
         match self {
-            Scope::All => "All",
-            Scope::Commands => "Commands",
-            Scope::Objects => "Objects",
-            Scope::Queries => "Queries",
-            Scope::History => "History",
-            Scope::Connections => "Connections",
+            Scope::All => "palette.scope.all",
+            Scope::Commands => "palette.scope.commands",
+            Scope::Objects => "palette.scope.objects",
+            Scope::Definitions => "palette.scope.definitions",
+            Scope::Queries => "palette.scope.queries",
+            Scope::History => "palette.scope.history",
+            Scope::Connections => "palette.scope.connections",
         }
     }
 
-    fn placeholder(self) -> &'static str {
+    pub fn title(self) -> String {
+        t!(self.key()).to_string()
+    }
+
+    fn placeholder_key(self) -> &'static str {
         match self {
-            Scope::All => "Search commands, tables, queries and connections…",
-            Scope::Commands => "Run a command…",
-            Scope::Objects => "Go to a table, view or routine…",
-            Scope::Queries => "Open a saved query…",
-            Scope::History => "Recall a statement you have run…",
-            Scope::Connections => "Switch to a connection…",
+            Scope::All => "palette.placeholder.all",
+            Scope::Commands => "palette.placeholder.commands",
+            Scope::Objects => "palette.placeholder.objects",
+            Scope::Definitions => "palette.placeholder.definitions",
+            Scope::Queries => "palette.placeholder.queries",
+            Scope::History => "palette.placeholder.history",
+            Scope::Connections => "palette.placeholder.connections",
         }
+    }
+
+    fn placeholder(self) -> String {
+        t!(self.placeholder_key()).to_string()
     }
 
     fn step(self, delta: isize) -> Self {
@@ -208,9 +240,8 @@ impl Mode {
         }
     }
 
-    fn placeholder(self) -> &'static str {
-        match self {
-            Mode::Search(scope) => scope.placeholder(),
+    fn placeholder(self) -> String {
+        let text = match self {
             Mode::Font(_) => "Pick a font…",
             Mode::Theme(None) => "Pick a theme…",
             Mode::Theme(Some(Appearance::Light)) => "Pick a light theme…",
@@ -234,54 +265,63 @@ impl Mode {
                 "Remove this connection?"
             }
             Mode::Confirm(Target::Project(_)) => "Delete this project?",
-        }
+            Mode::Search(scope) => return scope.placeholder(),
+        };
+        text.to_string()
     }
 
     /// The one pill a picker shows in place of the scopes, naming its list.
-    fn title(self) -> &'static str {
+    fn title(self) -> String {
         match self {
             Mode::Search(scope) => scope.title(),
-            Mode::Font(FontSlot::Chrome) => "Chrome font",
-            Mode::Font(FontSlot::Editor) => "Editor font",
-            Mode::Font(FontSlot::Grid) => "Grid font",
-            Mode::Theme(None) => "Themes",
-            Mode::Theme(Some(side)) => side.theme_label(),
-            Mode::ImportTheme(..) => "Import theme",
-            Mode::Database => "Databases",
-            Mode::Schema => "Schemas",
-            Mode::Columns => "Columns",
-            Mode::RowLimit => "Row limit",
-            Mode::Engine => "Engines",
-            Mode::ImportProject => "Project",
-            Mode::References => "Referenced by",
-            Mode::DeleteQuery => "Delete query",
-            Mode::ConnectionActions(_) => "Connection",
-            Mode::ProjectActions(_) => "Project",
-            Mode::MoveToProject(_) => "Move to project",
-            Mode::NameProject(None) => "New project",
-            Mode::NameProject(Some(_)) | Mode::Projects(ProjectVerb::Rename) => "Rename project",
-            Mode::Projects(ProjectVerb::Delete) | Mode::Confirm(Target::Project(_)) => {
-                "Delete project"
+            Mode::Font(FontSlot::Chrome) => "Chrome font".to_string(),
+            Mode::Font(FontSlot::Editor) => "Editor font".to_string(),
+            Mode::Font(FontSlot::Grid) => "Grid font".to_string(),
+            Mode::Theme(None) => "Themes".to_string(),
+            Mode::Theme(Some(side)) => side.theme_label().to_string(),
+            Mode::ImportTheme(..) => "Import theme".to_string(),
+            Mode::Database => "Databases".to_string(),
+            Mode::Schema => "Schemas".to_string(),
+            Mode::Columns => "Columns".to_string(),
+            Mode::RowLimit => "Row limit".to_string(),
+            Mode::Engine => "Engines".to_string(),
+            Mode::ImportProject => "Project".to_string(),
+            Mode::References => "Referenced by".to_string(),
+            Mode::DeleteQuery => "Delete query".to_string(),
+            Mode::ConnectionActions(_) => "Connection".to_string(),
+            Mode::ProjectActions(_) => "Project".to_string(),
+            Mode::MoveToProject(_) => "Move to project".to_string(),
+            Mode::NameProject(None) => "New project".to_string(),
+            Mode::NameProject(Some(_)) | Mode::Projects(ProjectVerb::Rename) => {
+                "Rename project".to_string()
             }
-            Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => "Remove connection",
+            Mode::Projects(ProjectVerb::Delete) | Mode::Confirm(Target::Project(_)) => {
+                "Delete project".to_string()
+            }
+            Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => {
+                "Remove connection".to_string()
+            }
         }
     }
 
     /// What `enter` does to the row, for the footer.
-    fn verb(self) -> &'static str {
-        match self {
+    fn verb(self) -> String {
+        let key = match self {
             Mode::Search(Scope::Commands)
             | Mode::ConnectionActions(_)
-            | Mode::ProjectActions(_) => "Run",
-            Mode::Search(Scope::Connections) => "Switch",
-            Mode::Search(_) | Mode::Columns | Mode::References => "Open",
-            Mode::MoveToProject(_) => "Move",
-            Mode::NameProject(None) => "Create",
-            Mode::NameProject(Some(_)) => "Rename",
-            Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => "Remove",
-            Mode::Confirm(Target::Project(_)) | Mode::DeleteQuery => "Delete",
-            _ => "Select",
-        }
+            | Mode::ProjectActions(_) => "palette.footer.run",
+            Mode::Search(Scope::Connections) => "palette.footer.switch",
+            Mode::Search(_) | Mode::Columns | Mode::References => "palette.footer.open",
+            Mode::MoveToProject(_) => "palette.footer.move",
+            Mode::NameProject(None) => "palette.footer.create",
+            Mode::NameProject(Some(_)) => "palette.footer.rename",
+            Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => {
+                "palette.footer.remove"
+            }
+            Mode::Confirm(Target::Project(_)) | Mode::DeleteQuery => "palette.footer.delete",
+            _ => "palette.footer.select",
+        };
+        t!(key).to_string()
     }
 }
 
@@ -513,6 +553,9 @@ struct Item {
     in_all: bool,
     /// The header the row sits under.
     group: Group,
+    /// What the object is written as, on a Definitions row: searched by the
+    /// text the user is trying to find, and drawn as the row's second line.
+    definition: Option<Arc<str>>,
     /// What History filters and sorts a row by.
     ran: Ran,
     command: Command,
@@ -569,12 +612,13 @@ impl HistoryStatus {
         HistoryStatus::Failed,
     ];
 
-    fn title(self) -> &'static str {
-        match self {
-            HistoryStatus::All => "All",
-            HistoryStatus::Succeeded => "Succeeded",
-            HistoryStatus::Failed => "Failed",
-        }
+    fn title(self) -> String {
+        let key = match self {
+            HistoryStatus::All => "palette.history.status.all",
+            HistoryStatus::Succeeded => "palette.history.status.succeeded",
+            HistoryStatus::Failed => "palette.history.status.failed",
+        };
+        t!(key).to_string()
     }
 
     fn admits(self, outcome: Option<Outcome>) -> bool {
@@ -603,12 +647,13 @@ impl HistoryOrder {
         HistoryOrder::MostRows,
     ];
 
-    fn title(self) -> &'static str {
-        match self {
-            HistoryOrder::Newest => "Newest",
-            HistoryOrder::Slowest => "Slowest",
-            HistoryOrder::MostRows => "Most rows",
-        }
+    fn title(self) -> String {
+        let key = match self {
+            HistoryOrder::Newest => "palette.history.order.newest",
+            HistoryOrder::Slowest => "palette.history.order.slowest",
+            HistoryOrder::MostRows => "palette.history.order.most_rows",
+        };
+        t!(key).to_string()
     }
 
     fn key(self, ran: Ran) -> Option<u64> {
@@ -640,10 +685,44 @@ enum Group {
     /// The list's one group, which needs no header of its own -- until another
     /// group stands beside it, when it is headed by its scope.
     Bare,
-    /// A header the palette names itself.
+    /// A header the palette names itself, by its stable English key. The key
+    /// is the identity; [`group_header`] is what is drawn.
     Named(&'static str),
+    /// A row's scope, under All: one group per scope, headed by its name.
+    Scope(Scope),
     /// A project, by its index, under its name.
     Project(usize, SharedString),
+}
+
+/// What a group's header reads. A group is named in the locale on screen, and
+/// the stable key it is held by is only ever the English one.
+fn group_header(group: &Group) -> SharedString {
+    let key = match group {
+        Group::Bare => return SharedString::default(),
+        Group::Scope(scope) => return scope.title().into(),
+        Group::Project(_, name) => return name.clone(),
+        Group::Named(RECENT_GROUP) => "palette.group.recent",
+        Group::Named(QUERY) => "palette.group.query",
+        Group::Named(ROWS) => "palette.group.rows",
+        Group::Named(CELL) => "palette.group.cell",
+        Group::Named(EDITS) => "palette.group.edits",
+        Group::Named(RESULTS) => "palette.group.results",
+        Group::Named(TAB) => "palette.group.tab",
+        Group::Named(CONNECTION) => "palette.group.connection",
+        Group::Named(PROJECT) => "palette.group.project",
+        Group::Named(APPEARANCE) => "palette.group.appearance",
+        Group::Named(WINDOW) => "palette.group.window",
+        Group::Named(HELP) => "palette.group.help",
+        Group::Named(MANAGE) => "palette.group.manage",
+        Group::Named(NO_PROJECT) => "palette.group.no_project",
+        Group::Named(PROJECTS) => "palette.group.projects",
+        Group::Named(THEMES) => "palette.group.themes",
+        Group::Named(IMPORT) => "palette.group.import",
+        // A group nobody has named in the locale file yet reads as itself
+        // rather than as a key.
+        Group::Named(name) => return (*name).into(),
+    };
+    t!(key).into()
 }
 
 impl Item {
@@ -662,6 +741,7 @@ impl Item {
             scope: Scope::Commands,
             in_all: true,
             group: Group::Bare,
+            definition: None,
             ran: Ran::default(),
             command,
         }
@@ -726,6 +806,11 @@ impl Item {
         self.ran = ran;
         self
     }
+
+    fn definition(mut self, text: Arc<str>) -> Self {
+        self.definition = Some(text);
+        self
+    }
 }
 
 /// One line of the list: a group's header, or a row by its index into the
@@ -769,6 +854,9 @@ fn arrange(
 ) -> Arranged {
     if scope == Some(Scope::Connections) {
         return tree(items, query, fuzzy, collapsed);
+    }
+    if scope == Some(Scope::Definitions) {
+        return arrange_definitions(items, query, fuzzy);
     }
     let mut ranked = fuzzy.rank(
         query,
@@ -815,7 +903,7 @@ fn arrange(
             continue;
         }
         let group = match scope {
-            Some(Scope::All) => Group::Named(item.scope.title()),
+            Some(Scope::All) => Group::Scope(item.scope),
             _ => item.group.clone(),
         };
         match groups.iter_mut().find(|(key, _)| *key == group) {
@@ -831,17 +919,87 @@ fn arrange(
         if scope == Some(Scope::All) {
             members.truncate(ALL_SCOPE_GROUP_ROWS);
         }
-        let header = match group {
+        let header = match &group {
             Group::Bare if alone => None,
             Group::Bare => scope.map(|scope| scope.title().into()),
-            Group::Named(name) => Some(name.into()),
-            Group::Project(_, name) => Some(name),
+            group => Some(group_header(group)),
         };
         rows.extend(header.map(Row::Header));
         rows.extend(members.into_iter().map(Row::Item));
     }
     let lead = first_item(&rows);
     Arranged { rows, lead }
+}
+
+/// The Definitions scope: objects found by their name or by what they are
+/// written as, every name before any text.
+///
+/// A definition is matched as a plain substring ([`fragment`]) rather than
+/// scored: the fuzzy matcher would find letters scattered across a whole
+/// statement, and its score says nothing about where in the text the word the
+/// user is after actually falls. Names keep the matcher, since a name is what
+/// it is for. No headers and no Recent: every row here is one way into one
+/// object's definition, and a group would only push them apart.
+fn arrange_definitions(items: &[Item], query: &Query, fuzzy: &mut Fuzzy) -> Arranged {
+    let definitions = || {
+        items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.scope == Scope::Definitions)
+    };
+    // With nothing typed the order they were built in: routines, then views.
+    if query.is_empty() {
+        let rows: Vec<Row> = definitions().map(|(index, _)| Row::Item(index)).collect();
+        let lead = first_item(&rows);
+        return Arranged { rows, lead };
+    }
+
+    let mut named = Vec::new();
+    let mut written = Vec::new();
+    for (index, item) in definitions() {
+        if let Some(score) = fuzzy.score(query, &item.label) {
+            named.push((index, score));
+            continue;
+        }
+        if let Some(text) = item.definition.as_deref()
+            && let Some(range) = fragment(text, query.text())
+        {
+            written.push((index, range.start));
+        }
+    }
+    named.sort_by_key(|(index, score)| {
+        (std::cmp::Reverse(*score), items[*index].label.len(), *index)
+    });
+    written.sort_by_key(|(index, at)| (*at, items[*index].label.len(), *index));
+
+    let rows: Vec<Row> = named
+        .iter()
+        .map(|(index, _)| index)
+        .chain(written.iter().map(|(index, _)| index))
+        .map(|index| Row::Item(*index))
+        .collect();
+    let lead = first_item(&rows);
+    Arranged { rows, lead }
+}
+
+/// Where a view definition's relation sits in `catalog`, by its schema and
+/// name: the index rather than the relation, because a row opens it.
+fn relation_at(
+    catalog: &Catalog,
+    schema: &str,
+    name: &str,
+) -> Option<(usize, usize, RelationKind)> {
+    let (schema_index, found) = catalog
+        .schemas
+        .iter()
+        .enumerate()
+        .find(|(_, each)| each.name == schema)?;
+    found
+        .relations
+        .iter()
+        .enumerate()
+        .find(|(_, relation)| relation.name == name)
+        .map(|(relation_index, relation)| (schema_index, relation_index, relation.kind))
 }
 
 /// Where a row of the Connections scope stands in its tree.
@@ -936,7 +1094,7 @@ fn tree(items: &[Item], query: &Query, fuzzy: &mut Fuzzy, collapsed: &HashSet<St
     projects.sort_by_key(|(best, _)| *best);
 
     let loose_header = loose.first().and_then(|&index| match items[index].group {
-        Group::Named(name) => Some(SharedString::from(name)),
+        Group::Named(_) => Some(group_header(&items[index].group)),
         _ if !projects.is_empty() || !manage.is_empty() => Some(Scope::Connections.title().into()),
         _ => None,
     });
@@ -945,7 +1103,7 @@ fn tree(items: &[Item], query: &Query, fuzzy: &mut Fuzzy, collapsed: &HashSet<St
         .into_iter()
         .chain(loose.iter().map(|&index| Row::Item(index)));
     let project_rows = (!projects.is_empty())
-        .then(|| Row::Header(PROJECTS.into()))
+        .then(|| Row::Header(group_header(&Group::Named(PROJECTS))))
         .into_iter()
         .chain(
             projects
@@ -963,7 +1121,7 @@ fn tree(items: &[Item], query: &Query, fuzzy: &mut Fuzzy, collapsed: &HashSet<St
         rows.extend(project_rows.chain(loose_rows));
     }
     if !manage.is_empty() {
-        rows.push(Row::Header(MANAGE.into()));
+        rows.push(Row::Header(group_header(&Group::Named(MANAGE))));
         rows.extend(manage.into_iter().map(Row::Item));
     }
     // Never on Disconnect while anything else is listed: its label holds the
@@ -981,6 +1139,59 @@ fn tree(items: &[Item], query: &Query, fuzzy: &mut Fuzzy, collapsed: &HashSet<St
             .or_else(|| first_item(&rows)),
     };
     Arranged { rows, lead }
+}
+
+/// What a Definitions row reads under the object's name.
+///
+/// Where the query was found in the text, the words around it are what the row
+/// is for, so the piece is cut around the match. Where only the name matched,
+/// the text's own first line says what the object does. Either way the
+/// newlines are folded: the row is one line for the name and one for this.
+fn snippet(text: &str, query: &Query) -> Option<String> {
+    let hit = (!query.is_empty())
+        .then(|| fragment(text, query.text()))
+        .flatten();
+    let Some(hit) = hit else {
+        let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+        return Some(clipped(&one_line(line)));
+    };
+    let start = boundary_before(text, hit.start.saturating_sub(SNIPPET_BEFORE));
+    let end = boundary_after(text, hit.end.saturating_add(SNIPPET_AFTER));
+    let mut snippet = one_line(&text[start..end]);
+    if start > 0 {
+        snippet.insert(0, '…');
+    }
+    if end < text.len() {
+        snippet.push('…');
+    }
+    Some(snippet)
+}
+
+/// The nearest character boundary at or before `at`, so a snippet cut from a
+/// text with any multi-byte character in it slices cleanly.
+fn boundary_before(text: &str, at: usize) -> usize {
+    let mut at = at.min(text.len());
+    while !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
+}
+
+fn boundary_after(text: &str, at: usize) -> usize {
+    let mut at = at.min(text.len());
+    while !text.is_char_boundary(at) {
+        at += 1;
+    }
+    at
+}
+
+/// A line cut to the length a row can show, with an ellipsis saying there is
+/// more of it.
+fn clipped(line: &str) -> String {
+    match line.char_indices().nth(SNIPPET_LINE) {
+        Some((end, _)) => format!("{}…", &line[..end]),
+        None => line.to_string(),
+    }
 }
 
 /// The row `delta` rows on from `from`, skipping headers and wrapping: a list
@@ -1119,6 +1330,10 @@ pub enum PaletteEvent {
         command: Command,
         scope: Scope,
     },
+    /// A scope that reads its rows from the server asks for them as it is
+    /// entered. The palette only says when; the catalog, the connection and
+    /// what has already been read are the workspace's.
+    LoadDefinitions,
     Dismiss,
 }
 
@@ -1167,6 +1382,12 @@ pub struct Palette {
     /// Whether an import was asking where its connections go as the palette
     /// opened, which leaves the Connections scope empty.
     import_pending: bool,
+    /// Whether the Definitions scope is waiting on its view texts. Read from
+    /// the session's index when the palette opens, and again whenever one of
+    /// those loads lands.
+    definitions_loading: bool,
+    /// What the server said when they could not be read.
+    definitions_error: Option<String>,
     input: Entity<InputState>,
     scroll: VirtualListScrollHandle,
     /// The theme in force when a theme list opened, for a filter that
@@ -1228,6 +1449,16 @@ impl Palette {
         if import_pending {
             items.retain(|item| !waits_for_import(item.scope, &item.command));
         }
+        let (definitions_loading, definitions_error) = match workspace
+            .profile()
+            .map(|profile| &profile.session.definitions)
+        {
+            Some(DefinitionIndex::Loaded(_)) => (false, None),
+            Some(DefinitionIndex::Failed(message)) => (false, Some(message.clone())),
+            // The scope has not been entered yet on this catalog: the first
+            // entry asks for them, and until then they are on their way.
+            Some(DefinitionIndex::Unloaded | DefinitionIndex::Loading(_)) | None => (true, None),
+        };
         let naming = match mode {
             Mode::NameProject(renaming) => Some(Naming {
                 renaming: renaming
@@ -1282,6 +1513,8 @@ impl Palette {
                 .profile()
                 .is_some_and(|profile| matches!(profile.catalog, CatalogState::Loading)),
             import_pending,
+            definitions_loading,
+            definitions_error,
             input,
             scroll: VirtualListScrollHandle::new(),
             unpreviewed: matches!(mode, Mode::Theme(_) | Mode::ImportTheme(..)).then(|| *theme(cx)),
@@ -1322,6 +1555,11 @@ impl Palette {
         self.input.update(cx, |input, cx| {
             input.set_placeholder(scope.placeholder(), window, cx)
         });
+        // Asked on every entry and let the workspace decide: it is the one
+        // holding the connection and what has already been read.
+        if scope == Scope::Definitions {
+            cx.emit(PaletteEvent::LoadDefinitions);
+        }
         self.rearrange();
         cx.notify();
     }
@@ -1361,11 +1599,14 @@ impl Palette {
         self.rows = rows;
         let header = px(layout::chrome(layout::PALETTE_HEADER_HEIGHT));
         let row = px(layout::chrome(layout::PALETTE_ROW_HEIGHT));
+        let definition = px(layout::chrome(layout::PALETTE_DEFINITION_ROW_HEIGHT));
+        let two_line = self.mode == Mode::Search(Scope::Definitions);
         self.sizes = Rc::new(
             self.rows
                 .iter()
                 .map(|line| match line {
                     Row::Header(_) => size(px(0.), header),
+                    Row::Item(_) if two_line => size(px(0.), definition),
                     Row::Item(_) => size(px(0.), row),
                 })
                 .collect(),
@@ -1398,28 +1639,94 @@ impl Palette {
     }
 
     /// The catalog's objects as they stand now, for a palette opened before
-    /// they arrived. The row selected stays selected.
+    /// they arrived. The row selected stays selected, and the Definitions rows
+    /// are rebuilt with them: their view texts were read for a catalog this
+    /// one has replaced.
     pub fn catalog_changed(&mut self, profile: &Profile, cx: &mut Context<Self>) {
         if !matches!(self.mode, Mode::Search(_)) {
             return;
         }
-        let selected = self
-            .selected
-            .and_then(|row| match self.rows.get(row) {
-                Some(&Row::Item(index)) => Some(&self.items[index]),
-                _ => None,
-            })
-            .map(|item| (item.scope, item.label.clone()));
-        self.items.retain(|item| item.scope != Scope::Objects);
+        let selected = self.selection_key();
+        self.items
+            .retain(|item| !matches!(item.scope, Scope::Objects | Scope::Definitions));
         // Where `search_items` puts them: after the queries.
         let at = self
             .items
             .iter()
             .take_while(|item| item.scope == Scope::Queries)
             .count();
-        self.items.splice(at..at, object_items(profile));
+        let mut rebuilt = object_items(profile);
+        rebuilt.extend(definition_items(profile));
+        self.items.splice(at..at, rebuilt);
         self.catalog_loading = matches!(profile.catalog, CatalogState::Loading);
+        self.definitions_state(profile);
         self.rearrange();
+        self.reselect(selected);
+        cx.notify();
+    }
+
+    /// The Definitions rows as the session's index now has them, and whether
+    /// they are still on their way or could not be read at all.
+    pub fn definitions_changed(&mut self, profile: &Profile, cx: &mut Context<Self>) {
+        if !matches!(self.mode, Mode::Search(_)) {
+            return;
+        }
+        let selected = self.selection_key();
+        self.items.retain(|item| item.scope != Scope::Definitions);
+        let at = self.after_objects();
+        self.items.splice(at..at, definition_items(profile));
+        self.definitions_state(profile);
+        self.rearrange();
+        self.reselect(selected);
+        cx.notify();
+    }
+
+    /// Where the Definitions rows go: after the Objects rows, or after the
+    /// queries where the catalog has none to show yet.
+    fn after_objects(&self) -> usize {
+        self.items
+            .iter()
+            .rposition(|item| item.scope == Scope::Objects)
+            .map_or_else(
+                || {
+                    self.items
+                        .iter()
+                        .take_while(|item| item.scope == Scope::Queries)
+                        .count()
+                },
+                |last| last + 1,
+            )
+    }
+
+    fn definitions_state(&mut self, profile: &Profile) {
+        match &profile.session.definitions {
+            DefinitionIndex::Loaded(_) => {
+                self.definitions_loading = false;
+                self.definitions_error = None;
+            }
+            DefinitionIndex::Failed(message) => {
+                self.definitions_loading = false;
+                self.definitions_error = Some(message.clone());
+            }
+            DefinitionIndex::Unloaded | DefinitionIndex::Loading(_) => {
+                self.definitions_loading = true;
+                self.definitions_error = None;
+            }
+        }
+    }
+
+    /// The row selected, by what it names rather than by where it sits: a list
+    /// rebuilt under the selection keeps it on the same object.
+    fn selection_key(&self) -> Option<(Scope, String)> {
+        self.selected
+            .and_then(|row| match self.rows.get(row) {
+                Some(&Row::Item(index)) => Some(&self.items[index]),
+                _ => None,
+            })
+            .map(|item| (item.scope, item.label.clone()))
+    }
+
+    fn reselect(&mut self, selected: Option<(Scope, String)>) {
         if let Some((scope, label)) = selected
             && let Some(row) = self.rows.iter().position(|row| {
                 matches!(row, Row::Item(index)
@@ -1429,7 +1736,6 @@ impl Palette {
             self.selected = Some(row);
             self.scroll.scroll_to_item(row, ScrollStrategy::Nearest);
         }
-        cx.notify();
     }
 
     fn on_input_event(
@@ -1618,6 +1924,15 @@ impl Palette {
         }
     }
 
+    /// The second line of a Definitions row: the part of the object's text
+    /// worth reading beside its name. Only a Definitions row has one.
+    fn definition_snippet(&self, index: usize) -> Option<String> {
+        if self.mode != Mode::Search(Scope::Definitions) {
+            return None;
+        }
+        snippet(self.items[index].definition.as_deref()?, &self.query)
+    }
+
     fn highlights(&mut self, index: usize) -> Rc<[Range<usize>]> {
         if let Some(ranges) = self.highlights.get(&index) {
             return ranges.clone();
@@ -1671,7 +1986,14 @@ impl Palette {
             Some(status_dot(t, state))
         });
         let mono = fonts(cx).family(FontSlot::Editor).clone();
-        let row_height = layout::chrome(layout::PALETTE_ROW_HEIGHT);
+        // A Definitions row is two lines tall: the object's name, and the piece
+        // of its text that says why it is listed.
+        let snippet = self.definition_snippet(index);
+        let detail = snippet.is_none().then(|| item.detail.clone()).flatten();
+        let row_height = layout::chrome(match snippet.is_some() {
+            true => layout::PALETTE_DEFINITION_ROW_HEIGHT,
+            false => layout::PALETTE_ROW_HEIGHT,
+        });
         let tile = layout::chrome(layout::PALETTE_TILE_SIZE);
         let bar = layout::chrome(layout::PALETTE_ACCENT_BAR_HEIGHT);
         // A project's connections start where its name does, and the guide
@@ -1744,9 +2066,13 @@ impl Palette {
                             .min_w_0()
                             .overflow_hidden()
                             .whitespace_nowrap()
+                            .when(snippet.is_some(), |area| {
+                                area.flex_col().items_start().gap(px(layout::SPACE_XS))
+                            })
                             .child(
                                 div()
                                     .min_w_0()
+                                    .max_w_full()
                                     .overflow_hidden()
                                     .text_ellipsis()
                                     .text_color(if item.muted { t.text_muted } else { t.text })
@@ -1756,7 +2082,17 @@ impl Palette {
                                     .when(item.mono, |label| label.font_family(mono.clone()))
                                     .child(highlighted(item.label.clone(), &ranges, t)),
                             )
-                            .children(item.detail.clone().map(|detail| {
+                            .children(snippet.map(|snippet| {
+                                div()
+                                    .min_w_0()
+                                    .max_w_full()
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .text_size(px(layout::chrome(layout::TEXT_SM)))
+                                    .text_color(t.text_muted)
+                                    .child(snippet)
+                            }))
+                            .children(detail.map(|detail| {
                                 div()
                                     .flex_shrink_0()
                                     .font_family(mono.clone())
@@ -1804,7 +2140,7 @@ impl Palette {
                                         Control::Inline,
                                         t,
                                     )
-                                    .tooltip("Actions")
+                                    .tooltip(t!("palette.footer.actions").to_string())
                                     .on_click(cx.listener(
                                         move |palette, _: &ClickEvent, _, cx| {
                                             cx.stop_propagation();
@@ -1872,7 +2208,7 @@ impl Palette {
     /// History's filter and order, as pills under the scopes: the same control
     /// as a scope, since each is one choice of a few made at a glance.
     fn render_history_bar(&self, t: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = |text: &'static str| {
+        let label = |text: String| {
             div()
                 .text_size(px(layout::chrome(layout::TEXT_XS)))
                 .text_color(t.text_muted)
@@ -1934,7 +2270,7 @@ impl Palette {
                     .flex()
                     .items_center()
                     .gap(px(layout::SPACE_XS))
-                    .child(label("Status"))
+                    .child(label(t!("palette.footer.status").to_string()))
                     .children(statuses),
             )
             .child(
@@ -1942,60 +2278,94 @@ impl Palette {
                     .flex()
                     .items_center()
                     .gap(px(layout::SPACE_XS))
-                    .child(label("Sort"))
+                    .child(label(t!("palette.footer.sort").to_string()))
                     .children(orders),
             )
     }
 
     fn render_empty(&self, t: Theme) -> impl IntoElement {
+        let text = |key: &str| t!(key.to_string()).to_string();
         let (title, line) = match self.mode {
             Mode::NameProject(_) => match self.naming.as_ref().and_then(|n| n.refusal.clone()) {
-                Some(refusal) => ("Pick another name".to_string(), refusal),
+                Some(refusal) => (text("palette.empty.pick_another_name.title"), refusal),
                 None => (
-                    "Name the project".to_string(),
-                    "Type its name, then press Enter.".to_string(),
+                    text("palette.empty.name_project.title"),
+                    text("palette.empty.name_project.line"),
                 ),
             },
             Mode::ImportTheme(source, side) if self.items.is_empty() => (
-                "No themes found".to_string(),
+                text("palette.empty.no_themes.title"),
                 match side {
-                    Some(side) => format!(
-                        "{} has no {} themes on this machine.",
-                        source.name(),
-                        side.name()
-                    ),
-                    None => format!("{} has no themes on this machine.", source.name()),
+                    Some(side) => t!(
+                        "palette.empty.no_themes.line",
+                        source = source.name(),
+                        side = t!(appearance_key(side))
+                    )
+                    .to_string(),
+                    None => {
+                        t!("palette.empty.no_themes.line_any", source = source.name()).to_string()
+                    }
                 },
             ),
             Mode::Search(Scope::Objects) if self.catalog_loading => (
-                "Loading database objects…".to_string(),
-                "They are listed here as soon as they arrive.".to_string(),
+                text("palette.empty.loading_objects.title"),
+                text("palette.empty.loading_objects.line"),
             ),
             Mode::Search(Scope::History) if self.history.status != HistoryStatus::All => (
-                format!("No {} runs", self.history.status.title().to_lowercase()),
-                "Show All to see every statement.".to_string(),
+                t!(
+                    "palette.empty.no_runs.title",
+                    status = self.history.status.title().to_lowercase()
+                )
+                .to_string(),
+                text("palette.empty.no_runs.line"),
             ),
             Mode::Search(Scope::Connections) if self.import_pending => (
-                "Connections are on hold".to_string(),
-                "Choose where the imported connections go first.".to_string(),
+                text("palette.empty.connections_held.title"),
+                text("palette.empty.connections_held.line"),
+            ),
+            // The rows here are read off the server as the scope is entered,
+            // so an empty list has a reason of its own.
+            Mode::Search(Scope::Definitions) if self.definitions_loading => (
+                text("palette.empty.loading_definitions.title"),
+                text("palette.empty.loading_definitions.line"),
+            ),
+            Mode::Search(Scope::Definitions) if self.definitions_error.is_some() => (
+                text("palette.empty.definitions_failed.title"),
+                t!(
+                    "palette.empty.definitions_failed.line",
+                    error = self.definitions_error.clone().unwrap_or_default()
+                )
+                .to_string(),
+            ),
+            Mode::Search(Scope::Definitions) if self.query.is_empty() => (
+                t!(
+                    "palette.empty.no_scope.title",
+                    scope = Scope::Definitions.title().to_lowercase()
+                )
+                .to_string(),
+                text("palette.empty.no_definitions.line"),
             ),
             // `cmd+p` opens on Objects, which is empty on a connection that
             // has none.
             Mode::Search(scope) if self.query.is_empty() && scope != Scope::All => (
-                format!("No {} here", scope.title().to_lowercase()),
-                "Press Tab to search another scope.".to_string(),
+                t!(
+                    "palette.empty.no_scope.title",
+                    scope = scope.title().to_lowercase()
+                )
+                .to_string(),
+                text("palette.empty.no_scope.line"),
             ),
             Mode::Search(Scope::All) => (
-                "No results".to_string(),
-                "Try another word, or fewer letters of it.".to_string(),
+                text("palette.empty.no_results.title"),
+                text("palette.empty.no_results.line"),
             ),
             Mode::Search(_) => (
-                "No results".to_string(),
-                "Try another word, or press Tab to search another scope.".to_string(),
+                text("palette.empty.no_results.title"),
+                text("palette.empty.no_results.scope_line"),
             ),
             _ => (
-                "No results".to_string(),
-                "Try another word, or fewer letters of it.".to_string(),
+                text("palette.empty.no_results.title"),
+                text("palette.empty.no_results.line"),
             ),
         };
         div()
@@ -2015,7 +2385,7 @@ impl Palette {
     }
 
     /// What `enter` does to the row selected, for the footer.
-    fn verb(&self) -> &'static str {
+    fn verb(&self) -> String {
         row_verb(
             self.mode,
             self.selected_item().map(|index| &self.items[index]),
@@ -2049,21 +2419,45 @@ impl Palette {
                     .flex()
                     .items_center()
                     .gap(px(layout::SPACE_LG))
-                    .child(footer_hint(&[previous, next], "Navigate", t))
+                    .child(footer_hint(
+                        &[previous, next],
+                        t!("palette.footer.navigate").to_string(),
+                        t,
+                    ))
                     .child(footer_hint(&[Some("enter")], self.verb(), t))
                     .when(self.row_action().is_some(), |hints| {
-                        hints.child(footer_hint(&[actions], "Actions", t))
+                        hints.child(footer_hint(
+                            &[actions],
+                            t!("palette.footer.actions").to_string(),
+                            t,
+                        ))
                     })
                     .when(matches!(self.mode, Mode::Search(_)), |hints| {
-                        hints.child(footer_hint(&[left, right], "Scope", t))
+                        hints.child(footer_hint(
+                            &[left, right],
+                            t!("palette.footer.scope").to_string(),
+                            t,
+                        ))
                     })
                     .when(in_history, |hints| {
                         hints
-                            .child(footer_hint(&[history_filter], "Status", t))
-                            .child(footer_hint(&[history_sort], "Sort", t))
+                            .child(footer_hint(
+                                &[history_filter],
+                                t!("palette.footer.status").to_string(),
+                                t,
+                            ))
+                            .child(footer_hint(
+                                &[history_sort],
+                                t!("palette.footer.sort").to_string(),
+                                t,
+                            ))
                     }),
             )
-            .child(footer_hint(&[close], "Close", t))
+            .child(footer_hint(
+                &[close],
+                t!("palette.footer.close").to_string(),
+                t,
+            ))
     }
 }
 
@@ -2221,7 +2615,7 @@ impl Render for Palette {
 /// A scope, as a pill: the one in force tinted with the accent, the rest plain.
 fn scope_pill(
     id: impl Into<gpui::ElementId>,
-    label: &'static str,
+    label: impl Into<SharedString>,
     selected: bool,
     t: Theme,
 ) -> gpui::Stateful<gpui::Div> {
@@ -2248,10 +2642,14 @@ fn scope_pill(
                     .hover(|style| style.bg(t.element_hover))
             }
         })
-        .child(label)
+        .child(label.into())
 }
 
-fn footer_hint(chords: &[Option<&str>], label: &'static str, t: Theme) -> impl IntoElement {
+fn footer_hint(
+    chords: &[Option<&str>],
+    label: impl Into<SharedString>,
+    t: Theme,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -2271,7 +2669,7 @@ fn footer_hint(chords: &[Option<&str>], label: &'static str, t: Theme) -> impl I
                         .map(|key| key_chip(key, t)),
                 ),
         )
-        .child(label)
+        .child(label.into())
 }
 
 /// Everything the search palette reaches, in the order All lists its groups
@@ -2280,6 +2678,7 @@ fn footer_hint(chords: &[Option<&str>], label: &'static str, t: Theme) -> impl I
 fn search_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item> {
     let mut items = query_items(profile);
     items.extend(object_items(profile));
+    items.extend(definition_items(profile));
     items.extend(command_items(workspace, profile, cx));
     items.extend(connection_items(workspace));
     // Recalling a statement writes it into a buffer, which the import dialog
@@ -2374,20 +2773,104 @@ fn object_items(profile: &Profile) -> Vec<Item> {
     items
 }
 
+/// Every object the Definitions scope can search: the routines whose bodies
+/// the catalog carries, and the views whose text has been read.
+///
+/// The routines are here whether or not the engine can be asked for a view's
+/// text -- a Snowflake catalog already holds its procedure bodies -- while the
+/// views wait for a connection whose catalog can
+/// ([`Target::searches_view_definitions`]).
+fn definition_items(profile: &Profile) -> Vec<Item> {
+    let CatalogState::Loaded(catalog, _) = &profile.catalog else {
+        return Vec::new();
+    };
+    let definitions = match &profile.session.definitions {
+        DefinitionIndex::Loaded(definitions) => definitions.as_slice(),
+        _ => &[],
+    };
+    definition_items_from(catalog, definitions)
+}
+
+/// An object is listed once, matched by its name or by its text, and only when
+/// there is text to search: a row whose second line would be blank is a row
+/// that promises something the scope cannot do.
+fn definition_items_from(catalog: &Catalog, definitions: &[ViewDefinition]) -> Vec<Item> {
+    let mut items = Vec::new();
+    for (schema_index, schema) in catalog.by_name() {
+        items.extend(
+            schema
+                .routines
+                .iter()
+                .enumerate()
+                .filter(|(_, routine)| !routine.definition.trim().is_empty())
+                .map(|(routine_index, routine)| {
+                    let kind = ObjectKind::Routine(routine.kind);
+                    Item::new(
+                        format!("{}.{}", schema.name, routine_name(routine)),
+                        object_icon(kind),
+                        Command::OpenObject(ExplorerTarget::Routine {
+                            schema_index,
+                            routine_index,
+                        }),
+                    )
+                    .hint(kind_label(kind))
+                    .scope(Scope::Definitions)
+                    .beyond_all()
+                    .definition(Arc::from(routine.definition.clone()))
+                }),
+        );
+    }
+    for view in definitions {
+        if view.definition.trim().is_empty() {
+            continue;
+        }
+        // By name into the catalog on screen, not by an index: every refresh
+        // replaces it, so the text is held against the names it was read for.
+        let Some((schema_index, relation_index, kind)) =
+            relation_at(catalog, &view.schema, &view.name)
+        else {
+            continue;
+        };
+        if !matches!(kind, RelationKind::View | RelationKind::MaterializedView) {
+            continue;
+        }
+        let kind = ObjectKind::Relation(kind);
+        items.push(
+            Item::new(
+                format!("{}.{}", view.schema, view.name),
+                object_icon(kind),
+                Command::OpenObject(ExplorerTarget::Relation {
+                    schema_index,
+                    relation_index,
+                }),
+            )
+            .hint(kind_label(kind))
+            .scope(Scope::Definitions)
+            .beyond_all()
+            .definition(view.definition.clone()),
+        );
+    }
+    items
+}
+
 /// What `enter` does to `item`, for the footer.
-fn row_verb(mode: Mode, item: Option<&Item>, collapsed: &HashSet<String>) -> &'static str {
+fn row_verb(mode: Mode, item: Option<&Item>, collapsed: &HashSet<String>) -> String {
     match item {
         Some(item) if matches!(item.command, Command::ToggleProject(_)) => {
-            if collapsed.contains(&item.label) {
-                "Expand"
-            } else {
-                "Collapse"
+            match collapsed.contains(&item.label) {
+                true => t!("palette.footer.expand"),
+                false => t!("palette.footer.collapse"),
             }
         }
-        Some(item) if matches!(item.command, Command::Confirm(Target::Unavailable(_))) => "Remove",
-        Some(item) if matches!(item.command, Command::Disconnect) => "Disconnect",
-        _ => mode.verb(),
+        Some(item) if matches!(item.command, Command::Confirm(Target::Unavailable(_))) => {
+            t!("palette.footer.remove")
+        }
+        Some(item) if matches!(item.command, Command::Disconnect) => {
+            t!("palette.footer.disconnect")
+        }
+        _ => return mode.verb(),
     }
+    .to_string()
 }
 
 /// The palette a mode opens with no connection in front: the theme lists, the
@@ -2425,6 +2908,8 @@ pub fn without_a_connection(mode: Mode, profiles: bool, unavailable: bool) -> Op
 const NO_PROJECT: &str = "No project";
 const PROJECTS: &str = "Projects";
 const MANAGE: &str = "Manage";
+const THEMES: &str = "Themes";
+const IMPORT: &str = "Import";
 
 /// A connection as the Connections scope lists it, read off its profile so
 /// the listing can be worked out without a workspace.
@@ -2886,15 +3371,17 @@ fn naming_items(typed: &str, naming: &Naming) -> (Vec<Item>, Option<String>) {
     if name.is_empty() {
         return (Vec::new(), None);
     }
-    if let Some(refusal) = crate::workspace::project_name_refusal(
-        name,
-        naming.renaming.as_deref(),
-        naming.taken.iter().map(String::as_str),
-    ) {
-        return (Vec::new(), Some(refusal));
+    if naming.renaming.as_deref() != Some(name) && naming.taken.iter().any(|taken| taken == name) {
+        return (
+            Vec::new(),
+            Some(t!("palette.naming.taken", name = name).to_string()),
+        );
     }
     if naming.renaming.as_deref() == Some(name) {
-        return (Vec::new(), Some(format!("Type a new name for {name}.")));
+        return (
+            Vec::new(),
+            Some(t!("palette.naming.same", name = name).to_string()),
+        );
     }
     let item = match &naming.renaming {
         Some(old) => Item::new(
@@ -3096,6 +3583,15 @@ fn on_side(side: Option<Appearance>, candidate: &Theme) -> bool {
     side.is_none_or(|side| candidate.appearance == side)
 }
 
+/// The locale key naming a side, for an empty theme list to say which one it
+/// looked at.
+fn appearance_key(side: Appearance) -> &'static str {
+    match side {
+        Appearance::Light => "palette.appearance.light",
+        Appearance::Dark => "palette.appearance.dark",
+    }
+}
+
 pub(crate) fn listed_themes(side: Option<Appearance>) -> impl Iterator<Item = Theme> {
     Theme::all()
         .into_iter()
@@ -3118,7 +3614,7 @@ fn theme_items(side: Option<Appearance>, picked: &str) -> Vec<Item> {
             Command::SetTheme(side, Box::new(candidate)),
         )
         .hint(hint)
-        .group(Group::Named("Themes"))
+        .group(Group::Named(THEMES))
     });
     let imports = user::Source::ALL.into_iter().map(|source| {
         Item::new(
@@ -3126,7 +3622,7 @@ fn theme_items(side: Option<Appearance>, picked: &str) -> Vec<Item> {
             icon::PLUS,
             Command::BrowseThemes(source, side),
         )
-        .group(Group::Named("Import"))
+        .group(Group::Named(IMPORT))
     });
     themes.chain(imports).collect()
 }
@@ -5091,6 +5587,7 @@ mod tests {
         }
         for mode in [
             Mode::Search(Scope::Objects),
+            Mode::Search(Scope::Definitions),
             Mode::Search(Scope::Connections),
             Mode::Confirm(Target::Unavailable(0)),
         ] {
@@ -5099,6 +5596,9 @@ mod tests {
         for mode in [
             Mode::Search(Scope::Commands),
             Mode::Search(Scope::All),
+            // Nothing to read a definition off, so the scope lands where
+            // picking a connection does.
+            Mode::Search(Scope::Definitions),
             Mode::Search(Scope::Connections),
         ] {
             assert!(open(mode, true) == Some(Mode::Search(Scope::Connections)));
@@ -5578,5 +6078,294 @@ mod tests {
             arranged(&sample(), Some(Scope::Objects), "pub ev", &[]),
             ["public.events"]
         );
+    }
+
+    /// The catalog and view texts the Definitions scope is tested against: an
+    /// ordinary table, a view written with a marker in it, and a function
+    /// whose body carries another.
+    fn definitions_catalog() -> Catalog {
+        Catalog {
+            schemas: vec![crate::db::Schema {
+                name: "public".into(),
+                relations: vec![
+                    crate::db::Relation {
+                        name: "accounts".into(),
+                        kind: RelationKind::Table,
+                        partition_of: None,
+                        size: None,
+                        rows: None,
+                    },
+                    crate::db::Relation {
+                        name: "account_overview".into(),
+                        kind: RelationKind::View,
+                        partition_of: None,
+                        size: None,
+                        rows: None,
+                    },
+                ],
+                routines: vec![crate::db::Routine {
+                    name: "account_name".into(),
+                    kind: RoutineKind::Function,
+                    identity_arguments: "integer".into(),
+                    result_type: "text".into(),
+                    language: "sql".into(),
+                    definition: "CREATE FUNCTION account_name(integer)\n-- routine_needle\n".into(),
+                }],
+            }],
+            database: None,
+        }
+    }
+
+    fn view_definitions() -> Vec<ViewDefinition> {
+        vec![ViewDefinition {
+            schema: "public".into(),
+            name: "account_overview".into(),
+            kind: RelationKind::View,
+            definition: " SELECT accounts.id\n   FROM accounts\n  -- definition_needle\n".into(),
+        }]
+    }
+
+    fn definition_rows() -> Vec<Item> {
+        definition_items_from(&definitions_catalog(), &view_definitions())
+    }
+
+    #[test]
+    fn the_definition_rows_are_the_routines_with_bodies_and_the_views_read() {
+        let items = definition_rows();
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            ["public.account_name(integer)", "public.account_overview"]
+        );
+        assert!(items.iter().all(|item| item.scope == Scope::Definitions));
+        // Under All they would be a second copy of the objects' own rows.
+        assert!(items.iter().all(|item| !item.in_all));
+        assert!(matches!(
+            &items[0].command,
+            Command::OpenObject(ExplorerTarget::Routine {
+                schema_index: 0,
+                routine_index: 0
+            })
+        ));
+        assert!(matches!(
+            &items[1].command,
+            Command::OpenObject(ExplorerTarget::Relation {
+                schema_index: 0,
+                relation_index: 1
+            })
+        ));
+        assert_eq!(
+            items[1].definition.as_deref(),
+            Some(" SELECT accounts.id\n   FROM accounts\n  -- definition_needle\n")
+        );
+    }
+
+    #[test]
+    fn a_body_of_nothing_and_a_view_the_catalog_does_not_list_are_left_out() {
+        let mut catalog = definitions_catalog();
+        catalog.schemas[0].routines[0].definition = "  \n".into();
+        let definitions = [
+            // Read from a catalog that has since been replaced.
+            ViewDefinition {
+                schema: "public".into(),
+                name: "account_overview".into(),
+                kind: RelationKind::View,
+                definition: "SELECT 1".into(),
+            },
+            // A view that is a table here: not what the text was read for.
+            ViewDefinition {
+                schema: "public".into(),
+                name: "accounts".into(),
+                kind: RelationKind::View,
+                definition: "SELECT 1".into(),
+            },
+            ViewDefinition {
+                schema: "gone".into(),
+                name: "vanished".into(),
+                kind: RelationKind::View,
+                definition: "SELECT 1".into(),
+            },
+        ];
+        let items = definition_items_from(&catalog, &definitions);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            ["public.account_overview"]
+        );
+    }
+
+    #[test]
+    fn the_definition_scope_finds_a_view_by_its_text_and_a_routine_by_its_name() {
+        let items = definition_rows();
+        assert_eq!(
+            arranged(&items, Some(Scope::Definitions), "definition_needle", &[]),
+            ["public.account_overview"]
+        );
+        assert_eq!(
+            arranged(&items, Some(Scope::Definitions), "routine_needle", &[]),
+            ["public.account_name(integer)"]
+        );
+        assert_eq!(
+            arranged(&items, Some(Scope::Definitions), "account_name", &[]),
+            ["public.account_name(integer)"]
+        );
+        // Nothing in either text says this, and it is not a subsequence of a
+        // name either: a definition is searched as words, not as letters.
+        assert!(arranged(&items, Some(Scope::Definitions), "acdn", &[]).is_empty());
+    }
+
+    #[test]
+    fn a_name_match_comes_before_a_text_match() {
+        let items = vec![
+            item("public.accounts_by_month", Scope::Definitions, "")
+                .beyond_all()
+                .definition(Arc::from("SELECT total FROM accounts")),
+            item("public.totals_by_month", Scope::Definitions, "")
+                .beyond_all()
+                .definition(Arc::from("-- accounts per month")),
+        ];
+        assert_eq!(
+            arranged(&items, Some(Scope::Definitions), "accounts", &[]),
+            ["public.accounts_by_month", "public.totals_by_month"]
+        );
+    }
+
+    #[test]
+    fn with_nothing_typed_the_definition_rows_keep_the_order_they_were_built_in() {
+        let items = definition_rows();
+        assert_eq!(
+            arranged(&items, Some(Scope::Definitions), "", &[]),
+            ["public.account_name(integer)", "public.account_overview"]
+        );
+    }
+
+    #[test]
+    fn a_snippet_shows_the_words_around_the_match_on_one_line() {
+        let text = "CREATE VIEW v AS\n-- total per account\nSELECT 1;";
+        let found = snippet(text, &Query::new("per account")).unwrap();
+        assert_eq!(found, "CREATE VIEW v AS -- total per account SELECT 1;");
+        assert!(!found.contains('\n'));
+        // The whole text fits the window, so a match at its head elides
+        // nothing: this row is the same words.
+        assert_eq!(snippet(text, &Query::new("CREATE")).unwrap(), found);
+    }
+
+    #[test]
+    fn a_snippet_is_cut_around_a_match_far_into_a_long_text() {
+        let text = format!("SELECT 1\n{}needle\n{}", "a".repeat(200), "b".repeat(200));
+        let found = snippet(&text, &Query::new("needle")).unwrap();
+        assert!(found.contains("needle"), "{found}");
+        assert!(found.starts_with('…') && found.ends_with('…'), "{found}");
+        assert!(found.chars().count() < 200, "{found}");
+
+        // Nothing in the text matched: its first line says what it does.
+        assert_eq!(snippet(&text, &Query::new("nothing")).unwrap(), "SELECT 1");
+    }
+
+    #[test]
+    fn a_snippet_line_longer_than_a_row_is_cut() {
+        let long = format!("SELECT {}", "x".repeat(200));
+        let found = snippet(&long, &Query::new("nothing")).unwrap();
+        assert_eq!(found.chars().count(), SNIPPET_LINE + 1);
+        assert!(found.ends_with('…'), "{found}");
+    }
+
+    #[test]
+    fn the_scopes_put_definitions_between_objects_and_queries() {
+        assert_eq!(Scope::Objects.step(1), Scope::Definitions);
+        assert_eq!(Scope::Definitions.step(1), Scope::Queries);
+        assert_eq!(Scope::Definitions.step(-1), Scope::Objects);
+    }
+
+    /// Every word of chrome the palette draws, in both languages. A key
+    /// `rust-i18n` cannot find is returned as itself, drawn silently in place
+    /// of the label it was meant to be, so a missing one is caught here rather
+    /// than by a user reading `palette.empty.no_results.title`.
+    #[test]
+    fn every_palette_chrome_key_resolves_in_both_locales() {
+        let mut keys: Vec<&'static str> = Scope::ALL
+            .iter()
+            .flat_map(|scope| [scope.key(), scope.placeholder_key()])
+            .collect();
+        keys.extend([
+            "palette.group.recent",
+            "palette.group.query",
+            "palette.group.rows",
+            "palette.group.cell",
+            "palette.group.edits",
+            "palette.group.results",
+            "palette.group.tab",
+            "palette.group.connection",
+            "palette.group.project",
+            "palette.group.appearance",
+            "palette.group.window",
+            "palette.group.help",
+            "palette.group.manage",
+            "palette.group.no_project",
+            "palette.group.projects",
+            "palette.group.themes",
+            "palette.group.import",
+            "palette.footer.navigate",
+            "palette.footer.actions",
+            "palette.footer.scope",
+            "palette.footer.close",
+            "palette.footer.status",
+            "palette.footer.sort",
+            "palette.footer.run",
+            "palette.footer.switch",
+            "palette.footer.open",
+            "palette.footer.move",
+            "palette.footer.create",
+            "palette.footer.rename",
+            "palette.footer.remove",
+            "palette.footer.delete",
+            "palette.footer.select",
+            "palette.footer.expand",
+            "palette.footer.collapse",
+            "palette.footer.disconnect",
+            "palette.history.status.all",
+            "palette.history.status.succeeded",
+            "palette.history.status.failed",
+            "palette.history.order.newest",
+            "palette.history.order.slowest",
+            "palette.history.order.most_rows",
+            "palette.empty.name_project.title",
+            "palette.empty.name_project.line",
+            "palette.empty.pick_another_name.title",
+            "palette.empty.no_themes.title",
+            "palette.empty.no_themes.line",
+            "palette.empty.no_themes.line_any",
+            "palette.empty.loading_objects.title",
+            "palette.empty.loading_objects.line",
+            "palette.empty.loading_definitions.title",
+            "palette.empty.loading_definitions.line",
+            "palette.empty.definitions_failed.title",
+            "palette.empty.definitions_failed.line",
+            "palette.empty.no_definitions.line",
+            "palette.empty.no_runs.title",
+            "palette.empty.no_runs.line",
+            "palette.empty.connections_held.title",
+            "palette.empty.connections_held.line",
+            "palette.empty.no_scope.title",
+            "palette.empty.no_scope.line",
+            "palette.empty.no_results.title",
+            "palette.empty.no_results.line",
+            "palette.empty.no_results.scope_line",
+            "palette.naming.taken",
+            "palette.naming.same",
+            "palette.appearance.light",
+            "palette.appearance.dark",
+        ]);
+        for key in keys {
+            for locale in ["en", "zh-CN"] {
+                let text = t!(key, locale = locale).to_string();
+                assert_ne!(text, key, "{key} missing in {locale}");
+                assert!(!text.is_empty(), "{key} empty in {locale}");
+            }
+        }
     }
 }

@@ -11,7 +11,7 @@ use crate::connection_form::{ConnectionTest, Reported, duplicate_profile_name, k
 use crate::db::{ExternalConfig, PasswordCommand, Plugin, Routine};
 use crate::explorer::{ArgumentsState, ExplorerArguments, Shortcuts};
 use crate::import::{self, Source};
-use crate::session::{STALE_ROWS, restored_shortcuts, routine_name};
+use crate::session::{DefinitionIndex, STALE_ROWS, restored_shortcuts, routine_name};
 use crate::sql::{Destructive, Mode};
 
 use std::collections::BTreeMap;
@@ -620,7 +620,7 @@ impl Workspace {
                         Control::Compact,
                         t,
                     )
-                    .tooltip("Choose an existing project")
+                    .tooltip(t!("connection.tooltip.choose_project").to_string())
                     .on_click(cx.listener(|workspace, _, _, cx| {
                         if let Some(form) = &mut workspace.form {
                             form.naming_project = false;
@@ -644,9 +644,9 @@ impl Workspace {
             ProjectChoice::In(form.project.clone()),
             vec![existing, vec![ProjectChoice::New]],
             |choice| match choice {
-                ProjectChoice::In(None) => "No project".into(),
+                ProjectChoice::In(None) => t!("connection.project.none").to_string().into(),
                 ProjectChoice::In(Some(name)) => name.clone().into(),
-                ProjectChoice::New => "New project…".into(),
+                ProjectChoice::New => t!("connection.project.new").to_string().into(),
             },
             move |choice| {
                 let path = match choice {
@@ -1995,9 +1995,94 @@ impl Workspace {
         // cleared one, so a fetch still out writes into the one left behind:
         // a refresh keeps the generation that would otherwise turn it away.
         profile.session.completion_columns = completion::ColumnCache::default();
+        // A view created, dropped or redefined since the texts were read is
+        // searched under the old one, so the index goes with the catalog. A
+        // load still in flight keeps its stamp and is dropped when it lands.
+        profile.session.definitions = DefinitionIndex::default();
         self.install_completions(id, cx);
         self.rebuild_explorer(id, keep, cx);
         self.catalog_landed(id, cx);
+    }
+
+    /// Read what each view is written as, for the palette's definition search,
+    /// the first time that scope is opened on this catalog.
+    ///
+    /// On demand rather than with the catalog: the text is only wanted to
+    /// search it, and a server with thousands of views would pay for every one
+    /// of them at connect. An engine whose catalog cannot say
+    /// ([`Target::searches_view_definitions`]) and a connection that is not up
+    /// answer with nothing, so the scope says there is nothing to search
+    /// rather than loading forever.
+    pub(crate) fn ensure_definitions(&mut self, cx: &mut Context<Self>) {
+        let Some(profile) = self.profile_mut() else {
+            return;
+        };
+        let id = profile.id.clone();
+        let generation = profile.generation;
+        let connection = profile
+            .config
+            .target()
+            .searches_view_definitions()
+            .then(|| profile.connection())
+            .flatten();
+        let Some(connection) = connection else {
+            profile.session.definitions = DefinitionIndex::Loaded(Arc::new(Vec::new()));
+            self.palette_definitions_landed(&id, cx);
+            return;
+        };
+        // A load already out, and an index already read, stand: the scope is
+        // entered on every `tab` past it.
+        if matches!(
+            profile.session.definitions,
+            DefinitionIndex::Loading(_) | DefinitionIndex::Loaded(_)
+        ) {
+            return;
+        }
+        let load = profile.session.next_definition_load;
+        profile.session.next_definition_load += 1;
+        profile.session.definitions = DefinitionIndex::Loading(load);
+        self.palette_definitions_landed(&id, cx);
+
+        let task = spawn_blocking(cx.background_executor(), move || {
+            connection.view_definitions()
+        });
+        cx.spawn(async move |workspace, cx| {
+            let result = task.await;
+            workspace
+                .update(cx, |workspace, cx| {
+                    let Some(profile) = workspace.issued_to(&id, generation) else {
+                        return;
+                    };
+                    // A refresh since this was issued has thrown the index
+                    // away, and a newer load owns the answer: a view dropped in
+                    // between would otherwise be searched under its old text.
+                    if !matches!(
+                        profile.session.definitions,
+                        DefinitionIndex::Loading(current) if current == load
+                    ) {
+                        return;
+                    }
+                    profile.session.definitions = match result {
+                        Ok(definitions) => DefinitionIndex::Loaded(Arc::new(definitions)),
+                        Err(error) => DefinitionIndex::Failed(error.message),
+                    };
+                    workspace.palette_definitions_landed(&id, cx);
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Redraw the palette's definition rows, and its loading or failed state,
+    /// from the index now on the profile in front.
+    fn palette_definitions_landed(&mut self, id: &str, cx: &mut Context<Self>) {
+        let (Some(palette), Some(profile)) = (self.palette.clone(), self.profile()) else {
+            return;
+        };
+        if profile.id == id {
+            palette.update(cx, |palette, cx| palette.definitions_changed(profile, cx));
+        }
     }
 
     /// Fill the routines in behind the relations already on screen.

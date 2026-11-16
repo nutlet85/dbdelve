@@ -237,6 +237,7 @@ row_limit.custom_value:
 
 # —— 设置页：框架 ——
 settings.title:            { en: "Settings", zh-CN: "设置" }
+settings.version:          { en: "Version %{version}", zh-CN: "版本 %{version}" }
 settings.close:            { en: "Close", zh-CN: "关闭" }
 settings.close_hint:       { en: "Close (%{hint})", zh-CN: "关闭（%{hint}）" }
 settings.search:           { en: "Search settings", zh-CN: "搜索设置" }
@@ -585,3 +586,222 @@ palette.no_limit:              { en: "No limit", zh-CN: "不限制" }
 palette.custom:                { en: "Custom…", zh-CN: "自定义…" }
 palette.custom_value:          { en: "Custom (%{rows})…", zh-CN: "自定义（%{rows}）…" }
 grid.filter_placeholder:        { en: "Filter columns and values…", zh-CN: "筛选列与值…" }
+
+# —— 命令面板：范围、placeholder、分组、底部提示、空状态 ——
+palette.scope.all:          { en: "All", zh-CN: "全部" }
+palette.scope.commands:     { en: "Commands", zh-CN: "命令" }
+palette.scope.objects:      { en: "Objects", zh-CN: "对象" }
+palette.scope.definitions:  { en: "Definitions", zh-CN: "定义" }
+palette.scope.queries:      { en: "Queries", zh-CN: "查询" }
+palette.scope.history:      { en: "History", zh-CN: "历史" }
+palette.scope.connections:  { en: "Connections", zh-CN: "连接" }
+
+palette.placeholder.all:         { en: "Search commands, tables, queries and connections…", zh-CN: "搜索命令、表、查询和连接…" }
+palette.placeholder.commands:    { en: "Run a command…", zh-CN: "运行命令…" }
+palette.placeholder.objects:     { en: "Go to a table, view or routine…", zh-CN: "跳转到表、视图或例程…" }
+palette.placeholder.definitions: { en: "Search view and routine definitions…", zh-CN: "搜索视图和例程定义…" }
+palette.placeholder.queries:     { en: "Open a saved query…", zh-CN: "打开已保存的查询…" }
+palette.placeholder.history:     { en: "Recall a statement you have run…", zh-CN: "召回已执行的语句…" }
+palette.placeholder.connections: { en: "Switch to a connection…", zh-CN: "切换到连接…" }
+
+palette.group.recent:      { en: "Recent", zh-CN: "最近" }
+palette.group.query:       { en: "Query", zh-CN: "查询" }
+palette.group.rows:        { en: "Rows", zh-CN: "行" }
+palette.group.cell:        { en: "Cell", zh-CN: "单元格" }
+palette.group.edits:       { en: "Edits", zh-CN: "修改" }
+palette.group.results:     { en: "Results", zh-CN: "结果" }
+palette.group.tab:         { en: "Tab", zh-CN: "标签页" }
+palette.group.connection:  { en: "Connection", zh-CN: "连接" }
+palette.group.project:     { en: "Project", zh-CN: "项目" }
+palette.group.appearance:  { en: "Appearance", zh-CN: "外观" }
+palette.group.window:      { en: "Window", zh-CN: "窗口" }
+palette.group.help:        { en: "Help", zh-CN: "帮助" }
+palette.group.manage:      { en: "Manage", zh-CN: "管理" }
+palette.group.no_project:  { en: "No project", zh-CN: "无项目" }
+palette.group.projects:    { en: "Projects", zh-CN: "项目" }
+palette.group.themes:      { en: "Themes", zh-CN: "主题" }
+palette.group.import:      { en: "Import", zh-CN: "导入" }
+
+palette.footer.navigate:   { en: "Navigate", zh-CN: "导航" }
+palette.footer.actions:    { en: "Actions", zh-CN: "操作" }
+palette.footer.scope:      { en: "Scope", zh-CN: "范围" }
+palette.footer.close:      { en: "Close", zh-CN: "关闭" }
+palette.footer.status:     { en: "Status", zh-CN: "状态" }
+palette.footer.sort:       { en: "Sort", zh-CN: "排序" }
+palette.footer.run:        { en: "Run", zh-CN: "运行" }
+palette.footer.switch:     { en: "Switch", zh-CN: "切换" }
+palette.footer.open:       { en: "Open", zh-CN: "打开" }
+palette.footer.move:       { en: "Move", zh-CN: "移动" }
+palette.footer.create:     { en: "Create", zh-CN: "创建" }
+palette.footer.rename:     { en: "Rename", zh-CN: "重命名" }
+palette.footer.remove:     { en: "Remove", zh-CN: "移除" }
+palette.footer.delete:     { en: "Delete", zh-CN: "删除" }
+palette.footer.select:     { en: "Select", zh-CN: "选择" }
+palette.footer.expand:     { en: "Expand", zh-CN: "展开" }
+palette.footer.collapse:   { en: "Collapse", zh-CN: "折叠" }
+palette.footer.disconnect: { en: "Disconnect", zh-CN: "断开连接" }
+
+palette.history.status.all:       { en: "All", zh-CN: "全部" }
+palette.history.status.succeeded: { en: "Succeeded", zh-CN: "成功" }
+palette.history.status.failed:    { en: "Failed", zh-CN: "失败" }
+palette.history.order.newest:     { en: "Newest", zh-CN: "最新" }
+palette.history.order.slowest:    { en: "Slowest", zh-CN: "最慢" }
+palette.history.order.most_rows:  { en: "Most rows", zh-CN: "行数最多" }
+
+palette.empty.name_project.title:       { en: "Name the project", zh-CN: "命名项目" }
+palette.empty.name_project.line:        { en: "Type its name, then press Enter.", zh-CN: "输入名称后按 Enter。" }
+palette.empty.pick_another_name.title:  { en: "Pick another name", zh-CN: "换一个名称" }
+palette.empty.no_themes.title:          { en: "No themes found", zh-CN: "没有找到主题" }
+palette.empty.no_themes.line:           { en: "%{source} has no %{side} themes on this machine.", zh-CN: "这台机器上没有 %{source} 的%{side}主题。" }
+palette.empty.no_themes.line_any:       { en: "%{source} has no themes on this machine.", zh-CN: "这台机器上没有 %{source} 的主题。" }
+palette.empty.loading_objects.title:    { en: "Loading database objects…", zh-CN: "正在加载数据库对象…" }
+palette.empty.loading_objects.line:     { en: "They are listed here as soon as they arrive.", zh-CN: "它们到达后会立即显示在这里。" }
+palette.empty.loading_definitions.title: { en: "Loading definitions…", zh-CN: "正在加载定义…" }
+palette.empty.loading_definitions.line:  { en: "Views and routines appear here when they arrive.", zh-CN: "视图和例程到达后会显示在这里。" }
+palette.empty.definitions_failed.title:  { en: "Definitions could not be loaded", zh-CN: "定义加载失败" }
+palette.empty.definitions_failed.line:   { en: "The server said: %{error}", zh-CN: "服务器返回：%{error}" }
+palette.empty.no_definitions.line:       { en: "This connection has no view or routine definitions to search.", zh-CN: "此连接没有可搜索的视图或例程定义。" }
+palette.empty.no_runs.title:            { en: "No %{status} runs", zh-CN: "没有%{status}的运行记录" }
+palette.empty.no_runs.line:             { en: "Show All to see every statement.", zh-CN: "选择全部以查看所有语句。" }
+palette.empty.connections_held.title:   { en: "Connections are on hold", zh-CN: "连接暂时不可用" }
+palette.empty.connections_held.line:    { en: "Choose where the imported connections go first.", zh-CN: "请先选择导入的连接放到哪里。" }
+palette.empty.no_scope.title:           { en: "No %{scope} here", zh-CN: "这里没有%{scope}" }
+palette.empty.no_scope.line:            { en: "Press Tab to search another scope.", zh-CN: "按 Tab 搜索其他范围。" }
+palette.empty.no_results.title:         { en: "No results", zh-CN: "没有结果" }
+palette.empty.no_results.line:          { en: "Try another word, or fewer letters of it.", zh-CN: "换个词，或少输入几个字母。" }
+palette.empty.no_results.scope_line:    { en: "Try another word, or press Tab to search another scope.", zh-CN: "换个词，或按 Tab 搜索其他范围。" }
+palette.naming.taken:      { en: "A project named %{name} already exists.", zh-CN: "名为 %{name} 的项目已存在。" }
+palette.naming.same:       { en: "Type a new name for %{name}.", zh-CN: "为 %{name} 输入一个新名称。" }
+palette.appearance.light:  { en: "Light", zh-CN: "浅色" }
+palette.appearance.dark:   { en: "Dark", zh-CN: "深色" }
+
+# —— 连接配置窗口、查询目标与标签页 ——
+explorer.filter_placeholder: { en: "Filter queries and objects…", zh-CN: "筛选查询和对象…" }
+query.name_placeholder:      { en: "Query name", zh-CN: "查询名称" }
+project.name_placeholder:    { en: "Project name", zh-CN: "项目名称" }
+welcome.url_placeholder:     { en: "Paste a connection URL", zh-CN: "粘贴连接 URL" }
+tab.new_query:               { en: "New Query", zh-CN: "新建查询" }
+tab.new_query_numbered:      { en: "New Query %{number}", zh-CN: "新建查询 %{number}" }
+
+target.database:          { en: "Database", zh-CN: "数据库" }
+target.schema:            { en: "Schema", zh-CN: "模式" }
+target.tooltip:           { en: "Statements in this tab run on %{connection} — %{endpoint}", zh-CN: "此标签页中的语句运行于 %{connection} — %{endpoint}" }
+target.tooltip.database:  { en: "Statements in this tab run on %{connection} — %{endpoint}. Click to change the database.", zh-CN: "此标签页中的语句运行于 %{connection} — %{endpoint}。点击更改数据库。" }
+target.tooltip.schema:    { en: "Statements in this tab run on %{connection} — %{endpoint}. Click to change the schema.", zh-CN: "此标签页中的语句运行于 %{connection} — %{endpoint}。点击更改模式。" }
+
+connection.title.edit:      { en: "Edit connection", zh-CN: "编辑连接" }
+connection.title.new:       { en: "New connection", zh-CN: "新建连接" }
+connection.section.connection: { en: "Connection", zh-CN: "连接" }
+connection.section.security:   { en: "Security", zh-CN: "安全" }
+connection.section.behaviour:  { en: "Behaviour", zh-CN: "行为" }
+connection.button.test:     { en: "Test", zh-CN: "测试" }
+connection.button.connect:  { en: "Connect", zh-CN: "连接" }
+connection.button.save:     { en: "Save", zh-CN: "保存" }
+connection.test.running:    { en: "Testing connection…", zh-CN: "正在测试连接…" }
+connection.test.passed:     { en: "Connected to %{dbms} through %{driver}.", zh-CN: "已通过 %{driver} 连接到 %{dbms}。" }
+connection.test.succeeded:  { en: "Connection succeeded.", zh-CN: "连接成功。" }
+connection.tooltip.choose_file:    { en: "Choose a file", zh-CN: "选择文件" }
+connection.tooltip.change_engine:  { en: "Change engine", zh-CN: "更换引擎" }
+connection.tooltip.choose_project: { en: "Choose an existing project", zh-CN: "选择现有项目" }
+connection.project.none:    { en: "No project", zh-CN: "无项目" }
+connection.project.new:     { en: "New project…", zh-CN: "新建项目…" }
+connection.unit.seconds:    { en: "s", zh-CN: "秒" }
+connection.prompt.choose:   { en: "Choose", zh-CN: "选择" }
+
+connection.field.name:            { en: "Name", zh-CN: "名称" }
+connection.field.database_file:   { en: "Database file", zh-CN: "数据库文件" }
+connection.field.account:         { en: "Account", zh-CN: "账户" }
+connection.field.user:            { en: "User", zh-CN: "用户" }
+connection.field.username:        { en: "Username", zh-CN: "用户名" }
+connection.field.private_key:     { en: "Private key file", zh-CN: "私钥文件" }
+connection.field.database:        { en: "Database", zh-CN: "数据库" }
+connection.field.warehouse:       { en: "Warehouse", zh-CN: "仓库" }
+connection.field.role:            { en: "Role", zh-CN: "角色" }
+connection.field.host:            { en: "Host", zh-CN: "主机" }
+connection.field.port:            { en: "Port", zh-CN: "端口" }
+connection.field.ssh_port:        { en: "SSH port", zh-CN: "SSH 端口" }
+connection.field.password:          { en: "Password", zh-CN: "密码" }
+connection.field.password_command:  { en: "Password command", zh-CN: "密码命令" }
+connection.field.service:         { en: "Service", zh-CN: "服务" }
+connection.field.options:         { en: "Options", zh-CN: "选项" }
+connection.field.connection:      { en: "Connection", zh-CN: "连接" }
+connection.field.sql_dialect:     { en: "SQL dialect", zh-CN: "SQL 方言" }
+connection.field.root_certificate: { en: "Root certificate", zh-CN: "根证书" }
+connection.field.ssh_host:        { en: "SSH host", zh-CN: "SSH 主机" }
+connection.field.ssh_user:        { en: "SSH user", zh-CN: "SSH 用户" }
+connection.field.identity_file:   { en: "Identity file", zh-CN: "身份文件" }
+connection.field.key_passphrase:  { en: "Key passphrase", zh-CN: "密钥口令" }
+connection.field.run_as:          { en: "Run as", zh-CN: "运行身份" }
+
+connection.row.srv_host:              { en: "SRV host", zh-CN: "SRV 主机" }
+connection.row.srv_host.description:  { en: "The host is a DNS name whose records list the servers (mongodb+srv).", zh-CN: "主机是一个 DNS 名称，其记录列出了各个服务器（mongodb+srv）。" }
+connection.row.password_expires:             { en: "Expires after", zh-CN: "有效期" }
+connection.row.password_expires.description: { en: "How long the command's password is reused for. 0 runs it at every login.", zh-CN: "命令输出的密码复用多久。0 表示每次登录都重新运行。" }
+connection.row.encryption:            { en: "Encryption", zh-CN: "加密" }
+connection.row.sql_dialect.description: { en: "How DBDelve writes SQL for this connection: quoting, paging and the Read-only hold.", zh-CN: "DBDelve 为此连接编写 SQL 的方式：标识符引用、分页以及只读限制。" }
+connection.row.ssh_tunnel:            { en: "SSH tunnel", zh-CN: "SSH 隧道" }
+connection.row.ssh_tunnel.description: { en: "Host and port are as the SSH host sees them: localhost is the SSH host itself.", zh-CN: "主机和端口以 SSH 主机的视角为准：localhost 就是 SSH 主机本身。" }
+connection.row.ssh_tunnel.description.socket: { en: "Host and port are as the SSH host sees them: localhost is the SSH host itself. A Host such as /var/run/postgresql is its Unix socket directory; Run as is the OS user sudo opens the socket as, for peer authentication.", zh-CN: "主机和端口以 SSH 主机的视角为准：localhost 就是 SSH 主机本身。像 /var/run/postgresql 这样的主机名是 Unix 套接字目录；运行身份是 sudo 打开套接字时使用的操作系统用户，用于 peer 认证。" }
+connection.row.access:                { en: "Access", zh-CN: "访问级别" }
+connection.row.color:                 { en: "Color", zh-CN: "颜色" }
+connection.row.project:               { en: "Project", zh-CN: "项目" }
+connection.row.statement_timeout:     { en: "Statement timeout", zh-CN: "语句超时" }
+
+connection.placeholder.url:            { en: "Paste a connection URL", zh-CN: "粘贴连接 URL" }
+connection.placeholder.dsn:            { en: "DSN or connection string", zh-CN: "DSN 或连接字符串" }
+connection.placeholder.optional:       { en: "Optional", zh-CN: "可选" }
+connection.placeholder.password_command:  { en: "May use %HOSTNAME% %PORT% %USERNAME%", zh-CN: "可使用 %HOSTNAME% %PORT% %USERNAME%" }
+connection.placeholder.system_trust_store: { en: "System trust store", zh-CN: "系统信任库" }
+connection.placeholder.ssh_host:       { en: "Host or ~/.ssh/config alias", zh-CN: "主机或 ~/.ssh/config 别名" }
+connection.placeholder.ssh_identity_file: { en: "SSH agent", zh-CN: "SSH 代理" }
+connection.placeholder.ssh_user:       { en: "SSH user", zh-CN: "SSH 用户" }
+connection.placeholder.account:        { en: "Account identifier", zh-CN: "账户标识" }
+connection.placeholder.named_after_file: { en: "Named after the file", zh-CN: "以文件命名" }
+connection.placeholder.from_service:   { en: "From the service", zh-CN: "由服务提供" }
+connection.placeholder.database_else_service: { en: "Database, else the service", zh-CN: "数据库，否则由服务提供" }
+connection.placeholder.service:        { en: "Service", zh-CN: "服务" }
+connection.placeholder.service_else_trust_store: { en: "Service, else system trust store", zh-CN: "服务，否则系统信任库" }
+connection.placeholder.from_command:   { en: "From the command", zh-CN: "来自命令" }
+connection.placeholder.unchanged:      { en: "Unchanged", zh-CN: "保持不变" }
+
+connection.hint.named_after_database: { en: "Named after the database", zh-CN: "以数据库命名" }
+connection.hint.named_after_host:     { en: "Named after the host", zh-CN: "以主机命名" }
+connection.hint.required:             { en: "Required", zh-CN: "必填" }
+connection.hint.implied_by_account:   { en: "Implied by the account", zh-CN: "由账户决定" }
+connection.hint.in_memory:            { en: "Blank for a database in memory", zh-CN: "留空则使用内存数据库" }
+
+connection.error.database_file_required:  { en: "Database file is required.", zh-CN: "数据库文件不能为空。" }
+connection.error.display_name_required:   { en: "Display name is required.", zh-CN: "显示名称不能为空。" }
+connection.error.statement_timeout:       { en: "Statement timeout must be a whole number of seconds.", zh-CN: "语句超时必须是整数秒。" }
+connection.error.required:                { en: "%{field} is required.", zh-CN: "%{field}不能为空。" }
+connection.error.private_key_absolute:    { en: "Private key must be an absolute path to the key file.", zh-CN: "私钥必须是指向密钥文件的绝对路径。" }
+connection.error.port_range:              { en: "%{field} must be a number from 1 to 65535.", zh-CN: "%{field}必须是 1 到 65535 之间的数字。" }
+connection.error.ssh_host_required:       { en: "SSH host is required.", zh-CN: "SSH 主机不能为空。" }
+connection.error.ssh_host_dash:           { en: "SSH host must not start with '-'.", zh-CN: "SSH 主机不能以“-”开头。" }
+connection.error.expires:                 { en: "Expires after must be a whole number of seconds.", zh-CN: "有效期必须是整数秒。" }
+connection.error.dsn_required:            { en: "DSN or connection string is required.", zh-CN: "DSN 或连接字符串不能为空。" }
+
+connection.summary.service:  { en: "service %{name}", zh-CN: "服务 %{name}" }
+connection.summary.via:      { en: "%{place} via %{tunnel}", zh-CN: "%{place}，经由 %{tunnel}" }
+connection.list.and:         { en: "and", zh-CN: "和" }
+connection.tunnel_line.one:  { en: "The tunnel forwards to %{host}:%{port}; %{key} is pointed at it when connecting.", zh-CN: "隧道将转发到 %{host}:%{port}；连接时 %{key} 会指向它。" }
+connection.tunnel_line.many: { en: "The tunnel forwards to %{host}:%{port}; %{keys} are pointed at it when connecting.", zh-CN: "隧道将转发到 %{host}:%{port}；连接时 %{keys} 会指向它。" }
+
+connection.dialect.reported:     { en: "The driver reports %{dbms}", zh-CN: "驱动报告 %{dbms}" }
+connection.dialect.built_in:     { en: "DBDelve also has a built-in %{engine} driver, which %{more}.", zh-CN: "DBDelve 还内置了 %{engine} 驱动，它可以%{more}。" }
+connection.dialect.more.imports: { en: "imports rows and copies DDL", zh-CN: "导入行并复制 DDL" }
+connection.dialect.more.edits:   { en: "can edit rows", zh-CN: "编辑行" }
+connection.dialect.use:          { en: "Use %{engine}'s SQL", zh-CN: "使用 %{engine} 的 SQL" }
+
+connection.sslmode.disable.label:     { en: "Disable", zh-CN: "禁用" }
+connection.sslmode.disable.explanation: { en: "Never encrypted.", zh-CN: "从不加密。" }
+connection.sslmode.prefer.label:      { en: "Prefer", zh-CN: "优先" }
+connection.sslmode.prefer.explanation: { en: "Encrypted when the server offers it. The certificate is not checked.", zh-CN: "服务器支持时加密。不检查证书。" }
+connection.sslmode.require.label:     { en: "Require", zh-CN: "要求" }
+connection.sslmode.require.explanation: { en: "Always encrypted. The certificate is not checked.", zh-CN: "始终加密。不检查证书。" }
+connection.sslmode.verify_ca.label:   { en: "Verify CA", zh-CN: "验证 CA" }
+connection.sslmode.verify_ca.explanation: { en: "The certificate must be signed by a trusted authority. Its host name is not checked.", zh-CN: "证书必须由受信任的机构签发。不检查其主机名。" }
+connection.sslmode.verify_full.label: { en: "Verify Full", zh-CN: "完全验证" }
+connection.sslmode.verify_full.explanation: { en: "The certificate must be signed by a trusted authority and issued for this host.", zh-CN: "证书必须由受信任的机构签发，且签发给此主机。" }
+connection.sslmode.prefer.service:    { en: "The mode the service or PGSSLMODE sets applies, even disable. If neither sets one, encrypted when the server offers it, without checking the certificate, and a root certificate needs Require or stricter.", zh-CN: "服务或 PGSSLMODE 设置的模式生效，包括 disable。若两者都未设置，则服务器支持时加密且不检查证书；根证书需要 Require 或更严格的模式。" }
+connection.sslmode.require.service:   { en: "Always encrypted. A root certificate from here, the service or PGSSLROOTCERT is checked as Verify CA. Without one, the certificate is not checked.", zh-CN: "始终加密。来自此处、服务或 PGSSLROOTCERT 的根证书会按 Verify CA 检查。没有根证书时不检查证书。" }

@@ -360,17 +360,27 @@ impl Workspace {
         cx.subscribe_in(&palette, window, Self::on_palette_event)
             .detach();
         self.palette = Some(palette);
+        // A list opened straight on the Definitions scope -- by a stroke or a
+        // row that names it -- reads its view texts now, as `tab` would.
+        if mode == PaletteMode::Search(Scope::Definitions) {
+            self.ensure_definitions(cx);
+        }
         cx.notify();
     }
 
     /// A palette opened before this profile's catalog arrived lists its
-    /// objects once they do.
+    /// objects once they do, and its definitions once those are read again:
+    /// the texts it had were matched against the catalog just replaced.
     pub(crate) fn catalog_landed(&mut self, id: &str, cx: &mut Context<Self>) {
         let (Some(palette), Some(profile)) = (self.palette.clone(), self.profile()) else {
             return;
         };
-        if profile.id == id {
-            palette.update(cx, |palette, cx| palette.catalog_changed(profile, cx));
+        if profile.id != id {
+            return;
+        }
+        palette.update(cx, |palette, cx| palette.catalog_changed(profile, cx));
+        if palette.read(cx).mode() == PaletteMode::Search(Scope::Definitions) {
+            self.ensure_definitions(cx);
         }
     }
 
@@ -421,6 +431,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(event, PaletteEvent::LoadDefinitions) {
+            self.ensure_definitions(cx);
+            return;
+        }
         if let PaletteEvent::Confirm {
             command: Command::ToggleProject(at),
             ..
@@ -438,6 +452,8 @@ impl Workspace {
                 return;
             }
             PaletteEvent::Act { command, scope } => (command.clone(), *scope),
+            // Read above: a load is not a confirmation, and the palette stays.
+            PaletteEvent::LoadDefinitions => return,
             PaletteEvent::Confirm {
                 command,
                 scope,
