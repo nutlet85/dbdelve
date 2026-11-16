@@ -321,17 +321,18 @@ pub(crate) fn update_pill(t: Theme, label: String) -> Button {
 /// Which build this is, beside the settings button. Quiet enough not to
 /// compete with the connection, and readable on every theme because it sits
 /// on the same chrome tint as the controls around it rather than on the
-/// titlebar's bare band.
+/// titlebar's bare band, with the body colour's contrast rather than the
+/// muted one's.
 pub(crate) fn version_badge(t: Theme) -> AnyElement {
     div()
         .px(px(layout::SPACE_SM))
         .py(px(1.))
         .rounded_full()
         .border_1()
-        .border_color(t.border)
-        .bg(t.element_hover)
+        .border_color(t.border_strong)
+        .bg(t.element_active)
         .text_size(px(layout::chrome(layout::TEXT_XS)))
-        .text_color(t.text_muted)
+        .text_color(t.text)
         .child(concat!("v", env!("CARGO_PKG_VERSION")))
         .into_any_element()
 }
