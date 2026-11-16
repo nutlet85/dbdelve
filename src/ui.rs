@@ -318,6 +318,24 @@ pub(crate) fn update_pill(t: Theme, label: String) -> Button {
         )
 }
 
+/// Which build this is, beside the settings button. Quiet enough not to
+/// compete with the connection, and readable on every theme because it sits
+/// on the same chrome tint as the controls around it rather than on the
+/// titlebar's bare band.
+pub(crate) fn version_badge(t: Theme) -> AnyElement {
+    div()
+        .px(px(layout::SPACE_SM))
+        .py(px(1.))
+        .rounded_full()
+        .border_1()
+        .border_color(t.border)
+        .bg(t.element_hover)
+        .text_size(px(layout::chrome(layout::TEXT_XS)))
+        .text_color(t.text_muted)
+        .child(concat!("v", env!("CARGO_PKG_VERSION")))
+        .into_any_element()
+}
+
 /// macOS draws its window buttons over a transparent titlebar, and Windows
 /// draws none at all into one, so both leave the strip to dbdelve. Linux asks
 /// for the system bar, and draws its own only where the compositor declines to

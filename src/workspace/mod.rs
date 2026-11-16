@@ -1846,7 +1846,7 @@ impl Render for Workspace {
                     None,
                     self.render_update_pill(cx).into_iter().collect(),
                     Vec::new(),
-                    Vec::new(),
+                    vec![ui::version_badge(t)],
                 ))
                 .child(self.beside_settings(self.render_welcome(window, cx).into_any_element(), cx))
                 .children(self.dialog_layer(
@@ -2787,6 +2787,7 @@ pub(crate) fn spawn_blocking<T: Send + 'static>(
     }
     executor.spawn(blocking::unblock(work))
 }
+                    ui::version_badge(t),
 
 /// A Cancel, on a thread of its own started at once rather than on
 /// [`spawn_blocking`]'s pool, which the statements it cancels may be filling.
