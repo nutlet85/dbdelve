@@ -237,7 +237,6 @@ row_limit.custom_value:
 
 # —— 设置页：框架 ——
 settings.title:            { en: "Settings", zh-CN: "设置" }
-settings.version:          { en: "Version %{version}", zh-CN: "版本 %{version}" }
 settings.close:            { en: "Close", zh-CN: "关闭" }
 settings.close_hint:       { en: "Close (%{hint})", zh-CN: "关闭（%{hint}）" }
 settings.search:           { en: "Search settings", zh-CN: "搜索设置" }
@@ -308,7 +307,9 @@ settings.row.run_unreadable.description:      { en: "Runs a statement DBDelve ca
 settings.row.qualify_completions.title:       { en: "Qualify table names", zh-CN: "表名带模式" }
 settings.row.qualify_completions.description: { en: "Completing a table name inserts it with its schema, as schema.table.", zh-CN: "补全表名时连同模式一起插入，形如 schema.table。" }
 settings.row.check_for_updates.title:         { en: "Check for updates", zh-CN: "检查更新" }
-settings.row.check_for_updates.description:   { en: "One request to GitHub at launch to see whether a newer release exists. Nothing is sent about you or your databases.", zh-CN: "启动时向 GitHub 发一次请求，检查是否有新版本。不会发送关于你或你的数据库的任何信息。" }
+settings.row.check_for_updates.description:   { en: "Asks the update source for a newer release.", zh-CN: "向更新源查询是否有新版本。" }
+settings.row.update_interval.title:           { en: "Check interval", zh-CN: "检查间隔" }
+settings.row.update_interval.description:     { en: "How often to check again.", zh-CN: "多久再查一次。" }
 settings.row.update_feed.title:               { en: "Update source", zh-CN: "更新源" }
 settings.row.update_feed.description:         { en: "Leave empty for GitHub's own releases; a mirror or proxy serving the same JSON goes here. Downloads are still checked against the release signature.", zh-CN: "留空使用 GitHub 官方发布；可填返回同样 JSON 的镜像或代理地址。下载内容仍会校验发行签名。" }
 settings.row.update_feed.placeholder:         { en: "Empty for GitHub", zh-CN: "留空使用 GitHub 官方地址" }
@@ -361,6 +362,15 @@ update.failed.signature:       { en: "The download's signature did not check out
 update.failed.unpack:          { en: "The downloaded update could not be opened.", zh-CN: "下载的更新包无法打开。" }
 update.failed.not_the_app:     { en: "The downloaded app is not the release it should be.", zh-CN: "下载的应用不是应有的发行版本。" }
 update.failed.replace:         { en: "The installed app could not be replaced.", zh-CN: "无法替换已安装的应用。" }
+update.interval.off:           { en: "Off", zh-CN: "关闭" }
+update.interval.six_hours:     { en: "6 hours", zh-CN: "6 小时" }
+update.interval.daily:         { en: "Daily", zh-CN: "每天" }
+update.interval.weekly:        { en: "Weekly", zh-CN: "每周" }
+update.check_now:              { en: "Check now", zh-CN: "立即检查" }
+update.checking:               { en: "Checking…", zh-CN: "检查中…" }
+update.up_to_date:             { en: "Up to date", zh-CN: "已是最新" }
+update.found:                  { en: "Found v%{version}", zh-CN: "发现 v%{version}" }
+update.check_failed:           { en: "Check failed", zh-CN: "检查失败" }
 update.failed.scratch:         { en: "There was nowhere to put the download.", zh-CN: "找不到存放下载内容的位置。" }
 update.failed.already_running: { en: "Another DBDelve is already installing an update.", zh-CN: "另一个 DBDelve 正在安装更新。" }
 update.failed.already_updated: { en: "DBDelve was updated since it started. Restart it to run that version.", zh-CN: "DBDelve 启动后已被更新。重启它即可运行新版本。" }

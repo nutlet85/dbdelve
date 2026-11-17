@@ -68,8 +68,9 @@ pub(crate) struct Settings {
     pub(crate) match_system_appearance: bool,
     pub(crate) light_theme: String,
     pub(crate) dark_theme: String,
-    /// One request to GitHub at launch. Off switch because local-first users
-    /// get to say no to the only request DBDelve makes on its own.
+    /// Whether the periodic check runs at all. Off is one of the choices in
+    /// the interval row; local-first users get to say no to the only request
+    /// DBDelve makes on its own.
     pub(crate) check_for_updates: bool,
     /// Where the update check reads release metadata from: empty for GitHub
     /// itself, anything else a mirror or proxy serving the same JSON. The
@@ -78,6 +79,8 @@ pub(crate) struct Settings {
     /// A prefix the release's downloads go through, such as
     /// `https://ghfast.top`: empty downloads from GitHub directly.
     pub(crate) update_proxy: String,
+    /// How many hours apart the checks are, one of [`update::INTERVAL_HOURS`].
+    pub(crate) update_interval_hours: u64,
     /// Some people want the connection colour on the switcher only, not a
     /// painted band across the window.
     pub(crate) color_titlebar: bool,
@@ -139,6 +142,7 @@ impl Default for Settings {
             check_for_updates: true,
             update_feed: String::new(),
             update_proxy: String::new(),
+            update_interval_hours: update::DEFAULT_INTERVAL_HOURS,
             color_titlebar: true,
             client_sort: false,
             qualify_completions: false,
@@ -240,6 +244,19 @@ pub(crate) struct PendingImport {
     pub(crate) fresh: usize,
     /// `None` for No project.
     pub(crate) project: Option<String>,
+}
+
+/// What the last update check answered, for the settings row to show. A
+/// periodic check that fails leaves it alone: being offline is not news.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum UpdateStatus {
+    #[default]
+    Idle,
+    Checking,
+    UpToDate,
+    /// The version the feed found.
+    Found(String),
+    Failed,
 }
 
 pub(crate) struct Workspace {
@@ -407,6 +424,8 @@ pub(crate) struct Workspace {
     /// See [`Workspace::welcome_project_focus`].
     pub(crate) welcome_project_focus: std::cell::RefCell<Vec<FocusHandle>>,
     pub(crate) update: Option<update::Update>,
+    /// What the last check answered, so the settings row can say so.
+    pub(crate) update_status: UpdateStatus,
     /// The launch check and the ones after it; dropped, they stop.
     update_checks: Option<gpui::Task<()>>,
 }
@@ -588,6 +607,7 @@ impl Workspace {
             focus_before_dialog: std::cell::RefCell::default(),
             welcome_project_focus: std::cell::RefCell::default(),
             update: None,
+            update_status: UpdateStatus::Idle,
             update_checks: None,
         };
 
@@ -665,6 +685,8 @@ impl Workspace {
                     stored_settings.update_feed.clone().unwrap_or_default();
                 workspace.settings.update_proxy =
                     stored_settings.update_proxy.clone().unwrap_or_default();
+                workspace.settings.update_interval_hours =
+                    update::interval_hours(stored_settings.update_interval_hours);
                 let feed = workspace.settings.update_feed.clone();
                 workspace.update_feed_input.update(cx, |input, cx| {
                     input.set_value(feed, window, cx);
@@ -780,7 +802,7 @@ impl Workspace {
         }
 
         if workspace.settings.check_for_updates {
-            workspace.update_checks = Some(Self::check_for_updates(cx));
+            workspace.update_checks = Some(Self::update_check_loop(cx, update::STARTUP_DELAY));
         }
 
         // A rebind capture takes the next keystroke whatever it is, and an
@@ -1106,12 +1128,23 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn set_check_for_updates(&mut self, check: bool, cx: &mut Context<Self>) {
-        if self.settings.check_for_updates == check {
+    /// The chosen cadence, or `None` for off. Picking one turns the checks on;
+    /// picking off keeps the cadence, so turning it back on is one click.
+    pub(crate) fn set_update_interval(&mut self, hours: Option<u64>, cx: &mut Context<Self>) {
+        let hours = hours.map(|hours| update::interval_hours(Some(hours)));
+        let on = hours.is_some();
+        let changed = self.settings.check_for_updates != on
+            || hours.is_some_and(|hours| self.settings.update_interval_hours != hours);
+        if !changed {
             return;
         }
-        self.settings.check_for_updates = check;
-        self.update_checks = check.then(|| Self::check_for_updates(cx));
+        self.settings.check_for_updates = on;
+        if let Some(hours) = hours {
+            self.settings.update_interval_hours = hours;
+        }
+        // The running loop's next sleep was decided from the old value, so a
+        // change restarts it, which also asks once now.
+        self.update_checks = on.then(|| Self::update_check_loop(cx, std::time::Duration::ZERO));
         self.remember_profiles(cx);
         cx.notify();
     }
@@ -1183,51 +1216,123 @@ impl Workspace {
             return;
         }
         self.update = None;
+        // The row's answer came from the old source; the new one answers in a
+        // moment, and a failure there says nothing, so leaving it would claim
+        // a release that is no longer on offer.
+        self.update_status = UpdateStatus::Idle;
         self.update_checks = self
             .settings
             .check_for_updates
-            .then(|| Self::check_for_updates(cx));
+            .then(|| Self::update_check_loop(cx, std::time::Duration::ZERO));
     }
 
-    /// At launch and every [`update::RECHECK`] after it.
-    fn check_for_updates(cx: &mut Context<Self>) -> gpui::Task<()> {
+    /// At launch, after [`update::STARTUP_DELAY`] so the first frame and the
+    /// first catalog are not competing with a network round trip; then again
+    /// every interval the settings name.
+    fn update_check_loop(
+        cx: &mut Context<Self>,
+        first_delay: std::time::Duration,
+    ) -> gpui::Task<()> {
         cx.spawn(async move |workspace, cx| {
+            let mut wait = first_delay;
             loop {
+                if !wait.is_zero() {
+                    cx.background_executor().timer(wait).await;
+                }
                 // Read each round rather than once: the settings can change
                 // between two checks, and the new source answers the next one.
-                let Ok((feed, proxy)) = workspace.update(cx, |workspace, _| {
+                let Ok((feed, proxy, hours)) = workspace.update(cx, |workspace, _| {
                     (
                         workspace.settings.update_feed.clone(),
                         workspace.settings.update_proxy.clone(),
+                        workspace.settings.update_interval_hours,
                     )
                 }) else {
                     return;
                 };
-                let found = spawn_blocking(cx.background_executor(), move || {
+                let result = spawn_blocking(cx.background_executor(), move || {
                     update::newer_release(&feed, &proxy)
                 })
                 .await;
                 let open = workspace.update(cx, |workspace, cx| {
-                    // A check that comes back while an update is being
-                    // installed must not take its progress away.
-                    let running = workspace
-                        .update
-                        .as_ref()
-                        .is_some_and(|update| matches!(update.state, update::State::Running(_)));
-                    if let Some(found) = found.filter(|_| !running) {
-                        workspace.update = Some(found);
-                        cx.notify();
-                        if update::installs_unattended() {
-                            workspace.install_update(cx);
-                        }
-                    }
+                    workspace.apply_check_result(result, false, cx);
                 });
                 if open.is_err() {
                     return;
                 }
-                cx.background_executor().timer(update::RECHECK).await;
+                wait = std::time::Duration::from_secs(hours * 60 * 60);
             }
         })
+    }
+
+    /// What a check's answer means for the workspace and the settings row.
+    /// `manual` is the user having asked: a failure says so only then.
+    fn apply_check_result(
+        &mut self,
+        result: Result<Option<update::Update>, String>,
+        manual: bool,
+        cx: &mut Context<Self>,
+    ) {
+        // A check that comes back while an update is being installed must not
+        // take its progress away.
+        let running = self
+            .update
+            .as_ref()
+            .is_some_and(|update| matches!(update.state, update::State::Running(_)));
+        match result {
+            Ok(Some(found)) => {
+                let version = found.release.version.clone();
+                if !running {
+                    self.update = Some(found);
+                }
+                self.update_status = UpdateStatus::Found(version);
+                if !running && update::installs_unattended() {
+                    self.install_update(cx);
+                }
+            }
+            // Nothing newer than this build. A release found earlier and not
+            // yet installed is still the one to show.
+            Ok(None) => {
+                self.update_status = match &self.update {
+                    Some(update) => UpdateStatus::Found(update.release.version.clone()),
+                    None => UpdateStatus::UpToDate,
+                };
+            }
+            Err(_) => {
+                if manual {
+                    self.update_status = UpdateStatus::Failed;
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// The settings row's Check now. One click is not the app deciding
+    /// anything, so it asks whether the periodic check is on or not.
+    pub(crate) fn check_updates_now(&mut self, cx: &mut Context<Self>) {
+        let running = self
+            .update
+            .as_ref()
+            .is_some_and(|update| matches!(update.state, update::State::Running(_)));
+        if running || matches!(self.update_status, UpdateStatus::Checking) {
+            return;
+        }
+        self.update_status = UpdateStatus::Checking;
+        cx.notify();
+        let (feed, proxy) = (
+            self.settings.update_feed.clone(),
+            self.settings.update_proxy.clone(),
+        );
+        let task = spawn_blocking(cx.background_executor(), move || {
+            update::newer_release(&feed, &proxy)
+        });
+        cx.spawn(async move |workspace, cx| {
+            let result = task.await;
+            _ = workspace.update(cx, |workspace, cx| {
+                workspace.apply_check_result(result, true, cx)
+            });
+        })
+        .detach();
     }
 
     /// Update and restart: from [`update::State::Ready`], or again after a

@@ -861,8 +861,10 @@ pub(crate) fn option_row(
 
 /// An [`option_row`] whose control always sits under its title and
 /// description. For a control whose width follows what it shows -- a font
-/// row's picker carries the family's name -- so that sibling rows do not
-/// each decide differently whether it fits beside them.
+/// row's picker carries the family's name -- and for a row whose control grows
+/// and shrinks with a status beside it, as the update rows' do, so that
+/// sibling rows do not each decide differently whether it fits beside them and
+/// no row re-flows as its state changes.
 pub(crate) fn stacked_option_row(
     title: impl IntoElement,
     description: Option<SharedString>,
@@ -1040,15 +1042,15 @@ pub(crate) fn swatch(
 }
 
 /// The one action a surface exists to take, in the accent: the connection
-/// form's Connect. Everywhere else the primary button is the neutral control
-/// tone (see [`Tone`]).
+/// form's Connect, the update row's Check now. Everywhere else the primary
+/// button is the neutral control tone (see [`Tone`]).
 pub(crate) fn accent_button(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
+    size: Control,
     t: Theme,
     cx: &gpui::App,
 ) -> Button {
-    let size = Control::Standard;
     Button::new(id)
         .custom(
             ButtonCustomVariant::new(cx)
@@ -1064,7 +1066,9 @@ pub(crate) fn accent_button(
         .bg(t.accent)
         .h(px(size.height()))
         .px(px(size.padding()))
-        .min_w(px(layout::CONTROL_MIN_WIDTH))
+        .when(size == Control::Standard, |standard| {
+            standard.min_w(px(layout::CONTROL_MIN_WIDTH))
+        })
         .child(
             div()
                 .whitespace_nowrap()

@@ -47,9 +47,22 @@ pub(crate) const DEFAULT_FEED: &str =
 
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
 
-/// How often a running app asks again, so a session left open for days still
-/// hears about a release.
-pub(crate) const RECHECK: Duration = Duration::from_secs(6 * 60 * 60);
+/// How long the launch check waits, so the first frame and the first catalog
+/// are not competing with a network round trip.
+pub(crate) const STARTUP_DELAY: Duration = Duration::from_secs(30);
+
+pub(crate) const DEFAULT_INTERVAL_HOURS: u64 = 6;
+
+/// The intervals the settings offer, in hours.
+pub(crate) const INTERVAL_HOURS: [u64; 3] = [6, 24, 168];
+
+/// A stored interval, or the default when it is absent or names no interval
+/// this build offers -- which is what a file written by a newer one reads as.
+pub(crate) fn interval_hours(stored: Option<u64>) -> u64 {
+    stored
+        .filter(|hours| INTERVAL_HOURS.contains(hours))
+        .unwrap_or(DEFAULT_INTERVAL_HOURS)
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Release {
@@ -155,11 +168,14 @@ pub(crate) struct Asset {
 
 /// The latest release, if it is newer than this build, and whether this install
 /// can put it in place itself. Blocking, so it belongs on the background
-/// executor. Any failure is `None`: being offline is not something to tell
-/// anyone about. `custom_feed` comes from the settings, empty for GitHub
-/// itself; a mirror is safe to read, since whatever it serves still has to
-/// verify against the release key compiled in.
-pub(crate) fn newer_release(custom_feed: &str, proxy: &str) -> Option<Update> {
+/// executor. `custom_feed` comes from the settings, empty for GitHub itself; a
+/// mirror is safe to read, since whatever it serves still has to verify against
+/// the release key compiled in.
+///
+/// Three answers, because the settings row shows one: nothing newer, a release,
+/// or the reason the feed could not be read. A periodic caller stays quiet on
+/// the last; one the user asked for says it failed.
+pub(crate) fn newer_release(custom_feed: &str, proxy: &str) -> Result<Option<Update>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(10)))
         .user_agent(concat!("dbdelve/", env!("CARGO_PKG_VERSION")))
@@ -175,13 +191,13 @@ pub(crate) fn newer_release(custom_feed: &str, proxy: &str) -> Option<Update> {
         Ok(latest) => latest,
         Err(error) => {
             tracing::info!(feed, "update check failed: {error}");
-            return None;
+            return Err(error.to_string());
         }
     };
     through_proxy(proxy, &mut latest.assets);
     let version = latest.tag_name.trim_start_matches('v').to_string();
     if !is_newer(&version, CURRENT) {
-        return None;
+        return Ok(None);
     }
     tracing::info!(version, current = CURRENT, "a newer release is out");
     if !proxy.trim().is_empty() {
@@ -190,14 +206,14 @@ pub(crate) fn newer_release(custom_feed: &str, proxy: &str) -> Option<Update> {
             "its downloads will go through a proxy"
         );
     }
-    Some(Update {
+    Ok(Some(Update {
         state: installer(&version, &latest.assets)
             .map_or(State::Link, |installer| State::Ready(Arc::new(installer))),
         release: Release {
             version,
             url: latest.html_url,
         },
-    })
+    }))
 }
 
 /// Points the release's downloads at a proxy prefix when one is set: the
@@ -417,6 +433,18 @@ mod tests {
         assert_eq!(progress.label(), "Downloading\u{2026} 42%");
         progress.installing();
         assert_eq!(progress.label(), "Installing\u{2026}");
+    }
+
+    #[test]
+    fn an_interval_reads_back_only_when_this_build_offers_it() {
+        use super::interval_hours;
+        assert_eq!(interval_hours(Some(6)), 6);
+        assert_eq!(interval_hours(Some(24)), 24);
+        assert_eq!(interval_hours(Some(168)), 168);
+        // Absent, or a value no segment offers, is the default.
+        assert_eq!(interval_hours(Some(1)), 6);
+        assert_eq!(interval_hours(Some(1000)), 6);
+        assert_eq!(interval_hours(None), 6);
     }
 
     #[test]

@@ -69,6 +69,7 @@ impl Workspace {
                 .then(|| self.settings.update_feed.clone()),
             update_proxy: (!self.settings.update_proxy.is_empty())
                 .then(|| self.settings.update_proxy.clone()),
+            update_interval_hours: Some(self.settings.update_interval_hours),
             color_titlebar: Some(self.settings.color_titlebar),
             client_sort: Some(self.settings.client_sort),
             qualify_completions: Some(self.settings.qualify_completions),

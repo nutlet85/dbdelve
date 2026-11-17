@@ -38,12 +38,12 @@ use crate::{
         popup_theme, theme,
     },
     ui::{
-        Control, Tone, button, button_label, chord_hint, highlighted, icon_button, keycap_text,
-        keycaps, option_row, picker, raised_card, segmented, segmented_choice, stacked_option_row,
-        switch, well,
+        Control, Tone, accent_button, button, button_label, chord_hint, highlighted, icon_button,
+        keycap_text, keycaps, option_row, picker, raised_card, segmented, segmented_choice,
+        stacked_option_row, switch, version_badge, well,
     },
     views::row_limit_menu,
-    workspace::{FONT_SIZE_STEP, Settings, font_size_range, opacity_percent},
+    workspace::{FONT_SIZE_STEP, Settings, UpdateStatus, font_size_range, opacity_percent},
 };
 
 /// The categories the panel's tabs show, in the order they are numbered.
@@ -127,6 +127,7 @@ enum SettingId {
     FormatJoins,
     Language,
     CheckForUpdates,
+    UpdateInterval,
     UpdateFeed,
     UpdateProxy,
     VerboseLogging,
@@ -227,7 +228,34 @@ fn setting_rows() -> Vec<SettingRow> {
             t!("settings.group.updates"),
             t!("settings.row.check_for_updates.title"),
             t!("settings.row.check_for_updates.description"),
-            &["update", "release", "version", "github", "更新", "版本"],
+            &[
+                "update", "release", "version", "github", "now", "check", "更新", "版本", "立即",
+                "检查",
+            ],
+        ),
+        row(
+            SettingId::UpdateInterval,
+            SettingsTab::General,
+            t!("settings.group.updates"),
+            t!("settings.row.update_interval.title"),
+            t!("settings.row.update_interval.description"),
+            &[
+                "update",
+                "check",
+                "interval",
+                "frequency",
+                "daily",
+                "weekly",
+                "off",
+                "never",
+                "检查",
+                "间隔",
+                "频率",
+                "每天",
+                "每周",
+                "关闭",
+                "从不",
+            ],
         ),
         row(
             SettingId::UpdateFeed,
@@ -845,22 +873,9 @@ fn render_header(workspace: &Workspace, t: Theme, cx: &mut Context<Workspace>) -
         .child(
             div()
                 .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(1.))
-                .child(
-                    div()
-                        .text_size(px(layout::chrome(layout::TEXT_LG)))
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(t!("settings.title").to_string()),
-                )
-                .child(
-                    div()
-                        .text_size(px(layout::chrome(layout::TEXT_XS)))
-                        .text_color(t.text_muted)
-                        .child(t!("settings.version", version = env!("CARGO_PKG_VERSION"))),
-                ),
+                .text_size(px(layout::chrome(layout::TEXT_LG)))
+                .font_weight(FontWeight::MEDIUM)
+                .child(t!("settings.title").to_string()),
         )
         .child(
             icon_button(
@@ -1036,7 +1051,10 @@ fn render_row(
     });
     let title = highlighted(row.title.to_string(), matched, t);
     let control = render_control(workspace, row.id, t, cx);
-    if matches!(row.id, SettingId::Font(_)) {
+    if matches!(
+        row.id,
+        SettingId::Font(_) | SettingId::CheckForUpdates | SettingId::UpdateInterval
+    ) {
         stacked_option_row(title, description, control, t).into_any_element()
     } else {
         option_row(title, description, control, t).into_any_element()
@@ -1175,12 +1193,79 @@ fn render_control(
                 }))
                 .into_any_element()
         }
-        SettingId::CheckForUpdates => switch("check-for-updates", settings.check_for_updates, t)
-            .on_click(cx.listener(|workspace, _: &ClickEvent, _, cx| {
-                let check = !workspace.settings.check_for_updates;
-                workspace.set_check_for_updates(check, cx);
-            }))
-            .into_any_element(),
+        SettingId::CheckForUpdates => {
+            let status = match &workspace.update_status {
+                UpdateStatus::Idle => None,
+                UpdateStatus::Checking => Some(t!("update.checking").to_string()),
+                UpdateStatus::UpToDate => Some(t!("update.up_to_date").to_string()),
+                UpdateStatus::Found(version) => {
+                    Some(t!("update.found", version = version).to_string())
+                }
+                UpdateStatus::Failed => Some(t!("update.check_failed").to_string()),
+            };
+            let installing = workspace
+                .update
+                .as_ref()
+                .is_some_and(|update| matches!(update.state, crate::update::State::Running(_)));
+            let busy = matches!(workspace.update_status, UpdateStatus::Checking) || installing;
+            div()
+                .flex()
+                .items_center()
+                .gap(px(layout::SPACE_SM))
+                // The same badge the titlebar carries, so the version a
+                // result is about is never a guess.
+                .child(version_badge(t))
+                .children(status.map(|text| {
+                    div()
+                        .text_size(px(layout::chrome(layout::TEXT_SM)))
+                        .text_color(t.text_muted)
+                        .child(text)
+                }))
+                .child(
+                    accent_button(
+                        "check-updates-now",
+                        t!("update.check_now").to_string(),
+                        Control::Compact,
+                        t,
+                        cx,
+                    )
+                    // A custom variant replays its own fill over the library's
+                    // disabled wash, so the busy state dims the button itself.
+                    .when(busy, |button| button.opacity(0.5))
+                    .disabled(busy)
+                    .on_click(cx.listener(
+                        |workspace, _: &ClickEvent, _, cx| {
+                            workspace.check_updates_now(cx);
+                        },
+                    )),
+                )
+                .into_any_element()
+        }
+        SettingId::UpdateInterval => {
+            // Off first, so the row reads as on-or-off before it reads as
+            // how often; a cadence stays remembered while it is off.
+            let current = settings
+                .check_for_updates
+                .then_some(settings.update_interval_hours);
+            let choices = std::iter::once((0usize, None, t!("update.interval.off").to_string()))
+                .chain(crate::update::INTERVAL_HOURS.into_iter().map(|hours| {
+                    let label = match hours {
+                        6 => t!("update.interval.six_hours"),
+                        24 => t!("update.interval.daily"),
+                        _ => t!("update.interval.weekly"),
+                    };
+                    (hours as usize, Some(hours), label.to_string())
+                }));
+            segmented(t)
+                .children(choices.map(|(id, hours, label)| {
+                    segmented_choice(("update-interval", id), label, current == hours, t).on_click(
+                        cx.listener(move |workspace, _: &ClickEvent, _, cx| {
+                            workspace.set_update_interval(hours, cx);
+                        }),
+                    )
+                }))
+                .into_any_element()
+        }
         SettingId::UpdateFeed => div()
             .w(px(200.))
             .child(Input::new(&workspace.update_feed_input).small())
@@ -1660,7 +1745,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 27);
+        assert_eq!(found("!keyboard").len(), 28);
     }
 
     #[test]

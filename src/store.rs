@@ -544,6 +544,10 @@ pub struct StoredSettings {
     /// download.
     #[serde(default)]
     pub update_proxy: Option<String>,
+    /// How many hours apart the update checks are. Absent, or a value this
+    /// build offers no segment for, reads as the default interval.
+    #[serde(default)]
+    pub update_interval_hours: Option<u64>,
     #[serde(default)]
     pub color_titlebar: Option<bool>,
     #[serde(default)]
@@ -4002,6 +4006,7 @@ open_objects = []
                 check_for_updates: Some(false),
                 update_feed: Some("https://mirror.test/latest".into()),
                 update_proxy: Some("https://ghfast.top".into()),
+                update_interval_hours: Some(168),
                 color_titlebar: Some(false),
                 client_sort: Some(true),
                 qualify_completions: Some(true),

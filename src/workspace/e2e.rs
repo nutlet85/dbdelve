@@ -1667,6 +1667,38 @@ fn tab_reaches_the_default_sorting_choice_in_settings(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn the_interval_row_off_choice_stops_the_checks(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        // The fixture launches with the checks off, which keeps every test off
+        // the network. Seed the state the row would show for someone checking
+        // daily; the fields are set directly rather than through
+        // `set_update_interval`, which would start a check of its own.
+        workspace.update(cx, |workspace, _| {
+            workspace.settings.check_for_updates = true;
+            workspace.settings.update_interval_hours = 24;
+        });
+        cx.simulate_keystrokes("secondary-,");
+        settle(cx);
+        cx.simulate_input("Check interval");
+        settle(cx);
+        // Off, 6 hours, Daily, Weekly: the row opens on the daily one, so one
+        // Tab reaches Off.
+        cx.simulate_keystrokes("tab");
+        settle(cx);
+        press(cx, "space");
+        settle(cx);
+        workspace.read_with(cx, |workspace, _| {
+            assert!(!workspace.settings.check_for_updates);
+            // Off keeps the cadence, so turning it back on is one click.
+            assert_eq!(workspace.settings.update_interval_hours, 24);
+        });
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
 fn a_format_setting_changes_the_next_format_query(cx: &mut TestAppContext) {
     store::tests::with_home(|| {
         let (workspace, cx) = launch_on_sqlite(cx);
