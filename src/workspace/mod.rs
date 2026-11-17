@@ -75,6 +75,9 @@ pub(crate) struct Settings {
     /// itself, anything else a mirror or proxy serving the same JSON. The
     /// signatures make it safe to read, not trusted.
     pub(crate) update_feed: String,
+    /// A prefix the release's downloads go through, such as
+    /// `https://ghfast.top`: empty downloads from GitHub directly.
+    pub(crate) update_proxy: String,
     /// Some people want the connection colour on the switcher only, not a
     /// painted band across the window.
     pub(crate) color_titlebar: bool,
@@ -135,6 +138,7 @@ impl Default for Settings {
                 .to_string(),
             check_for_updates: true,
             update_feed: String::new(),
+            update_proxy: String::new(),
             color_titlebar: true,
             client_sort: false,
             qualify_completions: false,
@@ -382,6 +386,8 @@ pub(crate) struct Workspace {
     /// The update source field in the settings panel, kept here for the same
     /// reason as the opacity one.
     pub(crate) update_feed_input: Entity<InputState>,
+    /// The download proxy field beside it.
+    pub(crate) update_proxy_input: Entity<InputState>,
     /// The window's own focus, for the moments when nothing inside it can hold
     /// any. See [`Focus::Window`].
     pub(crate) focus: FocusHandle,
@@ -480,6 +486,20 @@ impl Workspace {
             },
         )
         .detach();
+        let update_proxy_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!("settings.row.update_proxy.placeholder").to_string())
+        });
+        cx.subscribe_in(
+            &update_proxy_input,
+            window,
+            |workspace, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    workspace.commit_update_proxy_input(window, cx);
+                }
+            },
+        )
+        .detach();
         cx.observe_window_appearance(window, |workspace, window, cx| {
             workspace.follow_system_appearance(window, cx);
         })
@@ -559,6 +579,7 @@ impl Workspace {
             theme_before_preview: None,
             opacity_input,
             update_feed_input,
+            update_proxy_input,
             focus: cx.focus_handle(),
             explorer_focus: cx.focus_handle(),
             dialog_focus: cx.focus_handle(),
@@ -642,9 +663,15 @@ impl Workspace {
                     stored_settings.check_for_updates.unwrap_or(true);
                 workspace.settings.update_feed =
                     stored_settings.update_feed.clone().unwrap_or_default();
+                workspace.settings.update_proxy =
+                    stored_settings.update_proxy.clone().unwrap_or_default();
                 let feed = workspace.settings.update_feed.clone();
                 workspace.update_feed_input.update(cx, |input, cx| {
                     input.set_value(feed, window, cx);
+                });
+                let proxy = workspace.settings.update_proxy.clone();
+                workspace.update_proxy_input.update(cx, |input, cx| {
+                    input.set_value(proxy, window, cx);
                 });
                 workspace.settings.color_titlebar = stored_settings.color_titlebar.unwrap_or(true);
                 workspace.settings.client_sort = stored_settings.client_sort.unwrap_or(false);
@@ -1099,17 +1126,7 @@ impl Workspace {
             return;
         }
         self.settings.update_feed = feed;
-        let running = self
-            .update
-            .as_ref()
-            .is_some_and(|update| matches!(update.state, update::State::Running(_)));
-        if !running {
-            self.update = None;
-            self.update_checks = self
-                .settings
-                .check_for_updates
-                .then(|| Self::check_for_updates(cx));
-        }
+        self.recheck_updates(cx);
         self.remember_profiles(cx);
         cx.notify();
     }
@@ -1126,19 +1143,68 @@ impl Workspace {
         self.set_update_feed(trimmed, cx);
     }
 
+    /// The prefix the release's downloads go through, empty for GitHub
+    /// directly. The URLs an update already found were built at check time,
+    /// so a change re-asks as well.
+    pub(crate) fn set_update_proxy(&mut self, proxy: String, cx: &mut Context<Self>) {
+        let proxy = proxy.trim().to_string();
+        if self.settings.update_proxy == proxy {
+            return;
+        }
+        self.settings.update_proxy = proxy;
+        self.recheck_updates(cx);
+        self.remember_profiles(cx);
+        cx.notify();
+    }
+
+    /// What the typed proxy means, once the user is done typing it.
+    pub(crate) fn commit_update_proxy_input(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let typed = self.update_proxy_input.read(cx).value().to_string();
+        let trimmed = typed.trim().to_string();
+        if typed != trimmed {
+            self.update_proxy_input
+                .update(cx, |input, cx| input.set_value(trimmed.clone(), window, cx));
+        }
+        self.set_update_proxy(trimmed, cx);
+    }
+
+    /// Asks again now, unless an install is under way: a check landing mid
+    /// install would take its progress away.
+    fn recheck_updates(&mut self, cx: &mut Context<Self>) {
+        let running = self
+            .update
+            .as_ref()
+            .is_some_and(|update| matches!(update.state, update::State::Running(_)));
+        if running {
+            return;
+        }
+        self.update = None;
+        self.update_checks = self
+            .settings
+            .check_for_updates
+            .then(|| Self::check_for_updates(cx));
+    }
+
     /// At launch and every [`update::RECHECK`] after it.
     fn check_for_updates(cx: &mut Context<Self>) -> gpui::Task<()> {
         cx.spawn(async move |workspace, cx| {
             loop {
                 // Read each round rather than once: the settings can change
                 // between two checks, and the new source answers the next one.
-                let Ok(feed) =
-                    workspace.update(cx, |workspace, _| workspace.settings.update_feed.clone())
-                else {
+                let Ok((feed, proxy)) = workspace.update(cx, |workspace, _| {
+                    (
+                        workspace.settings.update_feed.clone(),
+                        workspace.settings.update_proxy.clone(),
+                    )
+                }) else {
                     return;
                 };
                 let found = spawn_blocking(cx.background_executor(), move || {
-                    update::newer_release(&feed)
+                    update::newer_release(&feed, &proxy)
                 })
                 .await;
                 let open = workspace.update(cx, |workspace, cx| {
@@ -1516,6 +1582,13 @@ impl Workspace {
         self.update_feed_input.update(cx, |input, cx| {
             input.set_placeholder(
                 t!("settings.row.update_feed.placeholder").to_string(),
+                window,
+                cx,
+            )
+        });
+        self.update_proxy_input.update(cx, |input, cx| {
+            input.set_placeholder(
+                t!("settings.row.update_proxy.placeholder").to_string(),
                 window,
                 cx,
             )

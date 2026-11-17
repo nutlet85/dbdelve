@@ -540,6 +540,10 @@ pub struct StoredSettings {
     /// itself.
     #[serde(default)]
     pub update_feed: Option<String>,
+    /// The prefix the release's downloads go through, absent for a direct
+    /// download.
+    #[serde(default)]
+    pub update_proxy: Option<String>,
     #[serde(default)]
     pub color_titlebar: Option<bool>,
     #[serde(default)]
@@ -3997,6 +4001,7 @@ open_objects = []
                 opacity: Some(0.8),
                 check_for_updates: Some(false),
                 update_feed: Some("https://mirror.test/latest".into()),
+                update_proxy: Some("https://ghfast.top".into()),
                 color_titlebar: Some(false),
                 client_sort: Some(true),
                 qualify_completions: Some(true),

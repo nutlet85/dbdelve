@@ -159,14 +159,14 @@ pub(crate) struct Asset {
 /// anyone about. `custom_feed` comes from the settings, empty for GitHub
 /// itself; a mirror is safe to read, since whatever it serves still has to
 /// verify against the release key compiled in.
-pub(crate) fn newer_release(custom_feed: &str) -> Option<Update> {
+pub(crate) fn newer_release(custom_feed: &str, proxy: &str) -> Option<Update> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(10)))
         .user_agent(concat!("dbdelve/", env!("CARGO_PKG_VERSION")))
         .build()
         .into();
     let feed = feed(custom_feed);
-    let latest: Latest = match agent
+    let mut latest: Latest = match agent
         .get(&feed)
         .header("Accept", "application/vnd.github+json")
         .call()
@@ -178,11 +178,18 @@ pub(crate) fn newer_release(custom_feed: &str) -> Option<Update> {
             return None;
         }
     };
+    through_proxy(proxy, &mut latest.assets);
     let version = latest.tag_name.trim_start_matches('v').to_string();
     if !is_newer(&version, CURRENT) {
         return None;
     }
     tracing::info!(version, current = CURRENT, "a newer release is out");
+    if !proxy.trim().is_empty() {
+        tracing::info!(
+            prefix = proxy.trim(),
+            "its downloads will go through a proxy"
+        );
+    }
     Some(Update {
         state: installer(&version, &latest.assets)
             .map_or(State::Link, |installer| State::Ready(Arc::new(installer))),
@@ -191,6 +198,25 @@ pub(crate) fn newer_release(custom_feed: &str) -> Option<Update> {
             url: latest.html_url,
         },
     })
+}
+
+/// Points the release's downloads at a proxy prefix when one is set: the
+/// metadata still comes from the feed, but every asset and its signature is
+/// fetched as `<prefix>/<github url>`. Only `github.com` addresses are
+/// rewritten, so a mirror's own URLs and the release page stay as they are.
+fn through_proxy(prefix: &str, assets: &mut [LatestAsset]) {
+    let prefix = prefix.trim().trim_end_matches('/');
+    if prefix.is_empty() {
+        return;
+    }
+    for asset in assets {
+        if asset
+            .browser_download_url
+            .starts_with("https://github.com/")
+        {
+            asset.browser_download_url = format!("{prefix}/{}", asset.browser_download_url);
+        }
+    }
 }
 
 /// Just ahead of `App::restart` into an install.
@@ -402,5 +428,38 @@ mod tests {
             feed(" https://mirror.test/latest "),
             "https://mirror.test/latest"
         );
+    }
+
+    #[test]
+    fn a_proxy_prefix_rewrites_github_downloads_only() {
+        use super::{LatestAsset, through_proxy};
+
+        let github = "https://github.com/nutlet85/dbdelve/releases/download/v9.9.9/x.zip";
+        let asset = |url: &str| LatestAsset {
+            name: "x".into(),
+            browser_download_url: url.into(),
+            size: 1,
+        };
+        let mut assets = vec![
+            asset(github),
+            asset(&format!("{github}.minisig")),
+            asset("https://mirror.test/other"),
+        ];
+        // Spaces and trailing slashes are forgiven; one slash joins.
+        through_proxy(" https://ghfast.top/// ", &mut assets);
+        assert_eq!(
+            assets[0].browser_download_url,
+            format!("https://ghfast.top/{github}")
+        );
+        assert_eq!(
+            assets[1].browser_download_url,
+            format!("https://ghfast.top/{github}.minisig")
+        );
+        assert_eq!(assets[2].browser_download_url, "https://mirror.test/other");
+
+        // Empty means direct.
+        let mut direct = vec![asset(github)];
+        through_proxy("   ", &mut direct);
+        assert_eq!(direct[0].browser_download_url, github);
     }
 }

@@ -128,6 +128,7 @@ enum SettingId {
     Language,
     CheckForUpdates,
     UpdateFeed,
+    UpdateProxy,
     VerboseLogging,
     MatchSystemAppearance,
     Theme,
@@ -244,6 +245,17 @@ fn setting_rows() -> Vec<SettingRow> {
                 "更新源",
                 "镜像",
                 "代理",
+            ],
+        ),
+        row(
+            SettingId::UpdateProxy,
+            SettingsTab::General,
+            t!("settings.group.updates"),
+            t!("settings.row.update_proxy.title"),
+            t!("settings.row.update_proxy.description"),
+            &[
+                "update", "download", "proxy", "prefix", "mirror", "ghfast", "下载", "代理",
+                "前缀", "镜像", "加速",
             ],
         ),
         row(
@@ -1173,6 +1185,10 @@ fn render_control(
             .w(px(200.))
             .child(Input::new(&workspace.update_feed_input).small())
             .into_any_element(),
+        SettingId::UpdateProxy => div()
+            .w(px(200.))
+            .child(Input::new(&workspace.update_proxy_input).small())
+            .into_any_element(),
         SettingId::VerboseLogging => switch("verbose-logging", settings.verbose_logging, t)
             .on_click(cx.listener(|workspace, _: &ClickEvent, _, cx| {
                 let verbose = !workspace.settings.verbose_logging;
@@ -1644,7 +1660,7 @@ mod tests {
                 SettingId::Keybinding("sort_active_column"),
             ]
         );
-        assert_eq!(found("!keyboard").len(), 26);
+        assert_eq!(found("!keyboard").len(), 27);
     }
 
     #[test]
