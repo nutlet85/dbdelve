@@ -65,7 +65,7 @@ impl Workspace {
             return;
         };
         let Some(showing) = short.showing() else {
-            self.note(short.refusal("exporting"), cx);
+            self.note(short.refusal(&t!("short.doing_exporting")), cx);
             return;
         };
         let every_row = self.refetch();
@@ -554,23 +554,22 @@ impl Workspace {
         let pending = profile.session.pending_export.as_ref()?;
         let syntax = profile.config.engine().syntax();
         let code = fonts(cx).editor.clone();
-        let shown = format!(
-            "Export {} {} Shown",
-            group_thousands(pending.showing as u64),
-            if pending.showing == 1 { "Row" } else { "Rows" }
-        );
+        let shown = t!(
+            "export.shown",
+            rows = group_thousands(pending.showing as u64),
+            plural = if pending.showing == 1 { "Row" } else { "Rows" }
+        )
+        .to_string();
         let (note, sql) = match &pending.every_row {
             Ok(refetch) => (
-                "Export All Rows runs this statement again, without the row limit, on a \
-                 connection of its own, and writes each row as it arrives."
-                    .to_string(),
+                t!("export.all_note").to_string(),
                 Some(code_lines(
                     &refetch.sql,
                     syntax,
                     &cx.theme().highlight_theme,
                 )),
             ),
-            Err(reason) => (format!("All rows cannot be exported: {reason}"), None),
+            Err(reason) => (t!("export.all_refused", reason = reason).to_string(), None),
         };
         let all = pending.every_row.is_ok();
         let workspace = cx.entity().downgrade();
@@ -592,7 +591,7 @@ impl Workspace {
                 .justify_center()
                 .child(
                     dialog(t)
-                        .child(section_label(t, "Export"))
+                        .child(section_label(t, &t!("export.title")))
                         .child(muted(pending.situation.clone()))
                         .child(muted(note))
                         // The statement itself, as the run prompt shows it:
@@ -621,7 +620,7 @@ impl Workspace {
                                         if all { 2 } else { 1 },
                                         button(
                                             "cancel-pending-export",
-                                            "Cancel",
+                                            t!("button.cancel"),
                                             Tone::Quiet,
                                             Control::Standard,
                                             t,
@@ -663,7 +662,7 @@ impl Workspace {
                                         0,
                                         button(
                                             "export-all",
-                                            "Export All Rows",
+                                            t!("export.all_rows"),
                                             Tone::Primary,
                                             Control::Standard,
                                             t,

@@ -2065,7 +2065,7 @@ impl Workspace {
             .active_results()
             .and_then(|results| results.read(cx).delegate().captured())
             .map(|captured| relative_age(store::captured_at().saturating_sub(captured)))
-            .unwrap_or_else(|| "moments".into());
+            .unwrap_or_else(|| t!("status.moments").to_string());
         // What Refresh sends, shown for the same reason the mode prompt shows
         // its statement. Only a buffer's: a relation's is dbdelve's own
         // preview of the table.
@@ -2632,10 +2632,12 @@ impl Workspace {
             )
         });
         let message = match &profile.catalog {
-            CatalogState::Loading => Some(("Loading database objects…".to_string(), t.text_muted)),
+            CatalogState::Loading => {
+                Some((t!("explorer.loading_objects").to_string(), t.text_muted))
+            }
             CatalogState::Failed(message) => Some((message.clone(), t.danger)),
             CatalogState::Loaded(catalog, _) if catalog.schemas.is_empty() => {
-                Some(("No database objects found.".to_string(), t.text_muted))
+                Some((t!("explorer.no_objects").to_string(), t.text_muted))
             }
             CatalogState::Loaded(..) => None,
         };

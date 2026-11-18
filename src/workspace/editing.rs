@@ -1096,7 +1096,7 @@ impl Workspace {
             return false;
         };
         if refreshing(profile.session.active, profile.session.active_query()) {
-            self.note(Self::REFRESHING.into(), cx);
+            self.note(Self::refreshing(), cx);
             return false;
         }
         if !results.read(cx).delegate().unconfirmed() {
@@ -1446,7 +1446,7 @@ impl Workspace {
     /// rules: the rows the server returned, no pending edits, and a capped
     /// snapshot refused rather than copied short.
     pub(crate) fn copy_results_as(&mut self, format: ClipboardFormat, cx: &mut Context<Self>) {
-        if !self.has_results(cx) || self.refuse_capped("copying", cx) {
+        if !self.has_results(cx) || self.refuse_capped(&t!("short.doing_copying"), cx) {
             return;
         }
         let Some(results) = self
@@ -1914,40 +1914,39 @@ impl Short {
     pub(crate) fn situation(&self) -> String {
         let count = |rows: usize| group_thousands(rows as u64);
         match *self {
-            Short::Streaming => "Rows are still arriving.".to_string(),
+            Short::Streaming => t!("short.streaming").to_string(),
             Short::Stopped(db::Stopped::AtLimit, showing) | Short::Page { showing, offset: 0 } => {
-                format!(
-                    "This tab is showing the first {} rows, the row limit.",
-                    count(showing)
-                )
+                t!("short.first_limit", rows = count(showing)).to_string()
             }
-            Short::Stopped(db::Stopped::Cancelled, showing) => format!(
-                "This tab is showing the {} rows that arrived before the statement was cancelled.",
-                count(showing)
-            ),
+            Short::Stopped(db::Stopped::Cancelled, showing) => {
+                t!("short.cancelled", rows = count(showing)).to_string()
+            }
             Short::Capped {
                 showing,
                 total,
                 snapshot: true,
-            } => format!(
-                "This tab is showing {} of {} rows from a snapshot.",
-                count(showing),
-                count(total)
-            ),
+            } => t!(
+                "short.snapshot",
+                showing = count(showing),
+                total = count(total)
+            )
+            .to_string(),
             Short::Capped {
                 showing,
                 total,
                 snapshot: false,
-            } => format!(
-                "This tab is showing {} of {} rows, the row limit.",
-                count(showing),
-                count(total)
-            ),
-            Short::Page { showing, offset } => format!(
-                "This tab is showing a page of {} rows, from row {}.",
-                count(showing),
-                count(offset + 1)
-            ),
+            } => t!(
+                "short.limit_of_total",
+                showing = count(showing),
+                total = count(total)
+            )
+            .to_string(),
+            Short::Page { showing, offset } => t!(
+                "short.page",
+                rows = count(showing),
+                offset = count(offset + 1)
+            )
+            .to_string(),
         }
     }
 
@@ -1955,19 +1954,23 @@ impl Short {
     pub(crate) fn refusal(&self, doing: &str) -> String {
         let remedy = match self {
             Short::Streaming => {
-                return format!(
-                    "Rows are still arriving. Wait for the statement to finish before {doing}."
-                );
+                return t!("short.refusal_streaming", doing = doing).to_string();
             }
-            Short::Stopped(db::Stopped::Cancelled, _) => "Run it again",
-            Short::Capped { snapshot: true, .. } => "Refresh it",
+            Short::Stopped(db::Stopped::Cancelled, _) => t!("short.remedy_run_again"),
+            Short::Capped { snapshot: true, .. } => t!("short.remedy_refresh"),
             Short::Stopped(db::Stopped::AtLimit, _)
             | Short::Capped {
                 snapshot: false, ..
             }
-            | Short::Page { .. } => "Raise it and run the statement again",
+            | Short::Page { .. } => t!("short.remedy_raise_limit"),
         };
-        format!("{} {remedy} before {doing}.", self.situation())
+        t!(
+            "short.refusal",
+            situation = self.situation(),
+            remedy = remedy,
+            doing = doing
+        )
+        .to_string()
     }
 }
 

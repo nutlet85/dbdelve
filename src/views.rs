@@ -892,7 +892,7 @@ fn render_filter_bar(
                             false => filter
                                 .column
                                 .clone()
-                                .unwrap_or_else(|| "Column…".to_string()),
+                                .unwrap_or_else(|| t!("filter.column").to_string()),
                         },
                         Tone::Quiet,
                         Control::Compact,
@@ -1273,8 +1273,8 @@ fn render_routine(tab: &ObjectTab, scope: &str, cx: &mut Context<Workspace>) -> 
         return div().into_any_element();
     };
     let kind = match routine.kind {
-        RoutineKind::Function => "Function",
-        RoutineKind::Procedure => "Procedure",
+        RoutineKind::Function => t!("routine.function"),
+        RoutineKind::Procedure => t!("routine.procedure"),
     };
 
     div()
@@ -1413,9 +1413,11 @@ fn render_results(
         // click gets, and the statement is still running, so the button goes
         // inert rather than away.
         let label = match cancelling {
-            Some(sent) if sent.elapsed() >= CANCEL_PATIENCE => "Still waiting on server…",
-            Some(_) => "Cancelling…",
-            None => "Cancel",
+            Some(sent) if sent.elapsed() >= CANCEL_PATIENCE => {
+                t!("status.still_waiting").to_string()
+            }
+            Some(_) => t!("status.cancelling").to_string(),
+            None => t!("button.cancel").to_string(),
         };
         let timer = started.map(|started| quiet_line(clock(started.elapsed())));
         div()
@@ -1472,12 +1474,7 @@ fn render_results(
     let message = match query {
         _ if run_messages.is_some() => run_messages,
         QueryState::Idle if query_tab.is_some() => Some(centered(
-            key_hint(
-                t,
-                "secondary-enter",
-                "runs the selection or statement under the cursor",
-            )
-            .into_any_element(),
+            key_hint(t, "secondary-enter", t!("editor.hint_run")).into_any_element(),
         )),
         QueryState::Failed(error) => {
             let at = query_tab
@@ -1542,8 +1539,8 @@ fn render_results(
             ..
         } if *rows == 0 && !has_rows => {
             let line = quiet_line(match rows_affected {
-                Some(rows) => format!("Query completed. Server row count: {rows}."),
-                None => "Query completed.".into(),
+                Some(rows) => t!("result.completed_count", rows = rows).to_string(),
+                None => t!("result.completed").to_string(),
             });
             let line = match import_invite {
                 None => line,
@@ -1825,7 +1822,7 @@ fn result_switcher(tab: &QueryTab, cx: &mut Context<Workspace>) -> Option<AnyEle
                 .first()
                 .map(|said| query_label(said.sql))
                 .filter(|label| !label.is_empty())
-                .unwrap_or_else(|| "Result".into());
+                .unwrap_or_else(|| t!("result.tab").to_string());
             vec![result_chip(
                 tab.id,
                 0,
@@ -1842,7 +1839,7 @@ fn result_switcher(tab: &QueryTab, cx: &mut Context<Workspace>) -> Option<AnyEle
         let id = tab.id;
         chips.push(
             switcher_chip("messages-chip", messages_shown, false, t)
-                .child("Messages")
+                .child(t!("result.messages"))
                 .child(div().text_color(t.text_faint).child(compact_count(count)))
                 .on_click(cx.listener(move |workspace, _: &ClickEvent, _, cx| {
                     workspace.show_messages(Tab::Query(id), cx);
@@ -2019,8 +2016,8 @@ fn render_messages(
 /// "Paste rows with ⌘V or import a file…", each half a way in.
 fn import_invite_line(chord: &str, t: Theme, cx: &mut Context<Workspace>) -> AnyElement {
     let paste = match chord.is_empty() {
-        true => "Paste rows".to_string(),
-        false => format!("Paste rows with {chord}"),
+        true => t!("result.paste_rows").to_string(),
+        false => t!("result.paste_rows_with", chord = chord).to_string(),
     };
     div()
         .flex()
@@ -2035,11 +2032,11 @@ fn import_invite_line(chord: &str, t: Theme, cx: &mut Context<Workspace>) -> Any
                     workspace.import_rows_from_clipboard(&ImportRowsFromClipboard, window, cx)
                 })),
         )
-        .child("or")
+        .child(t!("result.or"))
         .child(
             button(
                 "import-file",
-                "import a file…",
+                t!("result.import_file"),
                 Tone::Quiet,
                 Control::Inline,
                 t,
@@ -2699,7 +2696,7 @@ fn render_structure(
                 div()
                     .p(px(layout::SPACE_LG))
                     .text_color(t.text_muted)
-                    .child("Loading structure…")
+                    .child(t!("structure.loading"))
                     .into_any_element(),
             );
         }
@@ -2723,7 +2720,7 @@ fn render_structure(
             .map(|section| {
                 let selected = section == shown;
                 div()
-                    .id(section.label())
+                    .id(section.key())
                     .flex()
                     .items_center()
                     .gap(px(layout::SPACE_XS))
@@ -2854,23 +2851,24 @@ pub(crate) fn render_running(
         // The rows are all in, and the statement is being stopped or drained
         // behind them: still running, but no longer fetching anything shown.
         (true, rows) if filled.is_some() => format!(
-            "{} \u{b7} {} \u{b7} finishing\u{2026}",
+            "{} \u{b7} {} \u{b7} {}",
             crate::ui::row_readout(rows, rows),
-            clock(elapsed)
+            clock(elapsed),
+            t!("status.finishing")
         ),
-        (true, rows) => format!("{} fetched", crate::ui::row_readout(rows, rows)),
+        (true, rows) => t!("status.fetched", rows = crate::ui::row_readout(rows, rows)).to_string(),
         // A refresh keeps the rows it is replacing on screen until it lands.
-        (false, 1..) => "Refreshing".to_string(),
-        (false, 0) => "Running".to_string(),
+        (false, 1..) => t!("status.refreshing").to_string(),
+        (false, 0) => t!("status.running").to_string(),
     };
     // A word rather than an icon: a square or a cross beside a status line
     // reads as "close this". Once the request is out the label is the only
     // acknowledgement the click gets, and the statement is still running, so
     // the button goes inert rather than away.
     let label = match cancelling {
-        Some(sent) if sent.elapsed() >= CANCEL_PATIENCE => "Still waiting on server…",
-        Some(_) => "Cancelling…",
-        None => "Cancel",
+        Some(sent) if sent.elapsed() >= CANCEL_PATIENCE => t!("status.still_waiting").to_string(),
+        Some(_) => t!("status.cancelling").to_string(),
+        None => t!("button.cancel").to_string(),
     };
     Some(
         div()
@@ -2893,7 +2891,7 @@ pub(crate) fn render_running(
                 button(
                     "cancel-query-status",
                     label,
-                    Tone::Quiet,
+                    Tone::Secondary,
                     Control::Compact,
                     t,
                 )
@@ -3074,7 +3072,7 @@ pub(crate) fn render_view_sorting(
                 div()
                     .text_size(px(layout::chrome(layout::TEXT_SM)))
                     .text_color(t.text_faint)
-                    .child("Sort"),
+                    .child(t!("status.sort")),
             )
             .children(
                 [

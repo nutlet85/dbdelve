@@ -18,7 +18,7 @@ use crate::{
     Workspace,
     db::{IndexKind, Structure, Syntax},
     icons::icon,
-    theme::{layout, theme},
+    theme::{ConnectionColor, layout, theme},
     ui::{Code, code_highlights},
 };
 
@@ -42,7 +42,9 @@ impl Section {
         Section::ReferencedBy,
     ];
 
-    pub(crate) fn label(self) -> &'static str {
+    /// The section's name as a stable id, whatever the interface language: an
+    /// element it names must not move under a language switch.
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Section::Columns => "Columns",
             Section::Indexes => "Indexes",
@@ -50,6 +52,17 @@ impl Section {
             Section::ForeignKeys => "Foreign keys",
             Section::ReferencedBy => "Referenced by",
         }
+    }
+
+    pub(crate) fn label(self) -> String {
+        match self {
+            Section::Columns => t!("structure.section.columns"),
+            Section::Indexes => t!("structure.section.indexes"),
+            Section::Constraints => t!("structure.section.constraints"),
+            Section::ForeignKeys => t!("structure.section.foreign_keys"),
+            Section::ReferencedBy => t!("structure.section.referenced_by"),
+        }
+        .to_string()
     }
 
     pub(crate) fn count(self, structure: &Structure) -> usize {
@@ -181,6 +194,39 @@ impl Section {
 const PRIMARY: &str = "primary";
 const UNIQUE: &str = "unique";
 
+/// A column header's words, from the key [`Section::headers`] names it by. Read
+/// every frame, so a language switch re-letters the header in place.
+fn header_label(key: &str) -> String {
+    match key {
+        "name" => t!("structure.header.name").to_string(),
+        "type" => t!("structure.header.type").to_string(),
+        "nullable" => t!("structure.header.nullable").to_string(),
+        "default" => t!("structure.header.default").to_string(),
+        "kind" => t!("structure.header.kind").to_string(),
+        "columns" => t!("structure.header.columns").to_string(),
+        "where" => t!("structure.header.where").to_string(),
+        "definition" => t!("structure.header.definition").to_string(),
+        "column" => t!("structure.header.column").to_string(),
+        "references" => t!("structure.header.references").to_string(),
+        "table" => t!("structure.header.table").to_string(),
+        "referenced column" => t!("structure.header.referenced_column").to_string(),
+        _ => key.to_string(),
+    }
+}
+
+/// The locale key a cell's value is said by, where the value is schema
+/// vocabulary rather than data. The row keeps the raw word, so a copy or an
+/// export stays what a statement can paste.
+fn value_key(section: Section, header: &str, value: &str) -> Option<&'static str> {
+    match (section, header, value) {
+        (Section::Columns, "nullable", "nullable") => Some("structure.value.nullable"),
+        (Section::Columns, "nullable", "not null") => Some("structure.value.not_null"),
+        (Section::Indexes, "kind", PRIMARY) => Some("structure.value.primary"),
+        (Section::Indexes, "kind", UNIQUE) => Some("structure.value.unique"),
+        _ => None,
+    }
+}
+
 fn partial(structure: &Structure) -> bool {
     structure
         .indexes
@@ -202,6 +248,12 @@ fn named(definitions: &[crate::db::NamedDefinition]) -> Vec<Vec<SharedString>> {
 
 type Highlights = Vec<(Range<usize>, HighlightStyle)>;
 
+/// Whether the cell at `col` names a column of the primary key. Only the
+/// Columns section draws the marker, and only its first column holds names.
+fn primary_column(section: Section, col: usize, name: &str, primary_key: &[String]) -> bool {
+    section == Section::Columns && col == 0 && primary_key.iter().any(|key| key.as_str() == name)
+}
+
 /// A read-only grid over one section of a relation's structure.
 pub(crate) struct StructureGrid {
     /// For the jumps to a column's data, which a delegate handed only its
@@ -214,6 +266,9 @@ pub(crate) struct StructureGrid {
     section: Section,
     headers: Vec<(&'static str, f32)>,
     rows: Vec<Vec<SharedString>>,
+    /// The primary key's columns, as the structure read them, so the Columns
+    /// section can mark one without the row itself carrying anything.
+    primary_key: Vec<String>,
     widths: Vec<Pixels>,
     /// The library's own selection, kept here because it does not say whether
     /// its cell or its row is the current one: `(row, Some(col))` for a cell,
@@ -279,6 +334,7 @@ pub(crate) fn show(
         grid.section = section;
         grid.headers = section.headers(structure);
         grid.rows = section.rows(structure);
+        grid.primary_key = structure.primary_key();
         grid.widths = grid.headers.iter().map(|&(_, w)| px(w)).collect();
         grid.selected = None;
         grid.highlights.clear();
@@ -298,6 +354,7 @@ pub(crate) fn new_grid(
         section: Section::Columns,
         headers: Vec::new(),
         rows: Vec::new(),
+        primary_key: Vec::new(),
         widths: Vec::new(),
         selected: None,
         highlights: HashMap::new(),
@@ -342,7 +399,7 @@ impl TableDelegate for StructureGrid {
 
     fn column(&self, col_ix: usize, _: &App) -> Column {
         let (name, width) = self.headers[col_ix];
-        Column::new(name, name)
+        Column::new(name, header_label(name))
             .width(px(width))
             .min_width(px(80.))
             .max_width(px(f32::MAX))
@@ -393,7 +450,7 @@ impl TableDelegate for StructureGrid {
             .text_size(px(layout::grid(layout::TEXT_SM)))
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme(cx).text)
-            .child(self.headers[col_ix].0)
+            .child(header_label(self.headers[col_ix].0))
     }
 
     fn render_td(
@@ -440,6 +497,18 @@ impl TableDelegate for StructureGrid {
         let column_name = (self.section == Section::Columns && col_ix == 0)
             .then(|| value.clone())
             .flatten();
+        let primary = value
+            .as_deref()
+            .is_some_and(|name| primary_column(self.section, col_ix, name, &self.primary_key));
+        // Said at draw time rather than stored in the row, so a language switch
+        // re-letters the cells already on screen.
+        let shown = match value
+            .as_deref()
+            .and_then(|word| value_key(self.section, header, word))
+        {
+            Some(key) => Some(SharedString::from(t!(key))),
+            None => value.clone(),
+        };
         let grid = cx.entity().downgrade();
         div()
             .id(("structure-cell", row_ix * self.headers.len() + col_ix))
@@ -463,19 +532,33 @@ impl TableDelegate for StructureGrid {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .text_color(color)
-                    .when(header == "kind", |cell| {
-                        cell.font_weight(FontWeight::MEDIUM)
-                    })
-                    .when_some(value, |cell, value| match highlights {
-                        Some(highlights) => {
-                            cell.child(StyledText::new(value).with_highlights(highlights))
-                        }
-                        None => cell.child(value),
-                    }),
+                    .flex()
+                    .items_center()
+                    .gap(px(layout::SPACE_XS))
+                    .children(primary.then(|| {
+                        icon(icon::PRIMARY_KEY)
+                            .size(px(layout::grid(12.)))
+                            .flex_shrink_0()
+                            .text_color(ConnectionColor::Yellow.swatch())
+                    }))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_color(color)
+                            .when(header == "kind", |cell| {
+                                cell.font_weight(FontWeight::MEDIUM)
+                            })
+                            .when_some(shown, |cell, word| match highlights {
+                                Some(highlights) => {
+                                    cell.child(StyledText::new(word).with_highlights(highlights))
+                                }
+                                None => cell.child(word),
+                            }),
+                    ),
             )
             // A column listed here is a way to its data: back to the rows,
             // scrolled to it. Dressed as `ResultGrid`'s follow-key square.
@@ -591,5 +674,80 @@ mod tests {
                 .iter()
                 .all(|row| row.len() == 4)
         );
+    }
+
+    #[test]
+    fn the_structure_page_is_translated() {
+        assert_eq!(t!("structure.loading", locale = "zh-CN"), "正在读取结构…");
+        assert_eq!(t!("structure.section.columns", locale = "zh-CN"), "列");
+        assert_eq!(t!("structure.section.indexes", locale = "zh-CN"), "索引");
+        assert_eq!(
+            t!("structure.section.constraints", locale = "zh-CN"),
+            "约束"
+        );
+        assert_eq!(
+            t!("structure.section.foreign_keys", locale = "zh-CN"),
+            "外键"
+        );
+        assert_eq!(
+            t!("structure.section.referenced_by", locale = "zh-CN"),
+            "被引用"
+        );
+        assert_eq!(t!("structure.header.name", locale = "zh-CN"), "名称");
+        assert_eq!(t!("structure.header.type", locale = "zh-CN"), "类型");
+        assert_eq!(t!("structure.header.nullable", locale = "zh-CN"), "可空");
+        assert_eq!(t!("structure.header.default", locale = "zh-CN"), "默认值");
+        assert_eq!(t!("structure.header.kind", locale = "zh-CN"), "类型");
+        assert_eq!(t!("structure.header.columns", locale = "zh-CN"), "列");
+        assert_eq!(t!("structure.header.where", locale = "zh-CN"), "条件");
+        assert_eq!(t!("structure.header.definition", locale = "zh-CN"), "定义");
+        assert_eq!(t!("structure.header.column", locale = "zh-CN"), "列");
+        assert_eq!(t!("structure.header.references", locale = "zh-CN"), "引用");
+        assert_eq!(t!("structure.header.table", locale = "zh-CN"), "表");
+        assert_eq!(
+            t!("structure.header.referenced_column", locale = "zh-CN"),
+            "被引用列"
+        );
+        assert_eq!(t!("structure.value.nullable", locale = "zh-CN"), "可空");
+        assert_eq!(t!("structure.value.not_null", locale = "zh-CN"), "非空");
+        assert_eq!(t!("structure.value.primary", locale = "zh-CN"), "主键");
+        assert_eq!(t!("structure.value.unique", locale = "zh-CN"), "唯一");
+    }
+
+    #[test]
+    fn a_schema_word_is_said_by_its_locale_key() {
+        assert_eq!(
+            value_key(Section::Columns, "nullable", "nullable"),
+            Some("structure.value.nullable")
+        );
+        assert_eq!(
+            value_key(Section::Columns, "nullable", "not null"),
+            Some("structure.value.not_null")
+        );
+        assert_eq!(
+            value_key(Section::Indexes, "kind", PRIMARY),
+            Some("structure.value.primary")
+        );
+        assert_eq!(
+            value_key(Section::Indexes, "kind", UNIQUE),
+            Some("structure.value.unique")
+        );
+        // Only where the word is the whole cell, and only in the column it
+        // belongs to: a column named `primary` is a name, and an index of no
+        // kind says nothing.
+        assert_eq!(value_key(Section::Indexes, "kind", ""), None);
+        assert_eq!(value_key(Section::Columns, "name", "not null"), None);
+        assert_eq!(value_key(Section::Indexes, "columns", "primary"), None);
+    }
+
+    #[test]
+    fn the_primary_key_columns_are_marked() {
+        let key = ["id".to_string()];
+        assert!(primary_column(Section::Columns, 0, "id", &key));
+        assert!(!primary_column(Section::Columns, 0, "email", &key));
+        // Only the Columns section lists names, and only in its first column.
+        assert!(!primary_column(Section::Indexes, 0, "id", &key));
+        assert!(!primary_column(Section::Columns, 1, "id", &key));
+        assert!(!primary_column(Section::Columns, 0, "id", &[]));
     }
 }

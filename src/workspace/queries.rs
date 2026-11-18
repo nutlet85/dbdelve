@@ -2780,7 +2780,7 @@ impl Workspace {
                     }
                     if keep_rows
                         && let Some(profile) = workspace.issued_to(&id, generation)
-                        && profile.session.notice.as_deref() == Some(Self::REFRESHING)
+                        && profile.session.notice.as_deref() == Some(Self::refreshing().as_str())
                     {
                         profile.session.notice = None;
                     }

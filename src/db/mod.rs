@@ -195,12 +195,13 @@ impl Syntax {
         }
     }
 
-    pub fn placeholder(self) -> &'static str {
+    pub fn placeholder(self) -> String {
         match self {
-            Self::Sql => "Write SQL…",
-            Self::Mongo => "Write a query, like db.collection.find({})…",
-            Self::Redis => "Write a command, like GET key…",
+            Self::Sql => t!("editor.placeholder.sql"),
+            Self::Mongo => t!("editor.placeholder.mongo"),
+            Self::Redis => t!("editor.placeholder.redis"),
         }
+        .to_string()
     }
 }
 
@@ -662,12 +663,13 @@ impl Engine {
     }
 
     /// What a generated statement is called where one is shown for review.
-    pub fn review_label(self) -> &'static str {
+    pub fn review_label(self) -> String {
         match self.syntax() {
-            Syntax::Sql => "Review SQL",
-            Syntax::Mongo => "Review statement",
-            Syntax::Redis => "Review commands",
+            Syntax::Sql => t!("editor.review_sql"),
+            Syntax::Mongo => t!("editor.review_statement"),
+            Syntax::Redis => t!("editor.review_commands"),
         }
+        .to_string()
     }
 
     pub fn syntax(self) -> Syntax {

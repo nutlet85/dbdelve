@@ -572,6 +572,30 @@ structure.refuse_primary:      { en: "A primary key's index is the key itself, w
 structure.note_atomic:         { en: "Runs as one submission, so a failure leaves nothing changed.", zh-CN: "整批作为一次提交执行，失败则什么都没改。" }
 structure.note_separate:       { en: "Each statement commits on its own; a failure part way leaves the earlier ones applied.", zh-CN: "每条语句各自提交，中途失败时前面的已经生效。" }
 
+# —— 结构页（只读） ——
+structure.loading:                   { en: "Loading structure…", zh-CN: "正在读取结构…" }
+structure.section.columns:           { en: "Columns", zh-CN: "列" }
+structure.section.indexes:           { en: "Indexes", zh-CN: "索引" }
+structure.section.constraints:       { en: "Constraints", zh-CN: "约束" }
+structure.section.foreign_keys:      { en: "Foreign keys", zh-CN: "外键" }
+structure.section.referenced_by:     { en: "Referenced by", zh-CN: "被引用" }
+structure.header.name:               { en: "name", zh-CN: "名称" }
+structure.header.type:               { en: "type", zh-CN: "类型" }
+structure.header.nullable:           { en: "nullable", zh-CN: "可空" }
+structure.header.default:            { en: "default", zh-CN: "默认值" }
+structure.header.kind:               { en: "kind", zh-CN: "类型" }
+structure.header.columns:            { en: "columns", zh-CN: "列" }
+structure.header.where:              { en: "where", zh-CN: "条件" }
+structure.header.definition:         { en: "definition", zh-CN: "定义" }
+structure.header.column:             { en: "column", zh-CN: "列" }
+structure.header.references:         { en: "references", zh-CN: "引用" }
+structure.header.table:              { en: "table", zh-CN: "表" }
+structure.header.referenced_column:  { en: "referenced column", zh-CN: "被引用列" }
+structure.value.nullable:            { en: "nullable", zh-CN: "可空" }
+structure.value.not_null:            { en: "not null", zh-CN: "非空" }
+structure.value.primary:             { en: "primary", zh-CN: "主键" }
+structure.value.unique:              { en: "unique", zh-CN: "唯一" }
+
 # —— 定义编辑器与例程执行 ——
 definition_editor.note:        { en: "This text is the statement that will run.", zh-CN: "下面这段文本就是将要执行的语句。" }
 definition_editor.title_view:  { en: "Edit View", zh-CN: "编辑视图" }
@@ -622,6 +646,12 @@ button.insert:                 { en: "Insert", zh-CN: "插入" }
 button.insert_in:              { en: "Insert in %{table}", zh-CN: "插入到 %{table}" }
 empty.open_a_table:            { en: "Open a table from the sidebar, or start a new query.", zh-CN: "从边栏打开一张表，或新建一个查询。" }
 editor.section_insert:         { en: "Insert", zh-CN: "插入" }
+editor.placeholder.sql:        { en: "Write SQL…", zh-CN: "写 SQL…" }
+editor.placeholder.mongo:      { en: "Write a query, like db.collection.find({})…", zh-CN: "写一个查询，例如 db.collection.find({})…" }
+editor.placeholder.redis:      { en: "Write a command, like GET key…", zh-CN: "写一条命令，例如 GET key…" }
+editor.review_sql:             { en: "Review SQL", zh-CN: "预览 SQL" }
+editor.review_statement:       { en: "Review statement", zh-CN: "预览语句" }
+editor.review_commands:        { en: "Review commands", zh-CN: "预览命令" }
 grid.hidden_columns:           { en: "%{hidden} hidden %{plural} · Show", zh-CN: "%{hidden} 个隐藏列 · 显示" }
 explain.caption_plan:          { en: "print query plan", zh-CN: "打印查询计划" }
 explain.caption_analyze:       { en: "run query and print query plan", zh-CN: "执行查询并打印查询计划" }
@@ -632,6 +662,76 @@ palette.no_limit:              { en: "No limit", zh-CN: "不限制" }
 palette.custom:                { en: "Custom…", zh-CN: "自定义…" }
 palette.custom_value:          { en: "Custom (%{rows})…", zh-CN: "自定义（%{rows}）…" }
 grid.filter_placeholder:        { en: "Filter columns and values…", zh-CN: "筛选列与值…" }
+
+# —— 底部状态栏：读数、动作与结果页切换片 ——
+status.refresh:             { en: "Refresh…", zh-CN: "刷新…" }
+status.reconnect:           { en: "Reconnect", zh-CN: "重新连接" }
+status.import:              { en: "Import", zh-CN: "导入" }
+status.import_clipboard:    { en: "From Clipboard", zh-CN: "从剪贴板" }
+status.import_file:         { en: "From File…", zh-CN: "从文件…" }
+status.export:              { en: "Export", zh-CN: "导出" }
+status.copy_create:         { en: "Copy CREATE", zh-CN: "复制 CREATE" }
+status.copy_insert:         { en: "Copy INSERT", zh-CN: "复制 INSERT" }
+status.discard:             { en: "Discard", zh-CN: "放弃" }
+status.apply_edits:         { en: "Apply edits", zh-CN: "应用修改" }
+status.pending_edits:       { en: "%{count} pending %{plural}", zh-CN: "待写入 %{count} 处修改" }
+status.count:               { en: "Count", zh-CN: "计数" }
+status.counting_rows:       { en: "Counting rows…", zh-CN: "正在统计行数…" }
+status.cancelling_count:    { en: "Cancelling count…", zh-CN: "正在取消统计…" }
+status.exporting:           { en: "Exporting to %{file}… %{rows} %{plural}", zh-CN: "正在导出到 %{file}… %{rows} 行" }
+status.cancelling_export:   { en: "Cancelling the export to %{file}…", zh-CN: "正在取消导出到 %{file}…" }
+status.cancelled:           { en: "%{count}, cancelled", zh-CN: "%{count}，已取消" }
+status.stopped_at_limit:    { en: "%{count}, stopped at limit", zh-CN: "%{count}，已达行数上限" }
+status.from_age:            { en: "from %{age} ago", zh-CN: "来自 %{age} 前的快照" }
+status.snapshot_from_age:   { en: "snapshot from %{age} ago", zh-CN: "快照来自 %{age} 前" }
+status.columns:             { en: "%{columns} %{plural}", zh-CN: "%{columns} 列" }
+status.rows:                { en: "%{total} %{plural}", zh-CN: "%{total} 行" }
+status.rows_of:             { en: "%{showing} of %{total} %{plural}", zh-CN: "%{showing} / %{total} 行" }
+status.moments:             { en: "moments", zh-CN: "刚刚" }
+status.running:             { en: "Running", zh-CN: "正在运行" }
+status.refreshing:          { en: "Refreshing", zh-CN: "正在刷新" }
+status.finishing:           { en: "finishing…", zh-CN: "正在收尾…" }
+status.fetched:             { en: "%{rows} fetched", zh-CN: "已取回 %{rows}" }
+status.cancelling:          { en: "Cancelling…", zh-CN: "正在取消…" }
+status.still_waiting:       { en: "Still waiting on server…", zh-CN: "仍在等待服务器…" }
+status.sort:                { en: "Sort", zh-CN: "排序" }
+status.idle:                { en: "Connection is idle.", zh-CN: "连接空闲。" }
+status.connecting:          { en: "Connecting to %{endpoint}…", zh-CN: "正在连接 %{endpoint}…" }
+status.refreshing_rows:     { en: "These rows are being refreshed.", zh-CN: "这些行正在刷新。" }
+routine.function:           { en: "Function", zh-CN: "函数" }
+routine.procedure:          { en: "Procedure", zh-CN: "存储过程" }
+filter.column:              { en: "Column…", zh-CN: "列…" }
+result.completed:           { en: "Query completed.", zh-CN: "查询完成。" }
+result.completed_count:     { en: "Query completed. Server row count: %{rows}.", zh-CN: "查询完成。服务器报告 %{rows} 行。" }
+result.paste_rows:          { en: "Paste rows", zh-CN: "粘贴行" }
+result.paste_rows_with:     { en: "Paste rows with %{chord}", zh-CN: "用 %{chord} 粘贴行" }
+result.or:                  { en: "or", zh-CN: "或" }
+result.import_file:         { en: "import a file…", zh-CN: "导入文件…" }
+explorer.loading_objects:   { en: "Loading database objects…", zh-CN: "正在读取数据库对象…" }
+explorer.no_objects:        { en: "No database objects found.", zh-CN: "没有数据库对象。" }
+editor.hint_run:            { en: "runs the selection or statement under the cursor", zh-CN: "运行选区或光标所在的语句" }
+result.tab:                 { en: "Result", zh-CN: "结果" }
+result.messages:            { en: "Messages", zh-CN: "消息" }
+export.title:               { en: "Export", zh-CN: "导出" }
+export.shown:               { en: "Export %{rows} %{plural} Shown", zh-CN: "导出当前 %{rows} 行" }
+export.all_rows:            { en: "Export All Rows", zh-CN: "导出全部行" }
+export.all_note:            { en: "Export All Rows runs this statement again, without the row limit, on a connection of its own, and writes each row as it arrives.", zh-CN: "导出全部行会在自己的连接上重新执行这条语句（不带行数上限），并逐行写入文件。" }
+export.all_refused:         { en: "All rows cannot be exported: %{reason}", zh-CN: "全部行无法导出：%{reason}" }
+tooltip.previous_edit:      { en: "Previous edit", zh-CN: "上一处修改" }
+tooltip.next_edit:          { en: "Next edit", zh-CN: "下一处修改" }
+short.streaming:            { en: "Rows are still arriving.", zh-CN: "行仍在到达。" }
+short.first_limit:          { en: "This tab is showing the first %{rows} rows, the row limit.", zh-CN: "这个标签页显示的是前 %{rows} 行，也就是行数上限。" }
+short.cancelled:            { en: "This tab is showing the %{rows} rows that arrived before the statement was cancelled.", zh-CN: "这个标签页显示的是语句被取消前到达的 %{rows} 行。" }
+short.snapshot:             { en: "This tab is showing %{showing} of %{total} rows from a snapshot.", zh-CN: "这个标签页显示的是快照中 %{total} 行里的 %{showing} 行。" }
+short.limit_of_total:       { en: "This tab is showing %{showing} of %{total} rows, the row limit.", zh-CN: "这个标签页显示的是 %{total} 行里的 %{showing} 行，也就是行数上限。" }
+short.page:                 { en: "This tab is showing a page of %{rows} rows, from row %{offset}.", zh-CN: "这个标签页显示的是从第 %{offset} 行开始的一页，共 %{rows} 行。" }
+short.refusal:              { en: "%{situation} %{remedy} before %{doing}.", zh-CN: "%{situation}%{doing}前请先%{remedy}。" }
+short.refusal_streaming:    { en: "Rows are still arriving. Wait for the statement to finish before %{doing}.", zh-CN: "行仍在到达。请等语句结束后再%{doing}。" }
+short.remedy_run_again:     { en: "Run it again", zh-CN: "重新运行" }
+short.remedy_refresh:       { en: "Refresh it", zh-CN: "刷新" }
+short.remedy_raise_limit:   { en: "Raise it and run the statement again", zh-CN: "提高行数上限并重新运行" }
+short.doing_copying:        { en: "copying", zh-CN: "复制" }
+short.doing_exporting:      { en: "exporting", zh-CN: "导出" }
 
 # —— 命令面板：范围、placeholder、分组、底部提示、空状态 ——
 palette.scope.all:          { en: "All", zh-CN: "全部" }

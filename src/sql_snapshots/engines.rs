@@ -179,7 +179,7 @@ fn engine_answers_per_engine() {
             &mut out,
             engine,
             "review_label",
-            Some(engine.review_label()),
+            Some(engine.review_label().as_str()),
         );
         answer(
             &mut out,

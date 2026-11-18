@@ -938,7 +938,9 @@ impl Workspace {
     /// Said over restored rows while their refresh is in flight, and taken
     /// down by that refresh landing -- only if it is still what the status bar
     /// says.
-    pub(crate) const REFRESHING: &str = "These rows are being refreshed.";
+    pub(crate) fn refreshing() -> String {
+        t!("status.refreshing_rows").to_string()
+    }
 
     /// Hands focus back to what is in front once whatever held it has gone:
     /// the tab, or the welcome surface when there is no connection. A field
@@ -2139,8 +2141,10 @@ impl Render for Workspace {
         };
         let failed = matches!(profile.state, ProfileState::Failed(_));
         let status = match &profile.state {
-            ProfileState::Idle => "Connection is idle.".to_string(),
-            ProfileState::Connecting => format!("Connecting to {}…", profile.config.endpoint()),
+            ProfileState::Idle => t!("status.idle").to_string(),
+            ProfileState::Connecting => {
+                t!("status.connecting", endpoint = profile.config.endpoint()).to_string()
+            }
             // Connected is the one state worth spending on decoration: every
             // other one is news, and news beats where the connection points.
             // Its name is already on the switcher in the titlebar.
@@ -2257,17 +2261,23 @@ impl Render for Workspace {
                             .gap(px(layout::SPACE_SM))
                             .child(div().whitespace_nowrap().text_color(t.text_faint).child(
                                 match cancelling {
-                                    true => "Cancelling count…",
-                                    false => "Counting rows…",
+                                    true => t!("status.cancelling_count").to_string(),
+                                    false => t!("status.counting_rows").to_string(),
                                 },
                             ))
                             .children((!cancelling).then(|| {
-                                button("cancel-count", "Cancel", Tone::Quiet, Control::Compact, t)
-                                    .on_click(move |_, _, cx| {
-                                        _ = workspace.update(cx, |workspace, cx| {
-                                            workspace.cancel_count(id, cx);
-                                        });
-                                    })
+                                button(
+                                    "cancel-count",
+                                    t!("button.cancel"),
+                                    Tone::Secondary,
+                                    Control::Compact,
+                                    t,
+                                )
+                                .on_click(move |_, _, cx| {
+                                    _ = workspace.update(cx, |workspace, cx| {
+                                        workspace.cancel_count(id, cx);
+                                    });
+                                })
                             }))
                             .into_any_element(),
                     ),
@@ -2275,14 +2285,20 @@ impl Render for Workspace {
                     _ => {
                         let sql = explorer::count_sql(engine, &tab.schema, &tab.name, filter);
                         Some(
-                            button("count-rows", "Count", Tone::Quiet, Control::Compact, t)
-                                .tooltip(sql)
-                                .on_click(move |_, _, cx| {
-                                    _ = workspace.update(cx, |workspace, cx| {
-                                        workspace.count_rows(id, cx);
-                                    });
-                                })
-                                .into_any_element(),
+                            button(
+                                "count-rows",
+                                t!("status.count"),
+                                Tone::Secondary,
+                                Control::Compact,
+                                t,
+                            )
+                            .tooltip(sql)
+                            .on_click(move |_, _, cx| {
+                                _ = workspace.update(cx, |workspace, cx| {
+                                    workspace.count_rows(id, cx);
+                                });
+                            })
+                            .into_any_element(),
                         )
                     }
                 }
@@ -2305,23 +2321,32 @@ impl Render for Workspace {
                     .flex()
                     .items_center()
                     .gap(px(layout::SPACE_SM))
-                    .child(div().whitespace_nowrap().text_color(t.text_faint).child(
-                        match cancelling {
-                            true => format!("Cancelling the export to {}…", exporting.file),
-                            false => format!(
-                                "Exporting to {}… {} {}",
-                                exporting.file,
-                                group_thousands(rows as u64),
-                                if rows == 1 { "row" } else { "rows" }
-                            ),
-                        },
-                    ))
+                    .child(
+                        div().whitespace_nowrap().text_color(t.text_faint).child(
+                            match cancelling {
+                                true => t!("status.cancelling_export", file = &exporting.file)
+                                    .to_string(),
+                                false => t!(
+                                    "status.exporting",
+                                    file = &exporting.file,
+                                    rows = group_thousands(rows as u64),
+                                    plural = if rows == 1 { "row" } else { "rows" }
+                                )
+                                .to_string(),
+                            },
+                        ),
+                    )
                     .children((!cancelling).then(|| {
-                        button("cancel-export", "Cancel", Tone::Quiet, Control::Compact, t)
-                            .on_click(move |_, _, cx| {
-                                _ = workspace
-                                    .update(cx, |workspace, cx| workspace.cancel_export(cx));
-                            })
+                        button(
+                            "cancel-export",
+                            t!("button.cancel"),
+                            Tone::Secondary,
+                            Control::Compact,
+                            t,
+                        )
+                        .on_click(move |_, _, cx| {
+                            _ = workspace.update(cx, |workspace, cx| workspace.cancel_export(cx));
+                        })
                     }))
             });
         let query_status = match profile.session.active_query() {
@@ -2336,8 +2361,12 @@ impl Render for Workspace {
                 let count = relation_rows.is_none().then(|| {
                     let count = row_readout(showing.unwrap_or(*rows), *rows);
                     match stopped {
-                        Some(db::Stopped::Cancelled) => format!("{count}, cancelled"),
-                        Some(db::Stopped::AtLimit) => format!("{count}, stopped at limit"),
+                        Some(db::Stopped::Cancelled) => {
+                            t!("status.cancelled", count = count).to_string()
+                        }
+                        Some(db::Stopped::AtLimit) => {
+                            t!("status.stopped_at_limit", count = count).to_string()
+                        }
                         None => count,
                     }
                 });
@@ -2352,8 +2381,10 @@ impl Render for Workspace {
                 // buffer's statement is the user's to run again, and nothing
                 // else would tell them the rows are waiting on it.
                 Some(match snapshot_age {
-                    Some(age) if stale_buffer => joined(format!("from {age} ago")),
-                    Some(age) => joined(format!("snapshot from {age} ago")),
+                    Some(age) if stale_buffer => {
+                        joined(t!("status.from_age", age = age).to_string())
+                    }
+                    Some(age) => joined(t!("status.snapshot_from_age", age = age).to_string()),
                     None => joined(format!(
                         "{} \u{b7} {elapsed:.1?}",
                         human_bytes(*bytes as u64)
@@ -2372,10 +2403,12 @@ impl Render for Workspace {
         let left_stats = [
             relation_rows,
             column_count.filter(|columns| *columns > 0).map(|columns| {
-                format!(
-                    "{columns} {}",
-                    if columns == 1 { "column" } else { "columns" }
+                t!(
+                    "status.columns",
+                    columns = columns,
+                    plural = if columns == 1 { "column" } else { "columns" }
                 )
+                .to_string()
             }),
         ]
         .into_iter()
@@ -2544,8 +2577,8 @@ impl Render for Workspace {
                         .children(refreshable_snapshot.then(|| {
                             button(
                                 "refresh-snapshot",
-                                "Refresh…",
-                                Tone::Quiet,
+                                t!("status.refresh"),
+                                Tone::Secondary,
                                 Control::Compact,
                                 t,
                             )
@@ -2556,18 +2589,27 @@ impl Render for Workspace {
                             })
                         }))
                         .children(import_menu.map(|grid| {
-                            button("import-rows", "Import", Tone::Quiet, Control::Compact, t)
-                                .debug_selector(|| "import-rows".into())
-                                .child(
-                                    icon(icon::CHEVRON_DOWN)
-                                        .size(px(layout::chrome(layout::ICON_SIZE)))
-                                        .text_color(t.text_faint),
-                                )
-                                .dropdown_menu(move |menu, _, _| {
-                                    menu.action_context(grid.clone())
-                                        .menu("From Clipboard", Box::new(ImportRowsFromClipboard))
-                                        .menu("From File…", Box::new(ImportRows))
-                                })
+                            button(
+                                "import-rows",
+                                t!("status.import"),
+                                Tone::Secondary,
+                                Control::Compact,
+                                t,
+                            )
+                            .debug_selector(|| "import-rows".into())
+                            .child(
+                                icon(icon::CHEVRON_DOWN)
+                                    .size(px(layout::chrome(layout::ICON_SIZE)))
+                                    .text_color(t.text_muted),
+                            )
+                            .dropdown_menu(move |menu, _, _| {
+                                menu.action_context(grid.clone())
+                                    .menu(
+                                        t!("status.import_clipboard"),
+                                        Box::new(ImportRowsFromClipboard),
+                                    )
+                                    .menu(t!("status.import_file"), Box::new(ImportRows))
+                            })
                         }))
                         // Not beside pending edits: these write the rows as
                         // fetched, not the values on screen, and the review
@@ -2577,16 +2619,20 @@ impl Render for Workspace {
                                 workspace: copy_menu_workspace.clone(),
                                 sql: engine.syntax() == db::Syntax::Sql,
                             };
-                            button("export-results", "Export", Tone::Quiet, Control::Compact, t)
-                                .debug_selector(|| "export-results".into())
-                                .child(
-                                    icon(icon::CHEVRON_DOWN)
-                                        .size(px(layout::chrome(layout::ICON_SIZE)))
-                                        .text_color(t.text_faint),
-                                )
-                                .dropdown_menu(move |menu, window, cx| {
-                                    export.build(menu, window, cx)
-                                })
+                            button(
+                                "export-results",
+                                t!("status.export"),
+                                Tone::Secondary,
+                                Control::Compact,
+                                t,
+                            )
+                            .debug_selector(|| "export-results".into())
+                            .child(
+                                icon(icon::CHEVRON_DOWN)
+                                    .size(px(layout::chrome(layout::ICON_SIZE)))
+                                    .text_color(t.text_muted),
+                            )
+                            .dropdown_menu(move |menu, window, cx| export.build(menu, window, cx))
                         }))
                         .children(structure_copies.map(|(ddl, insert)| {
                             div()
@@ -2596,8 +2642,8 @@ impl Render for Workspace {
                                 .children(ddl.map(|(schema, relation, kind)| {
                                     button(
                                         "copy-create",
-                                        "Copy CREATE",
-                                        Tone::Quiet,
+                                        t!("status.copy_create"),
+                                        Tone::Secondary,
                                         Control::Compact,
                                         t,
                                     )
@@ -2614,8 +2660,8 @@ impl Render for Workspace {
                                 .children(insert.then(|| {
                                     button(
                                         "copy-insert",
-                                        "Copy INSERT",
-                                        Tone::Quiet,
+                                        t!("status.copy_insert"),
+                                        Tone::Secondary,
                                         Control::Compact,
                                         t,
                                     )
@@ -2637,10 +2683,14 @@ impl Render for Workspace {
                                 .text_ellipsis()
                                 .whitespace_nowrap()
                                 .text_color(t.text_muted)
-                                .child(format!(
-                                    "{pending_count} pending {}",
-                                    if pending_count == 1 { "edit" } else { "edits" }
-                                ));
+                                .child(
+                                    t!(
+                                        "status.pending_edits",
+                                        count = pending_count,
+                                        plural = if pending_count == 1 { "edit" } else { "edits" }
+                                    )
+                                    .to_string(),
+                                );
                             div()
                                 .min_w_0()
                                 .flex()
@@ -2649,11 +2699,11 @@ impl Render for Workspace {
                                     icon_button(
                                         "previous-edit",
                                         icon::CHEVRON_LEFT,
-                                        Tone::Quiet,
+                                        Tone::Secondary,
                                         Control::Compact,
                                         t,
                                     )
-                                    .tooltip("Previous edit")
+                                    .tooltip(t!("tooltip.previous_edit"))
                                     .on_click(
                                         move |_, window, cx| {
                                             _ = previous_workspace.update(cx, |workspace, cx| {
@@ -2667,11 +2717,11 @@ impl Render for Workspace {
                                     icon_button(
                                         "next-edit",
                                         icon::CHEVRON_RIGHT,
-                                        Tone::Quiet,
+                                        Tone::Secondary,
                                         Control::Compact,
                                         t,
                                     )
-                                    .tooltip("Next edit")
+                                    .tooltip(t!("tooltip.next_edit"))
                                     .on_click(
                                         move |_, window, cx| {
                                             _ = next_workspace.update(cx, |workspace, cx| {
@@ -2683,17 +2733,23 @@ impl Render for Workspace {
                                 .into_any_element()
                         }))
                         .children(has_pending.then(|| {
-                            button("discard-edits", "Discard", Tone::Quiet, Control::Compact, t)
-                                .on_click(move |_, window, cx| {
-                                    _ = discard_workspace.update(cx, |workspace, cx| {
-                                        workspace.discard_edits(&DiscardEdits, window, cx);
-                                    });
-                                })
+                            button(
+                                "discard-edits",
+                                t!("status.discard"),
+                                Tone::Secondary,
+                                Control::Compact,
+                                t,
+                            )
+                            .on_click(move |_, window, cx| {
+                                _ = discard_workspace.update(cx, |workspace, cx| {
+                                    workspace.discard_edits(&DiscardEdits, window, cx);
+                                });
+                            })
                         }))
                         .children(has_pending.then(|| {
                             button(
                                 "apply-edits",
-                                "Apply edits",
+                                t!("status.apply_edits"),
                                 Tone::Primary,
                                 Control::Compact,
                                 t,

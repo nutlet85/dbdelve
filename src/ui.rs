@@ -22,6 +22,8 @@ use gpui_component::{
 
 use std::{cell::RefCell, collections::HashMap, ops::Range};
 
+use rust_i18n::t;
+
 use crate::{
     actions::RefreshConnection,
     db::{Engine, RelationKind, RoutineKind, Syntax, Target},
@@ -258,7 +260,14 @@ pub(crate) fn dot(fill: Srgb) -> Div {
 /// The way back from a failed or dropped connection, wherever that failure is
 /// on screen: beside the status bar's message and under a query's error.
 pub(crate) fn reconnect_button(id: &'static str, t: Theme) -> Button {
-    button(id, "Reconnect", Tone::Quiet, Control::Compact, t).on_click(|_, window, cx| {
+    button(
+        id,
+        t!("status.reconnect"),
+        Tone::Secondary,
+        Control::Compact,
+        t,
+    )
+    .on_click(|_, window, cx| {
         window.dispatch_action(Box::new(RefreshConnection), cx);
     })
 }
@@ -682,6 +691,9 @@ pub(crate) fn search_field(
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Tone {
     Primary,
+    /// The neutral control tone: a hairline and a full-strength label, for a
+    /// strip of controls that would otherwise read as text with a hover.
+    Secondary,
     Quiet,
     Danger,
 }
@@ -702,7 +714,7 @@ impl Tone {
     /// [`button`].
     pub(crate) fn ink(self, t: Theme) -> theme::color::Srgb {
         match self {
-            Tone::Primary => t.text,
+            Tone::Primary | Tone::Secondary => t.text,
             Tone::Quiet => t.text_muted,
             Tone::Danger => t.on_accent,
         }
@@ -803,6 +815,7 @@ pub(crate) fn control(id: impl Into<gpui::ElementId>, tone: Tone, size: Control)
     Button::new(id)
         .map(|button| match tone {
             Tone::Primary => button.primary(),
+            Tone::Secondary => button.outline(),
             Tone::Quiet => button.ghost(),
             Tone::Danger => button.danger(),
         })
@@ -1251,7 +1264,7 @@ pub(crate) fn keycaps(chord: &str, t: Theme) -> Div {
 pub(crate) fn key_hint(
     t: Theme,
     stroke: &'static str,
-    explanation: &'static str,
+    explanation: impl Into<SharedString>,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -1260,7 +1273,7 @@ pub(crate) fn key_hint(
         .text_size(px(layout::chrome(layout::TEXT_SM)))
         .text_color(t.text_faint)
         .child(keycap(stroke))
-        .child(explanation)
+        .child(explanation.into())
 }
 
 /// A row count as a chip label: `1K` rather than `1,000`, because four of these
@@ -1306,15 +1319,22 @@ pub(crate) fn group_digits(digits: &str) -> String {
 /// and "20,000 rows" over 5,000 of them is a number nobody can act on. Every
 /// other result reads as the plain count it always did.
 pub(crate) fn row_readout(showing: usize, total: usize) -> String {
-    let unit = if total == 1 { "row" } else { "rows" };
+    let plural = if total == 1 { "row" } else { "rows" };
     if showing < total {
-        return format!(
-            "{} of {} {unit}",
-            group_thousands(showing as u64),
-            group_thousands(total as u64)
-        );
+        return t!(
+            "status.rows_of",
+            showing = group_thousands(showing as u64),
+            total = group_thousands(total as u64),
+            plural = plural
+        )
+        .to_string();
     }
-    format!("{} {unit}", group_thousands(total as u64))
+    t!(
+        "status.rows",
+        total = group_thousands(total as u64),
+        plural = plural
+    )
+    .to_string()
 }
 
 /// How long ago, at the one unit worth reading in a status bar. A cache's age
@@ -1322,7 +1342,7 @@ pub(crate) fn row_readout(showing: usize, total: usize) -> String {
 /// difference between 121 and 122 minutes.
 pub(crate) fn relative_age(seconds: u64) -> String {
     match seconds {
-        ..60 => "moments".to_string(),
+        ..60 => t!("status.moments").to_string(),
         60..3_600 => format!("{}m", seconds / 60),
         3_600..86_400 => format!("{}h", seconds / 3_600),
         _ => format!("{}d", seconds / 86_400),
@@ -1347,6 +1367,99 @@ pub(crate) fn human_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every word the status bar and the pages it sits under put on screen, so
+    /// a key that lost its Chinese falls back to its own name here rather than
+    /// in front of someone.
+    #[test]
+    fn the_results_pages_are_translated() {
+        for (key, chinese) in [
+            ("status.refresh", "刷新…"),
+            ("status.reconnect", "重新连接"),
+            ("status.idle", "连接空闲。"),
+            ("status.connecting", "正在连接 %{endpoint}…"),
+            ("status.refreshing_rows", "这些行正在刷新。"),
+            ("explorer.loading_objects", "正在读取数据库对象…"),
+            ("explorer.no_objects", "没有数据库对象。"),
+            ("filter.column", "列…"),
+            ("result.completed", "查询完成。"),
+            (
+                "result.completed_count",
+                "查询完成。服务器报告 %{rows} 行。",
+            ),
+            ("result.paste_rows", "粘贴行"),
+            ("result.paste_rows_with", "用 %{chord} 粘贴行"),
+            ("result.or", "或"),
+            ("result.import_file", "导入文件…"),
+            ("routine.function", "函数"),
+            ("routine.procedure", "存储过程"),
+            ("status.import", "导入"),
+            ("status.import_clipboard", "从剪贴板"),
+            ("status.import_file", "从文件…"),
+            ("status.export", "导出"),
+            ("status.copy_create", "复制 CREATE"),
+            ("status.copy_insert", "复制 INSERT"),
+            ("status.discard", "放弃"),
+            ("status.apply_edits", "应用修改"),
+            ("status.count", "计数"),
+            ("status.counting_rows", "正在统计行数…"),
+            ("status.cancelling_count", "正在取消统计…"),
+            ("status.cancelling_export", "正在取消导出到 %{file}…"),
+            ("status.cancelled", "%{count}，已取消"),
+            ("status.stopped_at_limit", "%{count}，已达行数上限"),
+            ("status.from_age", "来自 %{age} 前的快照"),
+            ("status.snapshot_from_age", "快照来自 %{age} 前"),
+            ("status.columns", "%{columns} 列"),
+            ("status.rows", "%{total} 行"),
+            ("status.rows_of", "%{showing} / %{total} 行"),
+            ("status.moments", "刚刚"),
+            ("status.running", "正在运行"),
+            ("status.refreshing", "正在刷新"),
+            ("status.finishing", "正在收尾…"),
+            ("status.fetched", "已取回 %{rows}"),
+            ("status.cancelling", "正在取消…"),
+            ("status.still_waiting", "仍在等待服务器…"),
+            ("status.sort", "排序"),
+            ("result.tab", "结果"),
+            ("result.messages", "消息"),
+            ("export.title", "导出"),
+            ("export.shown", "导出当前 %{rows} 行"),
+            ("export.all_rows", "导出全部行"),
+            ("export.all_refused", "全部行无法导出：%{reason}"),
+            ("tooltip.previous_edit", "上一处修改"),
+            ("tooltip.next_edit", "下一处修改"),
+            ("short.streaming", "行仍在到达。"),
+            ("short.refusal", "%{situation}%{doing}前请先%{remedy}。"),
+            ("short.remedy_run_again", "重新运行"),
+            ("short.remedy_refresh", "刷新"),
+            ("short.remedy_raise_limit", "提高行数上限并重新运行"),
+            ("short.doing_copying", "复制"),
+            ("short.doing_exporting", "导出"),
+        ] {
+            assert_eq!(t!(key, locale = "zh-CN"), chinese, "{key}");
+        }
+    }
+
+    #[test]
+    fn the_editor_placeholders_and_review_buttons_are_translated() {
+        assert_eq!(t!("editor.placeholder.sql", locale = "zh-CN"), "写 SQL…");
+        assert_eq!(
+            t!("editor.placeholder.mongo", locale = "zh-CN"),
+            "写一个查询，例如 db.collection.find({})…"
+        );
+        assert_eq!(
+            t!("editor.placeholder.redis", locale = "zh-CN"),
+            "写一条命令，例如 GET key…"
+        );
+        assert_eq!(t!("editor.review_sql", locale = "zh-CN"), "预览 SQL");
+        assert_eq!(t!("editor.review_statement", locale = "zh-CN"), "预览语句");
+        assert_eq!(t!("editor.review_commands", locale = "zh-CN"), "预览命令");
+        // Each dialect asks for the key of its own, in whatever language the
+        // process is in.
+        assert_eq!(Syntax::Sql.placeholder(), t!("editor.placeholder.sql"));
+        assert_eq!(Syntax::Mongo.placeholder(), t!("editor.placeholder.mongo"));
+        assert_eq!(Syntax::Redis.placeholder(), t!("editor.placeholder.redis"));
+    }
 
     #[test]
     fn code_is_highlighted_within_itself_whatever_it_holds() {
@@ -1495,8 +1608,8 @@ mod tests {
 
     #[test]
     fn a_snapshots_age_reads_in_one_unit() {
-        assert_eq!(relative_age(0), "moments");
-        assert_eq!(relative_age(59), "moments");
+        assert_eq!(relative_age(0), t!("status.moments"));
+        assert_eq!(relative_age(59), t!("status.moments"));
         assert_eq!(relative_age(60), "1m");
         assert_eq!(relative_age(3_599), "59m");
         assert_eq!(relative_age(7_200), "2h");
@@ -1510,14 +1623,34 @@ mod tests {
     fn a_capped_snapshots_readout_says_how_much_of_the_result_it_holds() {
         // The status bar over a restored, capped grid. Without the "of" it
         // reads as 20,000 rows on screen, and the export below it as complete.
-        assert_eq!(row_readout(5_000, 20_000), "5,000 of 20,000 rows");
+        assert_eq!(
+            row_readout(5_000, 20_000),
+            t!(
+                "status.rows_of",
+                showing = "5,000",
+                total = "20,000",
+                plural = "rows"
+            )
+        );
         // Nothing was trimmed: the count it always was.
-        assert_eq!(row_readout(842, 842), "842 rows");
-        assert_eq!(row_readout(1, 1), "1 row");
-        assert_eq!(row_readout(0, 0), "0 rows");
+        assert_eq!(
+            row_readout(842, 842),
+            t!("status.rows", total = "842", plural = "rows")
+        );
+        assert_eq!(
+            row_readout(1, 1),
+            t!("status.rows", total = "1", plural = "row")
+        );
+        assert_eq!(
+            row_readout(0, 0),
+            t!("status.rows", total = "0", plural = "rows")
+        );
         // A snapshot written before `total_rows` was kept reports zero over
         // rows it can still show, and must not read as "5,000 of 0".
-        assert_eq!(row_readout(5_000, 0), "0 rows");
+        assert_eq!(
+            row_readout(5_000, 0),
+            t!("status.rows", total = "0", plural = "rows")
+        );
     }
 
     #[test]
