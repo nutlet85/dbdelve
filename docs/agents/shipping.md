@@ -346,9 +346,12 @@ own DeepSeek or similar); with no key, `GITHUB_TOKEN` is used against GitHub
 Models instead, which is why the `notes` job asks for `models: read`. A model
 that cannot be reached, or that answers nothing usable, leaves the bullets in
 their commits' own English rather than failing a release that is otherwise
-ready — run the workflow with **publish** unticked first: the `notes` job runs
-on every run and uploads `release-notes.md`, so the wording is read before the
-tag exists.
+ready — and says why in the job's log, which is the first thing to read when a
+dry run's `release-notes.md` comes back English. A 401 or 403 from
+`models.github.ai` means this account or repository cannot use GitHub Models:
+set the `NOTES_API_KEY` secret and the same script takes the other route. Run
+the workflow with **publish** unticked first: the `notes` job runs on every run
+and uploads `release-notes.md`, so the wording is read before the tag exists.
 
 `--generate-notes` is deliberately not used: it puts an English commit list and
 a compare link on the page, which is a pointer rather than a summary. The
