@@ -193,9 +193,23 @@ model() {
     '{model: $model, temperature: 0.2, messages: [
        {role: "system", content: $system},
        {role: "user", content: ($instructions + "\n\n" + $user)}]}')"
-  body="$(curl -fsS --max-time 180 "$base/chat/completions" \
+  # The answer and the status apart: `curl -f` says only that it failed, and a
+  # fallback nobody can explain is a fallback nobody fixes. What is logged is
+  # the endpoint's own words, which are GitHub's or the model host's, and the
+  # secret is in a header rather than in this body.
+  local answer error status
+  answer="$(mktemp)"
+  error="$(mktemp)"
+  status="$(curl -sS --max-time 180 -o "$answer" -w '%{http_code}' "$base/chat/completions" \
     -H "Authorization: Bearer $key" -H 'Content-Type: application/json' \
-    -d "$payload" 2>/dev/null | jq -r '.choices[0].message.content // empty' 2>/dev/null)" || body=""
+    -d "$payload" 2>"$error" || true)"
+  if [[ $status != 200 ]]; then
+    echo "release-notes: the model endpoint answered ${status:-nothing}: $(head -c 400 "$error" 2>/dev/null)$(head -c 400 "$answer" 2>/dev/null)" >&2
+    rm -f "$answer" "$error"
+    return 1
+  fi
+  body="$(jq -r '.choices[0].message.content // empty' <"$answer" 2>/dev/null)"
+  rm -f "$answer" "$error"
   # A fence, or a title the instructions forbade, would land on the release page.
   body="$(printf '%s\n' "$body" | sed -e '/^```/d' -e '/^# /d' -e '/^## /d' | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
   [[ -n ${body//[$'\n\t ']/} ]] || {
