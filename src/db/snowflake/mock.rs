@@ -172,10 +172,7 @@ impl Mock {
             account: "myorg-myaccount".into(),
             host: Some(self.address.clone()),
             user: "tim".into(),
-            private_key: format!(
-                "{}/dev/snowflake/test-key-2048.p8",
-                env!("CARGO_MANIFEST_DIR")
-            ),
+            private_key: super::keys::signing(),
             database: "DBDELVE_TEST".into(),
             warehouse: Some("COMPUTE_WH".into()),
             ..Default::default()

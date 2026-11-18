@@ -1,6 +1,15 @@
 # Snowflake test fixtures
 
-The `.p8` keys here are throwaway RSA key pairs generated for the offline
-unit tests in `src/db/snowflake.rs`. They are not registered to any Snowflake
-user or account, protect nothing, and are safe to be public -- a secret
-scanner flagging one of them can be dismissed.
+`fixtures/` holds responses recorded from a real account, replayed by the mock
+in `src/db/snowflake/mock.rs`.
+
+**No private key lives here.** The two `test-key-*.rsa.pub.der` files are the
+public halves of throwaway key pairs, and only the fingerprint test needs them:
+it checks our `SHA256:` against the value openssl computed from them, so the
+oracle outlives the key that produced it and nothing secret has to stay in the
+tree. The tests that have to *sign* draw a 2048-bit key the first time they run
+and keep it in `target/test-keys/` (`src/db/snowflake/keys.rs`, which is
+compiled only for tests). The two encrypted names those tests feed the reader
+are headers with a placeholder under them: `key_pair` refuses an encrypted key
+by its header before it decodes any of it, so there is nothing under them to
+protect.

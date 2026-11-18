@@ -538,8 +538,9 @@ mod tests {
         report
     }
 
-    const KEY: &str =
-        "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n";
+    /// Shaped like a private key and holding nothing. The importer only sniffs
+    /// for the armour lines, and no key material belongs in the tree.
+    const KEY: &str = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
 
     fn over_ssh(id: &str, key: &str, password_mode: i64) -> Value {
         named(
@@ -794,7 +795,7 @@ mod tests {
             read_key(format!("{wrapped}\n").into(), KEY),
             (Some("/keys/tableplus-a".into()), vec![])
         );
-        let rsa = "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----";
+        let rsa = "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----\n";
         assert_eq!(
             read_key(rsa.into(), rsa),
             (Some("/keys/tableplus-a".into()), vec![])

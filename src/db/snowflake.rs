@@ -251,12 +251,18 @@ fn der(tag: u8, content: &[u8]) -> Vec<u8> {
 /// PKCS#1 key inside one -- so the wrapper is rebuilt here: the RSA algorithm
 /// identifier, then the key as a bit string with no unused bits.
 fn fingerprint(key: &RsaKeyPair) -> String {
+    fingerprint_of(key.public_key().as_ref())
+}
+
+/// [`fingerprint`] over a bare PKCS#1 `RSAPublicKey` DER, which is what a test
+/// can check against openssl without a private key to hand.
+fn fingerprint_of(public_key: &[u8]) -> String {
     // OID 1.2.840.113549.1.1.1 (rsaEncryption) with its NULL parameters.
     const RSA_ALGORITHM: [u8; 15] = [
         0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
     ];
     let mut bits = vec![0];
-    bits.extend_from_slice(key.public_key().as_ref());
+    bits.extend_from_slice(public_key);
     let mut info = RSA_ALGORITHM.to_vec();
     info.extend(der(0x03, &bits));
 
@@ -1455,23 +1461,25 @@ fn foreign_keys(imported: &QueryResult, relation: &str, database: &str) -> Vec<F
 }
 
 #[cfg(test)]
+mod keys;
+#[cfg(test)]
 mod mock;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Throwaway keys that protect nothing, generated for these tests with
-    /// `openssl genpkey -algorithm RSA`.
-    fn test_key(name: &str) -> String {
-        format!("{}/dev/snowflake/{name}", env!("CARGO_MANIFEST_DIR"))
+    /// A profile whose key is the one the tests generate, so nothing private
+    /// has to be committed for a token to be signed.
+    fn signing_config() -> SnowflakeConfig {
+        config(&keys::signing())
     }
 
     fn config(key: &str) -> SnowflakeConfig {
         SnowflakeConfig {
             account: "myorg-myaccount".into(),
             user: "tim".into(),
-            private_key: test_key(key),
+            private_key: key.into(),
             ..Default::default()
         }
     }
@@ -1482,16 +1490,16 @@ mod tests {
         //   openssl rsa -in KEY -pubout -outform DER \
         //     | openssl dgst -sha256 -binary | openssl enc -base64
         // which is the command Snowflake's own documentation gives, so this is
-        // checked against the server's arithmetic and not against our own.
-        let key = key_pair(&config("test-key-2048.p8")).expect("the key loads");
+        // checked against the server's arithmetic and not against our own. The
+        // public halves are committed and the private keys are not, so the
+        // oracle outlives the fixture that produced it.
         assert_eq!(
-            fingerprint(&key),
+            fingerprint_of(&keys::public("test-key-2048.rsa.pub.der")),
             "SHA256:4/76NAyPR/D6nlGOKDw+h7DNn+cNUUuXMPNDC7pyVXs="
         );
         // Twice the size pushes both DER lengths past 255, into two bytes.
-        let key = key_pair(&config("test-key-4096.p8")).expect("the key loads");
         assert_eq!(
-            fingerprint(&key),
+            fingerprint_of(&keys::public("test-key-4096.rsa.pub.der")),
             "SHA256:cGqHm+uApyCk8eJ2AGO6ZdmR9wGFHHouRS3w/eFRGgQ="
         );
     }
@@ -1511,12 +1519,17 @@ mod tests {
 
     #[test]
     fn the_claims_name_the_account_and_user_in_upper_case() {
-        let token = token(&config("test-key-2048.p8"), 1_700_000_000).expect("signed");
+        let config = signing_config();
+        let token = token(&config, 1_700_000_000).expect("signed");
         let claims = claims(&token);
         assert_eq!(claims["sub"], "MYORG-MYACCOUNT.TIM");
+        // `iss` is the subject and the fingerprint of the key that signed it,
+        // in that order: the server finds the key by the half after the last
+        // `SHA256:`.
+        let key = key_pair(&config).expect("the key loads");
         assert_eq!(
             claims["iss"],
-            "MYORG-MYACCOUNT.TIM.SHA256:4/76NAyPR/D6nlGOKDw+h7DNn+cNUUuXMPNDC7pyVXs="
+            format!("MYORG-MYACCOUNT.TIM.{}", fingerprint(&key))
         );
         assert_eq!(claims["iat"], 1_700_000_000_u64);
         assert_eq!(claims["exp"], 1_700_000_000_u64 + 59 * 60);
@@ -1526,7 +1539,7 @@ mod tests {
     fn a_legacy_locator_loses_its_region_in_the_token() {
         // `xy12345.eu-central-1` is a host prefix; the account it names is the
         // part before the dot, and a token naming the whole of it is refused.
-        let mut config = config("test-key-2048.p8");
+        let mut config = signing_config();
         config.account = "xy12345.eu-central-1".into();
         let token = token(&config, 0).expect("signed");
         assert_eq!(claims(&token)["sub"], "XY12345.TIM");
@@ -1534,9 +1547,10 @@ mod tests {
 
     #[test]
     fn the_signature_verifies_against_the_public_key() {
-        let token = token(&config("test-key-2048.p8"), 0).expect("signed");
+        let config = signing_config();
+        let token = token(&config, 0).expect("signed");
         let (message, signature) = token.rsplit_once('.').expect("three parts");
-        let key = key_pair(&config("test-key-2048.p8")).expect("the key loads");
+        let key = key_pair(&config).expect("the key loads");
         ring::signature::UnparsedPublicKey::new(
             &ring::signature::RSA_PKCS1_2048_8192_SHA256,
             key.public_key().as_ref(),
@@ -1550,7 +1564,8 @@ mod tests {
 
     #[test]
     fn an_encrypted_key_is_refused_by_name() {
-        let error = token(&config("test-key-encrypted.p8"), 0).expect_err("refused");
+        let path = keys::encrypted("test-key-encrypted.p8", "ENCRYPTED PRIVATE KEY", "");
+        let error = token(&config(&path), 0).expect_err("refused");
         assert!(error.message.ends_with("is encrypted."), "{error}");
         assert!(error.message.contains("test-key-encrypted.p8"), "{error}");
     }
@@ -1561,7 +1576,12 @@ mod tests {
         // shape `openssl genrsa -aes256 -traditional` writes, not PKCS#8's own
         // `ENCRYPTED PRIVATE KEY` header. Left undetected it reads as DER,
         // fails to parse, and says "is not a private key" instead.
-        let error = token(&config("test-key-encrypted-pkcs1.p8"), 0).expect_err("refused");
+        let path = keys::encrypted(
+            "test-key-encrypted-pkcs1.p8",
+            "RSA PRIVATE KEY",
+            "Proc-Type: 4,ENCRYPTED\nDEK-Info: AES-256-CBC,00000000000000000000000000000000\n\n",
+        );
+        let error = token(&config(&path), 0).expect_err("refused");
         assert!(error.message.ends_with("is encrypted."), "{error}");
         assert!(
             error.message.contains("test-key-encrypted-pkcs1.p8"),
@@ -1879,7 +1899,7 @@ mod tests {
         // Needs no account, which is the point: it is the one live check that
         // runs anywhere, and what it pins is that the TLS provider is there at
         // run time -- a missing one panics rather than failing the connect.
-        let mut config = config("test-key-2048.p8");
+        let mut config = signing_config();
         config.account = "dbdelve-no-such-account".into();
         let error = Connection::open(&config).err().expect("nobody is there");
         println!("{error}");
@@ -2322,7 +2342,7 @@ mod tests {
 
     #[test]
     fn a_key_file_is_the_same_key_however_it_was_written() {
-        let pem = std::fs::read_to_string(test_key("test-key-2048.p8")).expect("readable");
+        let pem = std::fs::read_to_string(keys::signing()).expect("readable");
         let body: String = pem
             .lines()
             .filter(|line| !line.starts_with("-----"))
