@@ -338,14 +338,17 @@ without releasing.
 the commits since the last tag in this fork's own series (`v0.[0-9]*`;
 upstream's `v0.7.x` tags are older history and are ignored), groups them
 新功能 / 问题修复 / 性能 / 其它 by conventional-commit type, and has a model say
-each one the way a user would read it. `NOTES_API_BASE`, `NOTES_MODEL` and
-`NOTES_API_KEY` name an OpenAI-compatible endpoint (a fork's own DeepSeek or
-similar); with no key, `GITHUB_TOKEN` is used against GitHub Models instead,
-which is why the `notes` job asks for `models: read`. A model that cannot be
-reached, or that answers nothing usable, leaves the bullets in their commits'
-own English rather than failing a release that is otherwise ready — run the
-workflow with **publish** unticked first: the `notes` job runs on every run and
-uploads `release-notes.md`, so the wording is read before the tag exists.
+each one the way a user would read it. The model is given each commit's body
+under its subject, because a subject is the one line its author had room for
+and the notes are only as good as what they are handed. `NOTES_API_BASE`,
+`NOTES_MODEL` and `NOTES_API_KEY` name an OpenAI-compatible endpoint (a fork's
+own DeepSeek or similar); with no key, `GITHUB_TOKEN` is used against GitHub
+Models instead, which is why the `notes` job asks for `models: read`. A model
+that cannot be reached, or that answers nothing usable, leaves the bullets in
+their commits' own English rather than failing a release that is otherwise
+ready — run the workflow with **publish** unticked first: the `notes` job runs
+on every run and uploads `release-notes.md`, so the wording is read before the
+tag exists.
 
 `--generate-notes` is deliberately not used: it puts an English commit list and
 a compare link on the page, which is a pointer rather than a summary. The

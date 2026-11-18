@@ -104,11 +104,15 @@ render() {
         echo "$heading"
         printed=true
       fi
-      # 其它 holds several kinds of change, so it says which one when the
-      # commit names no part of the app: `- **docs** …` rather than a bare line.
+      # 其它 holds several kinds of change, so it says which one. A `test` or
+      # `ci` commit's scope names a part of the app it did not change, so those
+      # are labelled by their kind; the rest by the part of the app they did.
       label="$scope"
-      if [[ $section == other && -z $label && -n $type ]]; then
-        label="$type"
+      if [[ $section == other ]]; then
+        case "$type" in
+          test | ci) label="$type" ;;
+          *) [[ -n $label ]] || label="$type" ;;
+        esac
       fi
       if [[ -n $label ]]; then
         printf -- '- **%s** %s\n' "$label" "$subject"
@@ -121,12 +125,43 @@ render() {
   rm -f "$parsed"
 }
 
+# The commits in `$RANGE` as the model reads them: each line a
+# `type(scope): summary`, with the commit's body indented under it. A subject is
+# the one line its author had room for; the body is where the change actually
+# says what it did.
+records() {
+  local record subject body
+  git log --no-merges --format='%s%x1f%b%x1e' "$RANGE" |
+    while IFS= read -r -d $'\x1e' record; do
+      # `git log --format` follows each record's `%x1e` with a newline of its
+      # own, so every record after the first arrives with one in front of it.
+      while [[ $record == $'\n'* ]]; do
+        record="${record#$'\n'}"
+      done
+      subject="${record%%$'\x1f'*}"
+      body="${record#*$'\x1f'}"
+      [[ -n $subject ]] || continue
+      # A version bump says nothing a user reads.
+      if [[ $subject =~ $CONVENTIONAL ]] &&
+        [[ ${BASH_REMATCH[1]} == chore && ${BASH_REMATCH[3]} == release ]]; then
+        continue
+      fi
+      printf '%s\n' "$subject"
+      if [[ -n ${body//[$'\n\t ']/} ]]; then
+        printf '%s\n' "$body" | sed -e '/^[[:space:]]*$/d' -e 's/^/    /'
+      fi
+      printf '\n'
+    done
+}
+
 SYSTEM='你是 dbdelve 的发布说明撰写者。dbdelve 是一个桌面数据库客户端，支持 Postgres、MySQL、SQLite、SQL Server、MongoDB、Redis 等。'
-INSTRUCTIONS='下面是从上次发布到现在的全部提交，一行一条，格式为 `类型(范围): 摘要`，类型是 feat / fix / perf / chore / docs / refactor 等。
+INSTRUCTIONS='下面是从上次发布到现在的全部提交。每条以一行 `类型(范围): 摘要` 开始，紧跟其后缩进的行是这条提交的正文，可据此写得更具体。
 把它们改写成简体中文的发布说明：
 - 分节只允许 `### 新功能`、`### 问题修复`、`### 性能`、`### 其它`，没有内容的小节不要输出
 - 每条一行，以 `- ` 开头；摘要前能看出功能范围时，先写 `**范围**` 再空一格
 - 写用户能感知到的“做了什么、怎么更好了”，不要逐字直译，也不要添加提交里没有的事实
+- `test` / `ci` / `chore` 这类只影响开发与测试的提交归到 `其它`，一条概括即可，不要逐条罗列
+- 范围是 `release`（打包与发布脚本）的提交也归到 `其它`，不要写成新功能或问题修复
 - 不要输出一级标题、版本号、日期、链接，不要复述提交类型
 - 全角标点，行尾不加句号
 只输出 Markdown 正文。'
@@ -149,15 +184,11 @@ model() {
     echo "release-notes: jq is not installed; keeping the commits' own words" >&2
     return 1
   }
-  list="$(parse | while IFS='|' read -r section type scope subject; do
-    if [[ -z $type ]]; then
-      printf '%s\n' "$subject"
-    elif [[ -n $scope ]]; then
-      printf '%s(%s): %s\n' "$type" "$scope" "$subject"
-    else
-      printf '%s: %s\n' "$type" "$subject"
-    fi
-  done)"
+  list="$(records)"
+  [[ -n ${list//[$'\n\t ']/} ]] || {
+    echo "release-notes: nothing to summarise in $RANGE" >&2
+    return 1
+  }
   payload="$(jq -n --arg model "$name" --arg system "$SYSTEM" --arg instructions "$INSTRUCTIONS" --arg user "$list" \
     '{model: $model, temperature: 0.2, messages: [
        {role: "system", content: $system},
@@ -188,6 +219,7 @@ self_test() {
 
 ### 其它
 - **docs** explain the thing
+- **test** cover the thing
 - note without a type
 EOF
 )"
@@ -196,6 +228,7 @@ EOF
     'fix(ui): brighten the version badge' \
     'chore(release): bump version to 0.2.4' \
     'docs: explain the thing' \
+    'test(grid): cover the thing' \
     'perf(grid): hold rows packed' \
     'note without a type' | render | sed -e :a -e '/^$/{$d;N;ba' -e '}')"
   if [[ $actual != "$expected" ]]; then
