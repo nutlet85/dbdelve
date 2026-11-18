@@ -37,3 +37,9 @@ docs/superpowers/
 # insta's pending output while a snapshot is being reviewed.
 *.snap.new
 *.pending-snap
+
+# The release signing key pair `minisign -G` writes where it is run, and
+# shipping.md's command is run in the checkout. The secret belongs in the
+# UPDATE_SIGNING_KEY secret; a `git add -A` must not be able to pick it up.
+update.key
+update.pub
