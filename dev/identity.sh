@@ -12,6 +12,11 @@ set -euo pipefail
 
 NAME="DBDelve Dev Signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+# macOS refuses a PKCS#12 whose password is empty ("MAC verification failed
+# during PKCS12 import"), so the throwaway bundle gets one. It guards a file
+# that lives in a private temporary directory and is deleted on exit, never the
+# identity itself, whose private key `security import` copies into the keychain.
+P12_PASS="dbdelve-identity"
 
 if security find-certificate -c "$NAME" "$KEYCHAIN" >/dev/null 2>&1; then
   echo "already have \"$NAME\""
@@ -40,11 +45,17 @@ CONF
 
 openssl req -x509 -newkey rsa:2048 -sha256 -days 7300 -nodes \
   -config "$WORK/openssl.cnf" -keyout "$WORK/key.pem" -out "$WORK/cert.pem"
+# 3DES and a SHA-1 MAC rather than the PBES2/AES-256 that OpenSSL 3 exports by
+# default: `security import` refuses that bundle with "MAC verification failed
+# during PKCS12 import", and the openssl on PATH is not always macOS's LibreSSL,
+# whose older defaults it could read.
 openssl pkcs12 -export -out "$WORK/identity.p12" \
-  -inkey "$WORK/key.pem" -in "$WORK/cert.pem" -name "$NAME" -passout pass:
+  -inkey "$WORK/key.pem" -in "$WORK/cert.pem" -name "$NAME" \
+  -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 \
+  -passout "pass:$P12_PASS"
 
 # -T codesign, so signing a rebuild does not ask for the private key each time.
-security import "$WORK/identity.p12" -k "$KEYCHAIN" -P "" -T /usr/bin/codesign
+security import "$WORK/identity.p12" -k "$KEYCHAIN" -P "$P12_PASS" -T /usr/bin/codesign
 # Untrusted, the certificate is not an identity codesign will sign with. The
 # user domain rather than -d, so this asks for the login password, not admin.
 security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$WORK/cert.pem"
