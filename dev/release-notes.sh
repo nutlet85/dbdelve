@@ -214,8 +214,11 @@ model() {
   if [[ -z ${body//[$'\n\t ']/} ]]; then
     # Not JSON, or JSON with no content under it: a proxy or a filter answering
     # in the endpoint's place looks exactly like this, and the words it said are
-    # the only way to tell.
+    # the only way to tell. models.github.ai answers a bare `OK` to every path
+    # from some networks, `GITHUB_TOKEN` or not, which is why the key remains
+    # the route to trust.
     echo "release-notes: the model returned nothing usable, and answered: $(head -c 300 "$answer" 2>/dev/null)" >&2
+    echo "release-notes: set the NOTES_API_KEY secret to take the OpenAI-compatible route instead" >&2
     rm -f "$answer" "$error"
     return 1
   fi
