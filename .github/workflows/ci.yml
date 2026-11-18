@@ -104,6 +104,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # The pin in `env` makes rustup auto-install a minimal toolchain, which
+      # brings neither rustfmt nor clippy: the two components the steps below
+      # call. Every job that formats or lints takes this step.
+      - &toolchain
+        name: toolchain components
+        shell: bash
+        run: rustup component add --toolchain "$RUSTUP_TOOLCHAIN" rustfmt clippy
       # First, so the databases boot while everything else runs.
       - name: start databases
         run: docker compose up -d
@@ -297,6 +304,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - *checkout
+      - *toolchain
       - *rust-cache
       - *duckdb-sources
       - *dependencies-unoptimized
@@ -310,6 +318,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - *checkout
+      - *toolchain
       - *rust-cache
       - *duckdb-sources
       - *dependencies-unoptimized
