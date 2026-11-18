@@ -61,6 +61,12 @@ env:
   # fail on any difference instead.
   INSTA_UPDATE: "no"
   INSTA_FORCE_PASS: "0"
+  # `turso_core` 0.8.2 does not compile on 1.100 (a type mismatch inside its
+  # own fts module), and the runners' `stable` moved to it: every job that
+  # built the crate from cold failed while the ones with a warm cache passed.
+  # Pinned to the toolchain the graph is known to build on; drop it when
+  # turso_core is bumped past the break. docs/agents/stack.md says the same.
+  RUSTUP_TOOLCHAIN: "1.98"
 
 # Not on main: a run there cancelled by the next merge never reaches
 # rust-cache's save, and the slowest job is the one that loses it.

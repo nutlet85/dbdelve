@@ -21,6 +21,12 @@ on:
 permissions:
   contents: write
 
+# The same pin ci.yml carries, and for the same reason: the artifact has to be
+# built by a toolchain the graph compiles on. docs/agents/stack.md has the why
+# and when it can go.
+env:
+  RUSTUP_TOOLCHAIN: "1.98"
+
 concurrency:
   group: release
   cancel-in-progress: false

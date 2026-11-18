@@ -24,6 +24,14 @@ accept. A bump changes what DBDelve sends to the server. Treat them like the dri
 backend swaps in a no-op text system and renders no text at all, silently.
 Without `x11` or `wayland` the Linux backend panics on the first frame.
 
+**The workflows pin `RUSTUP_TOOLCHAIN`, and that is not cosmetic.** `turso_core`
+0.8.2 does not compile on Rust 1.100 — a type mismatch inside its own fts
+module — and the runners' `stable` moved to it, so a job with a cold cache
+failed while one with a warm cache passed. `ci.yml`, `release.yml` and
+`update-e2e-windows.yml` pin 1.98, which the whole graph builds on. Drop the
+pin (all three at once) when `turso_core` is bumped past the break; a local
+`cargo test` on a newer toolchain will show the same error first.
+
 **`default-features = false` is load-bearing on each crate that has it.**
 
 - `rustls`: its defaults select the `aws-lc-rs` provider; `ring` is what is
