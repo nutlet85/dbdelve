@@ -334,6 +334,26 @@ branch. Unticked, the workflow builds the assets, signs them and publishes
 nothing, which is how to check `UPDATE_SIGNING_KEY` against the app's key
 without releasing.
 
+**The release body is written by `dev/release-notes.sh`, in Chinese.** It takes
+the commits since the last tag in this fork's own series (`v0.[0-9]*`;
+upstream's `v0.7.x` tags are older history and are ignored), groups them
+新功能 / 问题修复 / 性能 / 其它 by conventional-commit type, and has a model say
+each one the way a user would read it. `NOTES_API_BASE`, `NOTES_MODEL` and
+`NOTES_API_KEY` name an OpenAI-compatible endpoint (a fork's own DeepSeek or
+similar); with no key, `GITHUB_TOKEN` is used against GitHub Models instead,
+which is why the `notes` job asks for `models: read`. A model that cannot be
+reached, or that answers nothing usable, leaves the bullets in their commits'
+own English rather than failing a release that is otherwise ready — run the
+workflow with **publish** unticked first: the `notes` job runs on every run and
+uploads `release-notes.md`, so the wording is read before the tag exists.
+
+`--generate-notes` is deliberately not used: it puts an English commit list and
+a compare link on the page, which is a pointer rather than a summary. The
+workflow appends the two standing caveats (where to report a problem, and what
+the Windows artifacts are) under the generated body. `dev/release-notes.sh
+--self-test` pins the grouping, and CI runs it, so a broken section mapping
+fails a PR rather than a release.
+
 **The key is this fork's own.** `src/update/download.rs` holds its public half
 and `install.sh` repeats it; the sign job refuses to run while either still
 holds the placeholder, and refuses again if `minisign -V` against that public

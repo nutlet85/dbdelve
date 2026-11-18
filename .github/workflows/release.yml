@@ -56,6 +56,33 @@ jobs:
         env:
           PUBLISH: ${{ inputs.publish }}
 
+  # The release page's body, built before anything is published and uploaded on
+  # every run: an unticked run is what a release's notes are read from, so a
+  # wrong one is caught before the tag exists. Chinese, grouped by kind of
+  # change -- see dev/release-notes.sh.
+  notes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The model that words the notes; GITHUB_TOKEN is what reaches it. A
+      # NOTES_API_KEY secret wins, for a fork that would rather use its own.
+      models: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # git describe and the range since the last tag need the history.
+          fetch-depth: 0
+      - name: notes
+        run: dev/release-notes.sh > release-notes.md
+        env:
+          NOTES_API_KEY: ${{ secrets.NOTES_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
   windows:
     needs: version
     runs-on: windows-latest
@@ -144,7 +171,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [version, sign]
+    needs: [version, notes, sign]
     if: inputs.publish
     runs-on: ubuntu-latest
     steps:
@@ -153,6 +180,9 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
 
       # Every file the release is supposed to carry is named here, so a build
       # that quietly lost one fails before anything goes public rather than
@@ -168,15 +198,21 @@ jobs:
               fi
             done
           done
+          # The notes job's Chinese summary, with the standing caveats under
+          # it. --generate-notes would replace them with an English commit
+          # list ending in a compare link.
+          cat > caveats.md <<'CAVEATS'
+          Missing something? [Open an issue](https://github.com/nutlet85/dbdelve/issues).
+
+          Windows only: the installer is unsigned, so SmartScreen warns once, and the zip is the portable build. The ODBC plugin ships untested.
+          CAVEATS
+          { cat release-notes.md; echo; cat caveats.md; } > body.md
           PRERELEASE_FLAG=()
           [[ "$PRERELEASE" == true ]] && PRERELEASE_FLAG=(--prerelease)
           # --target creates the tag on the commit that was built. A tag made
           # with github.token starts no other workflow run.
           gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" \
-            --title "DBDelve $VERSION" --generate-notes "${PRERELEASE_FLAG[@]}" \
-            --notes "Missing something? [Open an issue](https://github.com/nutlet85/dbdelve/issues).
-
-          Windows only: the installer is unsigned, so SmartScreen warns once, and the zip is the portable build. The ODBC plugin ships untested."
+            --title "DBDelve $VERSION" --notes-file body.md "${PRERELEASE_FLAG[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
