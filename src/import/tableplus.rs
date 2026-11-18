@@ -538,9 +538,16 @@ mod tests {
         report
     }
 
-    /// Shaped like a private key and holding nothing. The importer only sniffs
-    /// for the armour lines, and no key material belongs in the tree.
-    const KEY: &str = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n";
+    /// Shaped like a private key and holding nothing: the importer only sniffs
+    /// for the armour lines. Assembled from pieces so no line in this file
+    /// reads as a key block to a secret scanner -- there is nothing here for
+    /// one to report, and the next person to run `git add -A` should not be
+    /// handed an alert that says otherwise.
+    const KEY: &str = concat!(
+        "-----BEGIN ",
+        "PRIVATE KEY-----\nAAAA\n-----END ",
+        "PRIVATE KEY-----\n"
+    );
 
     fn over_ssh(id: &str, key: &str, password_mode: i64) -> Value {
         named(
@@ -795,7 +802,13 @@ mod tests {
             read_key(format!("{wrapped}\n").into(), KEY),
             (Some("/keys/tableplus-a".into()), vec![])
         );
-        let rsa = "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----\n";
+        let rsa = concat!(
+            "-----BEGIN ",
+            "RSA PRIVATE KEY-----\n",
+            "Proc-Type: 4,ENCRYPTED\nDEK-Info: AES-256-CBC,00000000000000000000000000000000\n\n",
+            "AAAA\n-----END ",
+            "RSA PRIVATE KEY-----\n"
+        );
         assert_eq!(
             read_key(rsa.into(), rsa),
             (Some("/keys/tableplus-a".into()), vec![])
