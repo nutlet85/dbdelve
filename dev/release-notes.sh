@@ -209,13 +209,17 @@ model() {
     return 1
   fi
   body="$(jq -r '.choices[0].message.content // empty' <"$answer" 2>/dev/null)"
-  rm -f "$answer" "$error"
   # A fence, or a title the instructions forbade, would land on the release page.
   body="$(printf '%s\n' "$body" | sed -e '/^```/d' -e '/^# /d' -e '/^## /d' | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
-  [[ -n ${body//[$'\n\t ']/} ]] || {
-    echo "release-notes: the model returned nothing usable; keeping the commits' own words" >&2
+  if [[ -z ${body//[$'\n\t ']/} ]]; then
+    # Not JSON, or JSON with no content under it: a proxy or a filter answering
+    # in the endpoint's place looks exactly like this, and the words it said are
+    # the only way to tell.
+    echo "release-notes: the model returned nothing usable, and answered: $(head -c 300 "$answer" 2>/dev/null)" >&2
+    rm -f "$answer" "$error"
     return 1
-  }
+  fi
+  rm -f "$answer" "$error"
   printf '%s\n' "$body"
 }
 
