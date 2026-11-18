@@ -1206,18 +1206,33 @@ SELECT count(*) FROM forever
 WITH RECURSIVE counting(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM counting WHERE n < 10000000)
 SELECT count(*) FROM counting
 ";
+        // The lane is only waiting while the statement ahead holds the
+        // connection, and a sleep is no proof of that: on a loaded runner the
+        // ahead thread can still be starting when the lane's turn would have
+        // come, and then the lane runs `SELECT 1` and is not cancelled at all.
+        // `Fetch::held` runs exactly when the statement holds the connection,
+        // so the barrier makes that the moment the test proceeds from.
+        let holding = std::sync::Barrier::new(2);
+        let held = || {
+            holding.wait();
+            true
+        };
         let (ahead, lane) = std::thread::scope(|scope| {
             let ahead = scope.spawn(|| {
                 connection.query(
                     counted,
                     &crate::db::CancelToken::default(),
-                    Fetch::default(),
+                    Fetch {
+                        held: Some(&held),
+                        ..Fetch::default()
+                    },
                 )
             });
-            std::thread::sleep(Duration::from_millis(100));
+            holding.wait();
             let lane = scope
                 .spawn(|| connection.query_alongside("SELECT 1", &cancel, Fetch::default(), false));
-            std::thread::sleep(Duration::from_millis(100));
+            // Recorded before the lane can hold the connection, so its turn
+            // finds the Cancel asked and drops it unsent.
             connection.cancel(&cancel).expect("cancelling cannot fail");
             (ahead.join().unwrap(), lane.join().unwrap())
         });
