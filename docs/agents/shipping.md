@@ -337,30 +337,40 @@ without releasing.
 **The release body is written by `dev/release-notes.sh`, in Chinese.** It takes
 the commits since the last tag in this fork's own series (`v0.[0-9]*`;
 upstream's `v0.7.x` tags are older history and are ignored), groups them
-新功能 / 问题修复 / 性能 / 其它 by conventional-commit type, and has a model say
-each one the way a user would read it. The model is given each commit's body
+新功能 / 问题修复 / 性能 / 其它 by conventional-commit type, and asks a model to
+say each one the way a user would read it. The model is given each commit's body
 under its subject, because a subject is the one line its author had room for
-and the notes are only as good as what they are handed. `NOTES_API_BASE`,
-`NOTES_MODEL` and `NOTES_API_KEY` name an OpenAI-compatible endpoint (a fork's
-own DeepSeek or similar); with no key, `GITHUB_TOKEN` is used against GitHub
-Models instead, which is why the `notes` job asks for `models: read`. A model
-that cannot be reached, or that answers nothing usable, leaves the bullets in
-their commits' own English rather than failing a release that is otherwise
-ready — and says why in the job's log, which is the first thing to read when a
-dry run's `release-notes.md` comes back English. One shape of that is not a
-status at all: `models.github.ai` answers some networks' requests — and this
-repository's runners' own — with a bare `OK` and no JSON, so the log line names
-the body it got back. If GitHub Models is not reachable for the account, set
-the `NOTES_API_KEY` secret and the same script takes the other route. Run the
-workflow with **publish** unticked first: the `notes` job runs on every run
-and uploads `release-notes.md`, so the wording is read before the tag exists.
+and the notes are only as good as what they are handed.
+
+**No endpoint here answers with a model, so this repository writes the body
+first.** `models.github.ai` replies to every path — from the runners as well as
+from this network — with a bare `OK` and no JSON, and there is deliberately no
+`NOTES_API_KEY` secret, so the job's own attempt always ends in the English
+fallback. The flow that works: `dev/release-notes.sh --prompt` prints the exact
+request the HTTP call would have sent (system prompt, instructions, this
+release's commits), whatever model is cutting the release answers it, and the
+reply goes in as the workflow's **notes** input:
+
+```sh
+dev/release-notes.sh --prompt        # hand this to the model
+# ... save its reply
+gh workflow run release.yml -R nutlet85/dbdelve --ref main -f publish=true \
+  -f notes="$(cat release-notes.md)"
+```
+
+The same file can replace a published body with
+`gh release edit v<version> -R nutlet85/dbdelve --notes-file <file>`. An empty
+`notes` input falls back to the `notes` job's generated file, which is also what
+a dry run is for: it runs on every run and uploads `release-notes.md`, so a
+release's wording is read before the tag exists.
 
 `--generate-notes` is deliberately not used: it puts an English commit list and
 a compare link on the page, which is a pointer rather than a summary. The
 workflow appends the two standing caveats (where to report a problem, and what
-the Windows artifacts are) under the generated body. `dev/release-notes.sh
---self-test` pins the grouping, and CI runs it, so a broken section mapping
-fails a PR rather than a release.
+the Windows artifacts are) under whichever body it used, and a `NOTES_API_KEY`
+secret, if one is ever added, makes the `notes` job write that body itself.
+`dev/release-notes.sh --self-test` pins the grouping, and CI runs it, so a
+broken section mapping fails a PR rather than a release.
 
 **The key is this fork's own.** `src/update/download.rs` holds its public half
 and `install.sh` repeats it; the sign job refuses to run while either still

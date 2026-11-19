@@ -17,6 +17,14 @@ on:
         description: Publish the release (unticked builds only)
         type: boolean
         default: false
+      # No endpoint this repository can reach answers with a model (see
+      # docs/agents/shipping.md), so the notes are written before the run:
+      # `dev/release-notes.sh --prompt` is the exact request, the reply goes in
+      # here, and the `notes` job's generated file is the fallback.
+      notes:
+        description: Release body in Markdown; empty uses the generated notes
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -221,7 +229,14 @@ jobs:
 
           Windows only: the installer is unsigned, so SmartScreen warns once, and the zip is the portable build. The ODBC plugin ships untested.
           CAVEATS
-          { cat release-notes.md; echo; cat caveats.md; } > body.md
+          # The body the dispatcher's model wrote wins; `notes` is empty on a
+          # run that had none, and then the job's generated notes are used.
+          if [[ -n ${NOTES//[$'\n\t ']/} ]]; then
+            printf '%s\n' "$NOTES" > notes-used.md
+          else
+            cat release-notes.md > notes-used.md
+          fi
+          { cat notes-used.md; echo; cat caveats.md; } > body.md
           PRERELEASE_FLAG=()
           [[ "$PRERELEASE" == true ]] && PRERELEASE_FLAG=(--prerelease)
           # --target creates the tag on the commit that was built. A tag made
@@ -232,3 +247,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          NOTES: ${{ inputs.notes }}

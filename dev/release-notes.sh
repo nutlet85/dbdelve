@@ -9,6 +9,7 @@
 # say each one the way a user would read it.
 #
 # Usage: dev/release-notes.sh [--range <from>..<to>] [--no-model]
+#        dev/release-notes.sh --prompt     # the exact prompt, to hand to any model
 #        dev/release-notes.sh --self-test
 #
 # Model settings, an OpenAI-compatible chat completions endpoint:
@@ -19,6 +20,11 @@
 # Without either, or with --no-model, the sections are still grouped and
 # ordered but each line keeps its commit's English wording, with a warning: a
 # release is better than no release, and a wrong translation is worse.
+#
+# With no key at all -- which is this repository's setup -- the notes are
+# written by whatever model the release is cut with: `--prompt` prints exactly
+# what this script would have sent, the reply goes to a file, and that file is
+# the `notes` input of the release workflow.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -30,13 +36,15 @@ TAG_MATCH='v0.[0-9]*'
 
 RANGE=""
 NO_MODEL=false
+PROMPT=false
 SELF_TEST=false
 while (($#)); do
   case "$1" in
     --range) RANGE="$2"; shift 2 ;;
     --no-model) NO_MODEL=true; shift ;;
+    --prompt) PROMPT=true; shift ;;
     --self-test) SELF_TEST=true; shift ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "release-notes: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -270,6 +278,13 @@ if [[ -z $RANGE ]]; then
   RANGE="${LAST:+$LAST..}HEAD"
 fi
 echo "release-notes: $RANGE" >&2
+
+# The whole request, so a model reached some other way -- a chat, an agent, a
+# CLI -- is handed exactly what the HTTP call would have sent.
+if [[ $PROMPT == true ]]; then
+  printf '%s\n\n%s\n\n%s\n' "$SYSTEM" "$INSTRUCTIONS" "$(records)"
+  exit 0
+fi
 
 if [[ $NO_MODEL == false ]] && model; then
   exit 0
