@@ -710,6 +710,8 @@ result.import_file:         { en: "import a file…", zh-CN: "导入文件…" }
 explorer.loading_objects:   { en: "Loading database objects…", zh-CN: "正在读取数据库对象…" }
 explorer.no_objects:        { en: "No database objects found.", zh-CN: "没有数据库对象。" }
 editor.hint_run:            { en: "runs the selection or statement under the cursor", zh-CN: "运行选区或光标所在的语句" }
+editor.hint_empty_run:      { en: "Run the statement", zh-CN: "运行语句" }
+editor.hint_empty_palette:  { en: "Command palette", zh-CN: "打开命令面板" }
 result.tab:                 { en: "Result", zh-CN: "结果" }
 result.messages:            { en: "Messages", zh-CN: "消息" }
 export.title:               { en: "Export", zh-CN: "导出" }

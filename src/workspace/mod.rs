@@ -2773,12 +2773,14 @@ impl Render for Workspace {
             .child(div().flex_1().min_h_0().child(views::render_main_content(
                 profile,
                 self.editor_size(),
+                window.viewport_size().height.as_f32(),
                 (self.chrome_zoom, self.editor_zoom, self.grid_zoom),
                 &self.row_panel,
                 self.plan_copied,
                 &self.tab_strip,
                 self.custom_limit.as_ref(),
                 &self.settings.custom_keybindings,
+                window,
                 cx,
             )))
             .children(results_status);

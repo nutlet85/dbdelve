@@ -156,12 +156,14 @@ pub struct RowInput {
 pub fn render_main_content(
     profile: &Profile,
     editor_font_size: f32,
+    viewport_height: f32,
     zoom: (u32, u32, u32),
     row_panel: &RowPanel,
     plan_copied: bool,
     strip: &TabStrip,
     custom_limit: Option<&(LimitTarget, Entity<InputState>)>,
     keybindings: &HashMap<String, String>,
+    window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let body = match profile.session.active_object() {
@@ -183,9 +185,11 @@ pub fn render_main_content(
         None => render_query_surface(
             profile,
             editor_font_size,
+            viewport_height,
             row_panel,
             plan_copied,
             custom_limit,
+            window,
             cx,
         ),
     };
@@ -226,20 +230,65 @@ fn completion_target(editor: &Entity<EditorState>) -> Div {
     })
 }
 
+/// How tall the editor panel should be for a buffer of `lines` at
+/// `line_height`, its padding and the toolbar beneath it included.
+///
+/// An empty buffer keeps three lines, so there is somewhere to type. Whatever
+/// the buffer says, the editor never takes more than the window's own 40%:
+/// the rows are what the editor exists to produce, and a statement scrolled in
+/// the editor is one glance away.
+fn editor_panel_height(
+    lines: usize,
+    empty: bool,
+    line_height: f32,
+    viewport_height: f32,
+    bar: f32,
+) -> f32 {
+    let lines = match empty {
+        true => 3,
+        false => lines.max(1),
+    };
+    let ceiling = (viewport_height * 0.4)
+        .min(layout::EDITOR_MAX_HEIGHT)
+        .max(layout::EDITOR_MIN_HEIGHT);
+    (lines as f32 * line_height + 2. * layout::SPACE_LG + bar)
+        .clamp(layout::EDITOR_MIN_HEIGHT, ceiling)
+}
+
 /// The editor over the rows it produces. Every runnable surface is this:
 /// the query buffer and an opened relation differ in where their SQL came
 /// from, not in what they are.
 fn render_editor_surface(
     split: gpui::ElementId,
-    editor: &Entity<EditorState>,
+    tab: &QueryTab,
+    profile_id: &str,
     font_size: f32,
+    viewport_height: f32,
     query: &QueryState,
     toolbar: AnyElement,
     bottom: AnyElement,
+    window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let t = *theme(cx);
     let code = fonts(cx).editor.clone();
+    let editor = &tab.editor;
+    let line_height = font_size * layout::EDITOR_LINE_HEIGHT;
+    let lines = editor.read(cx).text().iter_lines().count().max(1);
+    let empty = editor.read(cx).text().len_chars() == 0;
+    let bar = layout::chrome(layout::TAB_HEIGHT);
+    let wanted = editor_panel_height(lines, empty, line_height, viewport_height, bar);
+
+    // A dragged split is the user's, and typing must not pull it back to the
+    // content. Until then the panel's measured size is the content's, which
+    // changes as the buffer grows or shrinks.
+    if !tab.editor_resized
+        && let Some(current) = tab.editor_split.read(cx).sizes().first()
+        && (*current - px(wanted)).abs() > px(0.5)
+    {
+        tab.editor_split
+            .update(cx, |state, cx| state.resize_panel(0, px(wanted), window, cx));
+    }
 
     // The editor is the prompt, one tone behind its results -- and one step
     // more transparent, since it is also one step further from the data.
@@ -251,31 +300,65 @@ fn render_editor_surface(
         .p(px(layout::SPACE_LG))
         .font_family(code)
         .child(
-            Editor::new(editor)
-                .h_full()
-                .appearance(false)
-                .bordered(false)
-                .text_size(px(font_size))
-                .line_height(px(font_size * 1.55))
-                // The builder replaces the built-in menu rather than extending
-                // it, so the edit items are restated to keep them. Gone with the
-                // default are Go to Definition and Show Code Actions, which this
-                // editor drew permanently greyed -- dbdelve registers neither
-                // provider, and no language server is coming.
-                .context_menu(|menu, _, cx| {
-                    menu.menu(t!("editor.cut"), Box::new(input::Cut))
-                        .menu(t!("editor.copy"), Box::new(input::Copy))
-                        .menu_with_disabled(
-                            t!("editor.paste"),
-                            cx.read_from_clipboard().is_none(),
-                            Box::new(input::Paste),
+            div()
+                .relative()
+                .size_full()
+                .child(
+                    Editor::new(editor)
+                        .h_full()
+                        .appearance(false)
+                        .bordered(false)
+                        .text_size(px(font_size))
+                        .line_height(px(line_height))
+                        // The builder replaces the built-in menu rather than
+                        // extending it, so the edit items are restated to keep
+                        // them. Gone with the default are Go to Definition and
+                        // Show Code Actions, which this editor drew permanently
+                        // greyed -- dbdelve registers neither provider, and no
+                        // language server is coming.
+                        .context_menu(|menu, _, cx| {
+                            menu.menu(t!("editor.cut"), Box::new(input::Cut))
+                                .menu(t!("editor.copy"), Box::new(input::Copy))
+                                .menu_with_disabled(
+                                    t!("editor.paste"),
+                                    cx.read_from_clipboard().is_none(),
+                                    Box::new(input::Paste),
+                                )
+                                .separator()
+                                .menu(t!("editor.select_all"), Box::new(input::SelectAll))
+                                .separator()
+                                .menu(t!("editor.format_query"), Box::new(FormatQuery))
+                                .menu(t!("editor.toggle_comment"), Box::new(ToggleComment))
+                        }),
+                )
+                .children(empty.then(|| {
+                    let editor = editor.clone();
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(layout::SPACE_SM))
+                        .text_color(t.text_faint)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            move |_, window, cx| {
+                                editor.focus_handle(cx).focus(window, cx);
+                            },
                         )
-                        .separator()
-                        .menu(t!("editor.select_all"), Box::new(input::SelectAll))
-                        .separator()
-                        .menu(t!("editor.format_query"), Box::new(FormatQuery))
-                        .menu(t!("editor.toggle_comment"), Box::new(ToggleComment))
-                }),
+                        .child(key_hint(
+                            t,
+                            "secondary-enter",
+                            t!("editor.hint_empty_run"),
+                        ))
+                        .child(key_hint(
+                            t,
+                            "secondary-shift-p",
+                            t!("editor.hint_empty_palette"),
+                        ))
+                })),
         );
     let top = div()
         .size_full()
@@ -285,25 +368,26 @@ fn render_editor_surface(
         .child(toolbar);
 
     let expanded = result_pane_is_expanded(query);
-    let (editor_height, results_height) = if expanded {
-        (
-            layout::EDITOR_DEFAULT_HEIGHT,
-            layout::RESULTS_DEFAULT_HEIGHT,
-        )
+    let results_height = if expanded {
+        layout::RESULTS_DEFAULT_HEIGHT
     } else {
-        (layout::EDITOR_EMPTY_HEIGHT, layout::RESULTS_EMPTY_HEIGHT)
+        layout::RESULTS_EMPTY_HEIGHT
     };
+    let workspace = cx.entity().downgrade();
+    let profile_id = profile_id.to_string();
+    let tab_id = tab.id;
 
-    // The panel holds the toolbar as well, so its bounds grow by the bar and
-    // the buffer keeps the room the constants were tuned for.
-    let bar = layout::chrome(layout::TAB_HEIGHT);
     v_resizable((split, if expanded { "expanded" } else { "compact" }))
+        .with_state(&tab.editor_split)
+        .on_resize(move |_, _, cx| {
+            _ = workspace.update(cx, |workspace, cx| {
+                workspace.mark_editor_resized(&profile_id, tab_id, cx)
+            });
+        })
         .child(
             resizable_panel()
-                .size(px(editor_height + bar))
-                .size_range(
-                    px(layout::EDITOR_MIN_HEIGHT + bar)..px(layout::EDITOR_MAX_HEIGHT + bar),
-                )
+                .size(px(wanted))
+                .size_range(px(layout::EDITOR_MIN_HEIGHT)..px(layout::EDITOR_MAX_HEIGHT))
                 .child(top),
         )
         .child(
@@ -318,9 +402,11 @@ fn render_editor_surface(
 fn render_query_surface(
     profile: &Profile,
     editor_font_size: f32,
+    viewport_height: f32,
     row_panel: &RowPanel,
     plan_copied: bool,
     custom_limit: Option<&(LimitTarget, Entity<InputState>)>,
+    window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let Some(tab) = profile.session.active_query_tab() else {
@@ -388,11 +474,14 @@ fn render_query_surface(
             gpui::ElementId::from("query-result-split"),
             gpui::SharedString::from(format!("{}-{}", profile.id, tab.id)),
         )),
-        &tab.editor,
+        tab,
+        &profile.id,
         editor_font_size,
+        viewport_height,
         &tab.query,
         render_query_toolbar(profile, custom_limit, cx),
         bottom,
+        window,
         cx,
     )
 }
@@ -4086,6 +4175,35 @@ mod tests {
             assert_eq!(editor.read(cx).value(), "customer_name");
             assert_eq!(submissions.get(), 1);
         });
+    }
+
+    #[test]
+    fn the_editor_gives_the_results_their_room_back() {
+        let line = 14. * layout::EDITOR_LINE_HEIGHT;
+        let bar = layout::chrome(layout::TAB_HEIGHT);
+        // One statement on one line is the editor's floor, not a 420px pane.
+        assert_eq!(
+            editor_panel_height(1, false, line, 900., bar),
+            layout::EDITOR_MIN_HEIGHT
+        );
+        // Forty lines stop at the window's 40%, leaving the rows the rest.
+        assert_eq!(editor_panel_height(40, false, line, 900., bar), 360.);
+        // And never past the absolute ceiling on a very tall window.
+        assert_eq!(
+            editor_panel_height(200, false, line, 4000., bar),
+            layout::EDITOR_MAX_HEIGHT
+        );
+        // Empty still has somewhere to type: three lines, above the floor.
+        assert!(
+            editor_panel_height(0, true, line, 900., bar) >= 3. * line + bar,
+            "an empty buffer keeps three lines"
+        );
+        // A window too short for the floor still gets the floor rather than a
+        // negative or zero panel.
+        assert_eq!(
+            editor_panel_height(40, false, line, 100., bar),
+            layout::EDITOR_MIN_HEIGHT
+        );
     }
 
     #[test]

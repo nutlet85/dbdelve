@@ -103,9 +103,14 @@ pub mod layout {
     /// A tab is a chip inside the strip, so it gets a chip height rather than
     /// the full bar.
     pub const TAB_CHIP_HEIGHT: f32 = CONTROL_HEIGHT_COMPACT;
-    pub const EDITOR_EMPTY_HEIGHT: f32 = 680.0;
-    pub const EDITOR_DEFAULT_HEIGHT: f32 = 420.0;
+    /// One line of query text as the editor sets it. The buffer's line count
+    /// times this, plus its padding, is what the editor asks for -- see
+    /// `views::render_editor_surface`.
+    pub const EDITOR_LINE_HEIGHT: f32 = 1.55;
     pub const EDITOR_MIN_HEIGHT: f32 = 120.0;
+    /// A ceiling whatever the window size, so a long buffer cannot take the
+    /// results off a very tall screen. The window's own 40% is the tighter
+    /// limit on most screens.
     pub const EDITOR_MAX_HEIGHT: f32 = 720.0;
     pub const RESULTS_EMPTY_HEIGHT: f32 = 100.0;
     pub const RESULTS_DEFAULT_HEIGHT: f32 = 360.0;

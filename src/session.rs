@@ -1863,6 +1863,13 @@ pub(crate) struct QueryTab {
     /// tab must not resize another's. Not persisted -- a fresh tab always
     /// starts at the built-in default.
     pub(crate) row_panel_split: Entity<ResizableState>,
+    /// The editor/results split's state, per tab for the same reason a width
+    /// is: dragging one tab's editor must not resize another's.
+    pub(crate) editor_split: Entity<ResizableState>,
+    /// Whether the user has dragged that split. Until they have, the editor
+    /// follows the buffer's own line count; afterwards it is theirs and typing
+    /// no longer moves it. Not persisted -- a fresh tab starts following.
+    pub(crate) editor_resized: bool,
 }
 
 /// A plan, and what it is a plan of.
@@ -2469,6 +2476,8 @@ impl QueryTab {
             row_panel_editing: false,
             row_panel_filter: Default::default(),
             row_panel_split: cx.new(|_| ResizableState::default()),
+            editor_split: cx.new(|_| ResizableState::default()),
+            editor_resized: false,
         };
         (tab, notice)
     }
