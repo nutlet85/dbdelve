@@ -492,6 +492,20 @@ fn the_command_palette_opens_on_the_welcome_surface(cx: &mut TestAppContext) {
         settle(cx);
         workspace.read_with(cx, |workspace, _| assert!(workspace.palette.is_none()));
 
+        // The titlebar's magnifier is the way in without the chord.
+        let icon = cx
+            .debug_bounds("command-palette")
+            .expect("the titlebar opens the palette")
+            .center();
+        cx.simulate_click(icon, gpui::Modifiers::default());
+        settle(cx);
+        workspace.read_with(cx, |workspace, cx| {
+            let palette = workspace.palette.as_ref().expect("the palette is up");
+            assert!(palette.read(cx).mode() == PaletteMode::Search(Scope::Commands));
+        });
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+
         quit(workspace, cx);
     });
 }
@@ -3326,10 +3340,87 @@ fn a_refused_bar_edit_leaves_the_bars_as_they_ran(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_editor_follows_its_buffer_until_the_split_is_dragged(cx: &mut TestAppContext) {
+fn a_headers_filter_entry_aims_a_bar_at_its_column(cx: &mut TestAppContext) {
     store::tests::with_home(|| {
-        let (workspace, cx) = launch_on_sqlite(cx);
+        let (workspace, cx) = launch_on_sqlite_holding(
+            cx,
+            "create table birds (id integer primary key, name text);
+             insert into birds values (1, 'a');",
+        );
         cx.executor().allow_parking();
+        let row = explorer_row(&workspace, "relation-main\0birds", cx).center();
+        cx.simulate_click(row, gpui::Modifiers::default());
+        settle(cx);
+
+        let (id, filters_on_server) = workspace.read_with(cx, |workspace, cx| {
+            let session = &workspace.profile().unwrap().session;
+            let id = session.active_object().unwrap().id;
+            let filters = session
+                .active_results()
+                .unwrap()
+                .read(cx)
+                .delegate()
+                .filters_on_server();
+            (id, filters)
+        });
+        assert!(
+            filters_on_server,
+            "a relation's headers narrow it on the server"
+        );
+
+        // The header's own menu, opened the way a right click opens it, and
+        // its first entry: Filter on name.
+        let header = cx
+            .debug_bounds("column-header-1")
+            .expect("the name header is drawn")
+            .center();
+        cx.simulate_mouse_down(header, gpui::MouseButton::Right, gpui::Modifiers::default());
+        cx.simulate_mouse_up(header, gpui::MouseButton::Right, gpui::Modifiers::default());
+        settle(cx);
+        cx.update(|window, _| {
+            assert!(
+                window
+                    .context_stack()
+                    .iter()
+                    .any(|context| context.contains("PopupMenu")),
+                "the header menu opened"
+            )
+        });
+        cx.simulate_keystrokes("down");
+        settle(cx);
+        press(cx, "enter");
+        settle(cx);
+
+        let last = workspace.read_with(cx, |workspace, _| {
+            let tab = workspace
+                .profile()
+                .unwrap()
+                .session
+                .objects
+                .iter()
+                .find(|tab| tab.id == id)
+                .unwrap();
+            let ObjectBody::Relation { filters, .. } = &tab.body else {
+                panic!("a relation tab holds bars");
+            };
+            filters
+                .last()
+                .map(|filter| (filter.column.clone(), filter.raw, filter.applied.clone()))
+        });
+        assert_eq!(
+            last,
+            Some((Some("name".to_string()), false, String::new())),
+            "a bar aimed at the column, with nothing applied yet"
+        );
+        // A query's result has no filter model, so its headers never offer
+        // this.
+        assert!(!crate::result_grid::ResultGrid::empty().filters_on_server());
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
 fn the_editor_follows_its_buffer_until_the_split_is_dragged(cx: &mut TestAppContext) {
     store::tests::with_home(|| {
         let (workspace, cx) = launch_on_sqlite(cx);
@@ -3388,106 +3479,296 @@ fn the_editor_follows_its_buffer_until_the_split_is_dragged(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn a_cell_value_opens_whole_and_hands_the_keyboard_back(cx: &mut TestAppContext) {
     store::tests::with_home(|| {
-        let (workspace, cx) = launch_on_sqlite(cx);
+        let (workspace, cx) = launch_on_sqlite_holding(
+            cx,
+            "create table docs (id integer primary key, body text);
+             insert into docs values (1, '{\"a\":1}'), (2, 'plain');",
+        );
         cx.executor().allow_parking();
-        let panel = |cx: &mut VisualTestContext| {
-            query_tab(&workspace, cx, |tab, _, cx| {
-                tab.editor_split.read(cx).sizes().first().copied()
-            })
+        cx.simulate_input("select * from docs");
+        cx.simulate_keystrokes("secondary-enter");
+        settle(cx);
+
+        let grid = workspace.read_with(cx, |workspace, _| {
+            workspace
+                .profile()
+                .unwrap()
+                .session
+                .active_results()
+                .unwrap()
+                .clone()
+        });
+        let focused = |cx: &mut VisualTestContext| {
+            cx.update(|window, cx| grid.focus_handle(cx).is_focused(window))
         };
-        let viewport = cx.update(|window, _| window.viewport_size().height.as_f32());
+        let view_body = |cx: &mut VisualTestContext| {
+            cx.update(|window, cx| {
+                grid.focus_handle(cx).focus(window, cx);
+                window.dispatch_action(Box::new(crate::actions::ViewCell { row: 0, col: 1 }), cx);
+            });
+            settle(cx);
+        };
 
-        // Empty or one line, the editor takes its floor rather than a fixed
-        // pane; the results get everything else.
-        cx.simulate_input("select 1");
-        settle(cx);
-        let short = panel(cx).expect("the split has been laid out");
-        assert!(
-            f32::from(short) >= crate::theme::layout::EDITOR_MIN_HEIGHT,
-            "the editor keeps its floor"
-        );
-
-        // A long buffer stops at the window's own 40%.
-        let tall = (0..40)
-            .map(|line| format!("select {line};\n"))
-            .collect::<String>();
-        cx.simulate_keystrokes("secondary-a");
-        cx.simulate_input(&tall);
-        settle(cx);
-        let long = panel(cx).expect("the split has been laid out");
-        assert!(
-            f32::from(long) <= viewport * 0.4 + 1.,
-            "a long buffer took {} of {viewport}",
-            f32::from(long)
-        );
-
-        // Once dragged, the split is the user's: shrinking the buffer no
-        // longer pulls it back to the content.
-        let id = workspace.read_with(cx, |workspace, _| {
-            let profile = workspace.profile().unwrap();
-            (profile.id.clone(), profile.session.active_query_tab().unwrap().id)
-        });
-        workspace.update(cx, |workspace, cx| {
-            workspace.mark_editor_resized(&id.0, id.1, cx);
-        });
-        cx.simulate_keystrokes("secondary-a");
-        cx.simulate_input("select 1");
+        view_body(cx);
+        assert_eq!(front_dialog(&workspace, cx), Some("cell-detail"));
+        // The whole value, indented, not the one line the column had room for.
+        let copy = cx
+            .debug_bounds("cell-detail-0")
+            .expect("the dialog's Copy is drawn")
+            .center();
+        cx.simulate_click(copy, gpui::Modifiers::default());
         settle(cx);
         assert_eq!(
-            panel(cx),
-            Some(long),
-            "a dragged split does not follow the buffer"
+            cx.read_from_clipboard().and_then(|item| item.text()),
+            Some("{\n  \"a\": 1\n}".to_string())
         );
+        // Copy says so, and the dialog takes itself down a moment later: no
+        // second keystroke to dismiss a dialog that has done its job.
+        assert!(
+            cx.debug_bounds("cell-detail-copied").is_some(),
+            "the receipt"
+        );
+        assert!(
+            cx.debug_bounds("cell-detail-0").is_none(),
+            "the button gave way to the receipt"
+        );
+        cx.executor()
+            .advance_clock(std::time::Duration::from_secs(1));
+        settle(cx);
+        assert_eq!(front_dialog(&workspace, cx), None);
+        assert!(focused(cx), "the grid takes the keyboard back");
+
+        // The ring moves with the next arrow key, so the keyboard is really
+        // the grid's.
+        let active = |cx: &mut VisualTestContext| {
+            workspace.read_with(cx, |workspace, cx| {
+                workspace
+                    .profile()
+                    .unwrap()
+                    .session
+                    .active_results()
+                    .unwrap()
+                    .read(cx)
+                    .delegate()
+                    .active()
+            })
+        };
+        cx.simulate_keystrokes("down");
+        settle(cx);
+        let first = active(cx);
+        cx.simulate_keystrokes("down");
+        settle(cx);
+        let second = active(cx);
+        assert_eq!((first, second), (Some((0, 0)), Some((1, 0))));
+
+        // Enter closes it without copying, and Escape does the same from the
+        // same place.
+        view_body(cx);
+        assert_eq!(front_dialog(&workspace, cx), Some("cell-detail"));
+        press(cx, "enter");
+        assert_eq!(front_dialog(&workspace, cx), None);
+        assert!(focused(cx));
+
+        view_body(cx);
+        assert_eq!(front_dialog(&workspace, cx), Some("cell-detail"));
+        press(cx, "escape");
+        assert_eq!(front_dialog(&workspace, cx), None);
+        assert!(focused(cx));
 
         quit(workspace, cx);
     });
 }
 
 #[gpui::test]
+fn find_in_the_grid_walks_the_matches_and_hands_the_keyboard_back(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite_holding(
+            cx,
+            "create table notes (id integer primary key, body text);
+             insert into notes values (1, 'alpha'), (2, 'beta'), (3, 'ALPHA');",
+        );
+        cx.executor().allow_parking();
+        cx.simulate_input("select * from notes order by id");
+        cx.simulate_keystrokes("secondary-enter");
+        settle(cx);
+
+        let grid = workspace.read_with(cx, |workspace, _| {
+            workspace
+                .profile()
+                .unwrap()
+                .session
+                .active_results()
+                .unwrap()
+                .clone()
+        });
+        let state = |cx: &mut VisualTestContext| {
+            workspace.read_with(cx, |workspace, cx| {
+                let find = workspace.find.as_ref().map(|find| (find.at, find.total));
+                let active = workspace
+                    .profile()
+                    .unwrap()
+                    .session
+                    .active_results()
+                    .unwrap()
+                    .read(cx)
+                    .delegate()
+                    .active();
+                (find, active)
+            })
         };
-        let viewport = cx.update(|window, _| window.viewport_size().height.as_f32());
 
-        // Empty or one line, the editor takes its floor rather than a fixed
-        // pane; the results get everything else.
-        cx.simulate_input("select 1");
+        // The grid has the keyboard, the way a click gives it.
+        cx.update(|window, cx| grid.focus_handle(cx).focus(window, cx));
+        cx.simulate_keystrokes("secondary-f");
         settle(cx);
-        let short = panel(cx).expect("the split has been laid out");
-        assert!(
-            f32::from(short) >= crate::theme::layout::EDITOR_MIN_HEIGHT,
-            "the editor keeps its floor"
-        );
+        assert!(cx.debug_bounds("find-count").is_some(), "the bar is drawn");
 
-        // A long buffer stops at the window's own 40%.
-        let tall = (0..40)
-            .map(|line| format!("select {line};\n"))
-            .collect::<String>();
-        cx.simulate_keystrokes("secondary-a");
-        cx.simulate_input(&tall);
+        cx.simulate_input("alpha");
         settle(cx);
-        let long = panel(cx).expect("the split has been laid out");
-        assert!(
-            f32::from(long) <= viewport * 0.4 + 1.,
-            "a long buffer took {} of {viewport}",
-            f32::from(long)
-        );
-
-        // Once dragged, the split is the user's: shrinking the buffer no
-        // longer pulls it back to the content.
-        let id = workspace.read_with(cx, |workspace, _| {
-            let profile = workspace.profile().unwrap();
-            (profile.id.clone(), profile.session.active_query_tab().unwrap().id)
-        });
-        workspace.update(cx, |workspace, cx| {
-            workspace.mark_editor_resized(&id.0, id.1, cx);
-        });
-        cx.simulate_keystrokes("secondary-a");
-        cx.simulate_input("select 1");
-        settle(cx);
+        // Two rows, in row order, and the ring on the first -- in the body
+        // column, not the id.
+        assert_eq!(state(cx), (Some((0, 2)), Some((0, 1))));
         assert_eq!(
-            panel(cx),
-            Some(long),
-            "a dragged split does not follow the buffer"
+            cx.read_from_clipboard().and_then(|item| item.text()),
+            None,
+            "finding copies nothing"
+        );
+
+        cx.simulate_keystrokes("enter");
+        settle(cx);
+        assert_eq!(state(cx), (Some((1, 2)), Some((2, 1))));
+        cx.simulate_keystrokes("shift-enter");
+        settle(cx);
+        assert_eq!(state(cx), (Some((0, 2)), Some((0, 1))));
+
+        // Escape puts the bar away, unmarks the cells, and leaves the ring's
+        // keyboard on the grid.
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+        assert_eq!(state(cx), (None, Some((0, 1))));
+        assert!(cx.debug_bounds("find-count").is_none(), "the bar is gone");
+        assert!(
+            cx.update(|window, cx| grid.focus_handle(cx).is_focused(window)),
+            "the grid takes the keyboard back"
+        );
+        cx.simulate_keystrokes("down");
+        settle(cx);
+        assert_eq!(state(cx), (None, Some((1, 1))));
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
+fn the_summary_view_replaces_the_rows_and_the_data_chip_comes_back(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite_holding(cx, "");
+        cx.executor().allow_parking();
+        // A tab that has not run has nothing to summarise, so the chip is not
+        // there yet.
+        assert!(cx.debug_bounds("view-Summary").is_none());
+
+        cx.simulate_input("select 1 as one");
+        cx.simulate_keystrokes("secondary-enter");
+        settle(cx);
+        // Data is what a finished run leaves up, with the trio above it.
+        assert!(cx.debug_bounds("summary").is_none());
+        assert!(cx.debug_bounds("export-results").is_some());
+
+        let chip = |selector: &'static str, cx: &mut VisualTestContext| {
+            let bounds = cx
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("{selector} is drawn"))
+                .center();
+            cx.simulate_click(bounds, gpui::Modifiers::default());
+            settle(cx);
+        };
+        chip("view-Summary", cx);
+        assert!(cx.debug_bounds("summary").is_some(), "the summary is up");
+        assert!(
+            cx.debug_bounds("export-results").is_none(),
+            "the rows and their toolbar gave way"
+        );
+        assert!(workspace.read_with(cx, |workspace, _| {
+            workspace
+                .profile()
+                .unwrap()
+                .session
+                .active_query_tab()
+                .unwrap()
+                .summary_shown()
+        }));
+
+        chip("view-Data", cx);
+        assert!(cx.debug_bounds("summary").is_none());
+        assert!(cx.debug_bounds("export-results").is_some());
+        assert!(!workspace.read_with(cx, |workspace, _| {
+            workspace
+                .profile()
+                .unwrap()
+                .session
+                .active_query_tab()
+                .unwrap()
+                .summary_shown()
+        }));
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
+fn a_relations_copies_ride_above_its_rows_and_its_structure(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite_holding(
+            cx,
+            "create table birds (id integer primary key, name text);",
+        );
+        cx.executor().allow_parking();
+        let row = explorer_row(&workspace, "relation-main\0birds", cx).center();
+        cx.simulate_click(row, gpui::Modifiers::default());
+        settle(cx);
+        // The DDL and the count are offered on a live connection; the connect
+        // lands on the executor a frame or two after the tab opens.
+        for _ in 0..10 {
+            let connected = workspace.read_with(cx, |workspace, _| {
+                matches!(
+                    workspace.profile().unwrap().state,
+                    ProfileState::Connected(_)
+                )
+            });
+            if connected {
+                break;
+            }
+            settle(cx);
+        }
+        settle(cx);
+
+        // The data page: its rows' actions over the grid, its definition's
+        // beside them, and nothing of either in the status bar below.
+        assert!(cx.debug_bounds("import-rows").is_some(), "import");
+        assert!(cx.debug_bounds("count-rows").is_some(), "count");
+        assert!(cx.debug_bounds("copy-create").is_some(), "ddl");
+
+        cx.simulate_keystrokes("secondary-shift-d");
+        settle(cx);
+        let structure = workspace.read_with(cx, |workspace, _| {
+            matches!(
+                workspace
+                    .profile()
+                    .unwrap()
+                    .session
+                    .active_object()
+                    .unwrap()
+                    .body,
+                ObjectBody::Structure { .. }
+            )
+        });
+        assert!(structure, "the structure page is in front");
+        assert!(
+            cx.debug_bounds("copy-create").is_some(),
+            "the structure page keeps them"
         );
 
         quit(workspace, cx);
@@ -3827,8 +4108,9 @@ fn copy_results_formats_work_from_menu_and_palette_and_restore_focus(cx: &mut Te
                 open_menu(cx);
                 cx.simulate_keystrokes("down down");
                 settle(cx);
-                // The menu hangs off the right edge, so its submenu opens leftwards.
-                cx.simulate_keystrokes("left");
+                // The menu hangs off the toolbar's left end, so its submenu
+                // opens rightwards.
+                cx.simulate_keystrokes("right");
                 settle(cx);
                 for _ in 0..ix {
                     cx.simulate_keystrokes("down");
