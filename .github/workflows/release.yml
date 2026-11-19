@@ -118,10 +118,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # `name: windows` and not an unnamed download: that takes every artifact
+      # in the run, which put `release-notes.md` into `dist/`, got it signed,
+      # and uploaded it as a release asset beside the installer.
       - uses: actions/download-artifact@v8
         with:
+          name: windows
           path: dist
-          merge-multiple: true
 
       # Every asset gets a minisign signature beside it, `<asset>.minisig`,
       # which is what the app checks an update against before installing it.
@@ -182,10 +185,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # The two artifact sets the release carries, named rather than downloaded
+      # all: `release-notes.md` is read from the workspace below, not uploaded.
       - uses: actions/download-artifact@v8
         with:
+          name: windows
           path: dist
-          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: signatures
+          path: dist
       - uses: actions/download-artifact@v8
         with:
           name: release-notes
