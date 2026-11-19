@@ -1431,12 +1431,12 @@ impl Workspace {
                                     self.choice(
                                         "import-choice",
                                         0,
-                                        button(
+                                        ui::accent_button(
                                             "confirm-import",
                                             "Import",
-                                            Tone::Primary,
                                             Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .on_click(
                                             cx.listener(|workspace, _, window, cx| {
@@ -1915,12 +1915,12 @@ impl Workspace {
                                     self.choice(
                                         "pending-run",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "approve-pending-run",
                                             confirm,
                                             tone,
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .on_click(
                                             move |_, _, cx| {
@@ -2190,15 +2190,15 @@ impl Workspace {
                                     self.choice(
                                         "stale-edit",
                                         usize::from(editing),
-                                        button(
+                                        confirm_button(
                                             "refresh-stale-edit",
                                             "Refresh",
                                             match editing {
                                                 true => Tone::Quiet,
                                                 false => Tone::Primary,
                                             },
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .on_click(
                                             move |_, window, cx| {
@@ -2214,12 +2214,12 @@ impl Workspace {
                                     self.choice(
                                         "stale-edit",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "approve-stale-edit",
                                             "Edit anyway",
                                             Tone::Primary,
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .on_click(
                                             move |_, window, cx| {
@@ -2349,12 +2349,12 @@ impl Workspace {
                                     self.choice(
                                         "apply-review",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "run-apply",
                                             "Run",
                                             if running { Tone::Quiet } else { Tone::Primary },
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .disabled(running)
                                         .on_click(
@@ -3789,6 +3789,22 @@ fn nested_field_row(
                 .items_center()
                 .child(control),
         )
+}
+
+/// A dialog's final confirmation: filled in the accent where it is the
+/// ordinary affirmative, and left in its own tone where that tone is a
+/// destructive red or a warning the user has to read first.
+pub(super) fn confirm_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    tone: Tone,
+    t: Theme,
+    cx: &App,
+) -> Button {
+    match tone {
+        Tone::Primary => ui::accent_button(id, label, Control::Standard, t, cx),
+        _ => button(id, label, tone, Control::Standard, t),
+    }
 }
 
 /// A small boxed field for a number of seconds, its unit after it.

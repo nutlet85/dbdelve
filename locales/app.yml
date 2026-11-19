@@ -641,6 +641,7 @@ tooltip.toggle_comment:        { en: "Toggle line comment", zh-CN: "切换行注
 # —— 按钮与杂项 ——
 button.add_filter:             { en: "Add filter", zh-CN: "添加筛选" }
 button.apply:                  { en: "Apply", zh-CN: "应用" }
+button.run:                    { en: "Run", zh-CN: "运行" }
 button.cancel:                 { en: "Cancel", zh-CN: "取消" }
 button.insert:                 { en: "Insert", zh-CN: "插入" }
 button.insert_in:              { en: "Insert in %{table}", zh-CN: "插入到 %{table}" }

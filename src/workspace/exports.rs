@@ -21,6 +21,7 @@ use gpui_component::{
 };
 
 use super::editing::Short;
+use super::forms::confirm_button;
 use super::*;
 use crate::db::{Column, Feed, Fetch, QueryResult, Row};
 use crate::export::{FileAs, InsertTarget, Writer};
@@ -639,12 +640,12 @@ impl Workspace {
                                     self.choice(
                                         "pending-export",
                                         if all { 1 } else { 0 },
-                                        button(
+                                        confirm_button(
                                             "export-shown",
                                             shown,
                                             if all { Tone::Quiet } else { Tone::Primary },
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .on_click(
                                             move |_, _, cx| {
@@ -660,12 +661,12 @@ impl Workspace {
                                     self.choice(
                                         "pending-export",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "export-all",
                                             t!("export.all_rows"),
                                             Tone::Primary,
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .on_click(
                                             move |_, _, cx| {

@@ -1482,19 +1482,26 @@ fn import_footer(profile: &str, dialog: &ImportDialog, cx: &mut Context<Workspac
         .map(|plan| plan.rows())
         .unwrap_or_default();
     let blocked = import_blocked(dialog);
-    let import = button(
-        "start-import",
-        format!("Import {}", row_readout(rows, rows)),
+    // The dialog's one action, filled: a click here writes rows to a table,
+    // and a neutral box beside Cancel said it was one more option.
+    let import = match blocked.is_some() {
         // Quiet while disabled, for `run-apply`'s reason: the library's
         // disabled fill dims nothing of a pinned label.
-        if blocked.is_some() {
-            Tone::Quiet
-        } else {
-            Tone::Primary
-        },
-        Control::Standard,
-        t,
-    )
+        true => button(
+            "start-import",
+            format!("Import {}", row_readout(rows, rows)),
+            Tone::Quiet,
+            Control::Standard,
+            t,
+        ),
+        false => ui::accent_button(
+            "start-import",
+            format!("Import {}", row_readout(rows, rows)),
+            Control::Standard,
+            t,
+            cx,
+        ),
+    }
     .disabled(blocked.is_some())
     .on_click(move |_, _, cx| {
         _ = import_workspace.update(cx, |workspace, cx| workspace.start_import(cx));

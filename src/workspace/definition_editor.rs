@@ -10,6 +10,7 @@
 
 use gpui_component::input::{Editor, EditorState};
 
+use super::forms::confirm_button;
 use super::*;
 use crate::db::{RelationKind, Routine, RoutineKind, alter};
 use crate::session::AfterDdl;
@@ -382,12 +383,12 @@ impl Workspace {
                                     self.choice(
                                         "definition-editor",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "definition-apply",
                                             t!("button.apply"),
                                             Tone::Primary,
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .disabled(applying)
                                         .on_click(

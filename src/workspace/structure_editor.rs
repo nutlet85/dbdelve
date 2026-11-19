@@ -18,6 +18,7 @@ use gpui_component::input::InputState;
 use gpui_component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_component::{IndexPath, Sizable};
 
+use super::forms::confirm_button;
 use super::*;
 use crate::db::{ColumnDefinition, Index, IndexKind, RelationKind, alter};
 use crate::session::{ObjectBody, StructureState};
@@ -1021,12 +1022,12 @@ impl Workspace {
                                     self.choice(
                                         "structure-editor",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "structure-apply",
                                             t!("structure_editor.apply"),
                                             Tone::Primary,
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .disabled(applying || empty)
                                         .on_click(

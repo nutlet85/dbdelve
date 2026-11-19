@@ -1054,12 +1054,13 @@ pub(crate) fn swatch(
         )
 }
 
-/// The one action a surface exists to take, in the accent: the connection
-/// form's Connect, the update row's Check now. Everywhere else the primary
-/// button is the neutral control tone (see [`Tone`]).
-pub(crate) fn accent_button(
+/// The accent box, without its content: for the one action a surface exists to
+/// take, whether it says one word or carries an icon and a keycap beside it.
+///
+/// Every accent control comes through here, so Run and a dialog's confirm
+/// cannot drift into two different shades of "the filled one".
+pub(crate) fn accent_control(
     id: impl Into<gpui::ElementId>,
-    label: impl Into<SharedString>,
     size: Control,
     t: Theme,
     cx: &gpui::App,
@@ -1082,15 +1083,27 @@ pub(crate) fn accent_button(
         .when(size == Control::Standard, |standard| {
             standard.min_w(px(layout::CONTROL_MIN_WIDTH))
         })
-        .child(
-            div()
-                .whitespace_nowrap()
-                .line_height(gpui::relative(1.))
-                .text_size(px(size.text_size()))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(t.on_accent)
-                .child(label.into()),
-        )
+}
+
+/// The one action a surface exists to take, in the accent: the connection
+/// form's Connect, the update row's Check now. Everywhere else the primary
+/// button is the neutral control tone (see [`Tone`]).
+pub(crate) fn accent_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    size: Control,
+    t: Theme,
+    cx: &gpui::App,
+) -> Button {
+    accent_control(id, size, t, cx).child(
+        div()
+            .whitespace_nowrap()
+            .line_height(gpui::relative(1.))
+            .text_size(px(size.text_size()))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(t.on_accent)
+            .child(label.into()),
+    )
 }
 
 /// The status bar's choice chip as a button, for a form the keyboard has to
@@ -1435,6 +1448,9 @@ mod tests {
             ("short.remedy_raise_limit", "提高行数上限并重新运行"),
             ("short.doing_copying", "复制"),
             ("short.doing_exporting", "导出"),
+            ("button.run", "运行"),
+            ("editor.hint_empty_run", "运行语句"),
+            ("editor.hint_empty_palette", "打开命令面板"),
         ] {
             assert_eq!(t!(key, locale = "zh-CN"), chinese, "{key}");
         }

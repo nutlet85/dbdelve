@@ -63,7 +63,8 @@ use crate::{
     tab_drag::{DragTab, TabStrip},
     theme::{Theme, fonts, layout, theme},
     ui::{
-        Code, Control, Tone, button, button_label, choice_button, chord_hint, code_highlights,
+        Code, Control, Tone, accent_control, button, button_label, choice_button, chord_hint,
+        code_highlights, keycaps_on_accent,
         compact_count, control, group_thousands, icon_button, key_hint, keycap_text, kind_color,
         object_icon, reconnect_button, row_icon, section_label,
     },
@@ -3915,16 +3916,38 @@ fn render_query_toolbar(
             }),
         )
         .child({
-            // Filled where its neighbours are ghosts: running the buffer is
-            // what the surface is for, and the fill is the only hierarchy
-            // available without spending a colour on it.
-            icon_button("run-query", icon::RUN, Tone::Primary, Control::Compact, t)
+            // The one accent-filled control on the surface, and the only one
+            // carrying its own chord: running the buffer is what this pane
+            // exists for.
+            accent_control("run-query", Control::Compact, t, cx)
+                .debug_selector(|| "run-query".into())
                 .tooltip_with_action(t!("tooltip.run"), &RunQuery, None)
                 .on_click(move |_, window, cx| {
                     _ = run_workspace.update(cx, |workspace, cx| {
                         workspace.run_query(&RunQuery, window, cx);
                     });
                 })
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(layout::SPACE_XS))
+                        .child(
+                            icon(icon::RUN)
+                                .size(px(layout::chrome(layout::ICON_SIZE)))
+                                .text_color(t.on_accent),
+                        )
+                        .child(
+                            div()
+                                .whitespace_nowrap()
+                                .line_height(gpui::relative(1.))
+                                .text_size(px(Control::Compact.text_size()))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(t.on_accent)
+                                .child(t!("button.run")),
+                        )
+                        .child(keycaps_on_accent("secondary-enter", t)),
+                )
         })
         .into_any_element()
 }

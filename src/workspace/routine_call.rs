@@ -9,6 +9,7 @@
 use gpui_component::Sizable;
 use gpui_component::input::InputState;
 
+use super::forms::confirm_button;
 use super::*;
 use crate::db::{Routine, RoutineParameter, alter};
 
@@ -279,12 +280,12 @@ impl Workspace {
                                     self.choice(
                                         "routine-call",
                                         0,
-                                        button(
+                                        confirm_button(
                                             "routine-run",
                                             t!("routine_call.run"),
                                             Tone::Primary,
-                                            Control::Standard,
                                             t,
+                                            cx,
                                         )
                                         .disabled(!ready)
                                         .on_click(
