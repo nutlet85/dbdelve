@@ -456,11 +456,13 @@ const HAIRLINE_LIGHT: f32 = 0.12;
 /// times their own. Keeping the three within a few points of each other is
 /// what lets the tone ramp, rather than the desktop, say which plane is which.
 /// The frost, and the one number that covers every plane, since the rest are
-/// tints over this one rather than over the desktop. 0.72 is what the palette
-/// was built against: a quarter of the desktop, blurred, is depth without
-/// texture under the rows.
+/// tints over this one rather than over the desktop. 0.85 leaves a seventh of
+/// the desktop, blurred: depth without the wallpaper's own colours becoming
+/// the editing surface. At 0.72 a warm desktop turned the results orange and
+/// a dark one turned the editor green, and the rows stopped being the
+/// brightest plane.
 ///
-/// It stays 0.72 everywhere, including where nothing blurs. GPUI's `Blurred`
+/// It stays 0.85 everywhere, including where nothing blurs. GPUI's `Blurred`
 /// is the `org_kde_kwin_blur` Wayland global and nothing else on Linux, so
 /// outside KWin — GNOME, X11 — the desktop arrives sharp and the wallpaper's
 /// own detail reads through the grid. The answer to that is the user raising
@@ -474,7 +476,7 @@ const HAIRLINE_LIGHT: f32 = 0.12;
 /// carrying text, and what that is depends on the theme — see
 /// [`LIGHT_GLASS_OPACITY_DEFAULT`] for light glass, which is free to go lower
 /// and shows the result live.
-pub const OPACITY_DEFAULT: f32 = 0.72;
+pub const OPACITY_DEFAULT: f32 = 0.85;
 pub const OPACITY_MIN: f32 = 0.50;
 /// Light glass's own default, in place of the shared one, so a setting carried
 /// over from dark glass does not decide how light glass first looks. A light
@@ -482,12 +484,12 @@ pub const OPACITY_MIN: f32 = 0.50;
 /// everything the frost lets through darkens the plane the text sits on. Under
 /// a black one — a full-screen terminal is enough — chrome is only `opacity`
 /// times its own tone, and 0.50 leaves dbdelve's own body text near 3.5:1.
-/// 0.79 is where every family holds body text at AA, and muted text, syntax
-/// and `danger` at AA large, on the planes each is shown on — GitHub Light's
-/// `danger` is the last to get there. It is a default, not a limit: someone
-/// can go lower and sees the result live. See
+/// 0.86 is where every family holds body text at AA with room to spare, and
+/// keeps a bright wallpaper from turning the page into its own colour; 0.79
+/// held the text but let a large orange desktop through. It is a default, not
+/// a limit: someone can go lower and sees the result live. See
 /// `light_glass_text_holds_over_a_black_desktop_at_its_default`.
-const LIGHT_GLASS_OPACITY_DEFAULT: f32 = 0.79;
+const LIGHT_GLASS_OPACITY_DEFAULT: f32 = 0.86;
 /// Short of opaque, and that is a palette constraint rather than taste. What
 /// tells this theme's planes apart is mostly how much each lets through, not
 /// their tone — the steps between them are half of dark's. Shut the desktop
@@ -1299,7 +1301,7 @@ impl Theme {
                 // a light frost composites lighter than its own tone, and a
                 // text plane tinted below that greys the window like a smudge.
                 // The default caps how light that composite gets — about 0.96
-                // over white at 0.79 — so both text planes sit above it, and
+                // over white at 0.86 — so both text planes sit above it, and
                 // unlike dark glass the ramp never inverts. The results stop
                 // short of white: at 1.0 the darkest family ink lands outside
                 // `themes_are_comparable_not_mirrored`.
@@ -1439,7 +1441,9 @@ impl Theme {
             // same contrast neighbourhood now that the dark page is grey.
             text: neutral(0.26),
             text_muted: neutral(0.45),
-            text_faint: neutral(0.58),
+            // 0.555 rather than 0.58: the column type and status-bar tier is
+            // small text on the lightest page, where 0.58 lands at 4.28:1.
+            text_faint: neutral(0.515),
 
             accent: Oklch::new(0.52, 0.17, 250.0).to_srgb(),
             on_accent: WHITE,
@@ -1518,7 +1522,9 @@ impl Theme {
 
             text: Srgb::from_hex(0x282828),
             text_muted: Srgb::from_hex(0x504945),
-            text_faint: Srgb::from_hex(0x928374),
+            // Darkened from #928374: 3.24:1 on the page and 2.68:1 on chrome,
+            // where the column types and sidebar details are read.
+            text_faint: Srgb::from_hex(0x6a5e51),
 
             accent: Srgb::from_hex(0x076678),
             on_accent: Srgb::from_hex(0xf9f5d7),
@@ -1598,7 +1604,9 @@ impl Theme {
             // finds too soft; the editor's identifiers keep it.
             text: Srgb::from_hex(0x34364f),
             text_muted: Srgb::from_hex(0x5c5f77),
-            text_faint: Srgb::from_hex(0x7c7f93),
+            // Darkened from #7c7f93, which is 3.53:1 on the page and 2.99:1
+            // on chrome.
+            text_faint: Srgb::from_hex(0x5c6074),
 
             // Darkened from #7287fd.
             accent: Srgb::from_hex(0x6174e8),
@@ -1681,7 +1689,8 @@ impl Theme {
 
             text: Srgb::from_hex(0x1f2328),
             text_muted: Srgb::from_hex(0x59636e),
-            text_faint: Srgb::from_hex(0x818b98),
+            // Darkened from #818b98: 3.45:1 on white and 2.86:1 on chrome.
+            text_faint: Srgb::from_hex(0x5f6975),
 
             accent: Srgb::from_hex(0x0969da),
             on_accent: WHITE,
@@ -1760,7 +1769,8 @@ impl Theme {
             text: Srgb::from_hex(0x031f7b),
             // Darkened from #6172b0.
             text_muted: Srgb::from_hex(0x42518c),
-            text_faint: Srgb::from_hex(0x68709a),
+            // Darkened from #68709a: 3.71:1 on the page and 2.90:1 on chrome.
+            text_faint: Srgb::from_hex(0x485070),
 
             // Darkened from #2e7de9.
             accent: Srgb::from_hex(0x2272dd),
@@ -1850,8 +1860,10 @@ impl Theme {
             // Alucard has no secondary text either: both lower tiers are its
             // comment, the muted one darkened from #6c664b.
             text: Srgb::from_hex(0x1f1f1f),
-            text_muted: Srgb::from_hex(0x676147),
-            text_faint: Srgb::from_hex(0x6c664b),
+            // Both lower tiers darkened from #6c664b's family: on this
+            // theme's dark chrome they landed at 4.19:1 and 4.51:1.
+            text_muted: Srgb::from_hex(0x605a41),
+            text_faint: Srgb::from_hex(0x665f46),
 
             accent: Srgb::from_hex(0x644ac9),
             on_accent: Srgb::from_hex(0xfffbeb),
@@ -1930,10 +1942,11 @@ impl Theme {
             control: Srgb::from_hex(0xe5e5e6),
 
             // Darkened from #383a42, #696c77 and #a0a1a7; the editor's
-            // identifiers keep the first.
+            // identifiers keep the first. The two lower tiers go further than
+            // the upstream greys: faint was 3.01:1 on the page.
             text: Srgb::from_hex(0x33353d),
-            text_muted: Srgb::from_hex(0x5d606b),
-            text_faint: Srgb::from_hex(0x909197),
+            text_muted: Srgb::from_hex(0x555861),
+            text_faint: Srgb::from_hex(0x5b5e69),
 
             accent: Srgb::from_hex(0x4078f2),
             on_accent: Srgb::from_hex(0xfafafa),
@@ -2179,6 +2192,24 @@ mod tests {
                 t.edited.flatten(t.bg),
                 AAA_TEXT,
             );
+        }
+    }
+
+    #[test]
+    fn light_themes_keep_their_smallest_text_at_aa_on_the_data_plane() {
+        // Column types, sidebar details and the status bar are set in the two
+        // dimmer tiers, at 11-12px. On a light page AA large is not enough:
+        // the floor those tiers have to clear is the body one, or the type
+        // label under a column name is the first thing nobody reads.
+        for t in Theme::all()
+            .into_iter()
+            .filter(|t| t.appearance == Appearance::Light)
+        {
+            check(t, "faint on bg", t.text_faint, t.bg, AA_TEXT);
+            check(t, "faint on panel", t.text_faint, t.panel, AA_TEXT);
+            check(t, "faint on surface", t.text_faint, t.surface, AA_TEXT);
+            check(t, "muted on bg", t.text_muted, t.bg, AA_TEXT);
+            check(t, "muted on surface", t.text_muted, t.surface, AA_TEXT);
         }
     }
 

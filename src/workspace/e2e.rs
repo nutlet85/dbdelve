@@ -3388,6 +3388,63 @@ fn the_editor_follows_its_buffer_until_the_split_is_dragged(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        cx.executor().allow_parking();
+        let panel = |cx: &mut VisualTestContext| {
+            query_tab(&workspace, cx, |tab, _, cx| {
+                tab.editor_split.read(cx).sizes().first().copied()
+            })
+        };
+        let viewport = cx.update(|window, _| window.viewport_size().height.as_f32());
+
+        // Empty or one line, the editor takes its floor rather than a fixed
+        // pane; the results get everything else.
+        cx.simulate_input("select 1");
+        settle(cx);
+        let short = panel(cx).expect("the split has been laid out");
+        assert!(
+            f32::from(short) >= crate::theme::layout::EDITOR_MIN_HEIGHT,
+            "the editor keeps its floor"
+        );
+
+        // A long buffer stops at the window's own 40%.
+        let tall = (0..40)
+            .map(|line| format!("select {line};\n"))
+            .collect::<String>();
+        cx.simulate_keystrokes("secondary-a");
+        cx.simulate_input(&tall);
+        settle(cx);
+        let long = panel(cx).expect("the split has been laid out");
+        assert!(
+            f32::from(long) <= viewport * 0.4 + 1.,
+            "a long buffer took {} of {viewport}",
+            f32::from(long)
+        );
+
+        // Once dragged, the split is the user's: shrinking the buffer no
+        // longer pulls it back to the content.
+        let id = workspace.read_with(cx, |workspace, _| {
+            let profile = workspace.profile().unwrap();
+            (profile.id.clone(), profile.session.active_query_tab().unwrap().id)
+        });
+        workspace.update(cx, |workspace, cx| {
+            workspace.mark_editor_resized(&id.0, id.1, cx);
+        });
+        cx.simulate_keystrokes("secondary-a");
+        cx.simulate_input("select 1");
+        settle(cx);
+        assert_eq!(
+            panel(cx),
+            Some(long),
+            "a dragged split does not follow the buffer"
+        );
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
         };
         let viewport = cx.update(|window, _| window.viewport_size().height.as_f32());
 
