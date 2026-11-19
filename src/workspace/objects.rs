@@ -236,6 +236,13 @@ impl Workspace {
             return;
         };
         let connected = profile.connection().is_some();
+        // The server's own spelling of a page: a SQL Server before 2012 has no
+        // `OFFSET … FETCH`, and the connection learned which it is at login.
+        let paging = profile
+            .connection()
+            .map_or(engine.spec().sql.paging, |connection| {
+                connection.paging(engine)
+            });
         let Some(tab) = profile.session.objects.iter_mut().find(|tab| tab.id == id) else {
             return;
         };
@@ -292,7 +299,7 @@ impl Workspace {
         // the rows on screen and the bars as they stand, so it can be corrected
         // rather than retyped.
         let paged = sql::is_generated_select(engine, &sql)
-            .then(|| sql::paged(engine, &sql, &key))
+            .then(|| sql::paged_as(paging, engine, &sql, &key))
             .flatten();
         *sent_from = paged.clone().map(|paged| (paged, sql.clone()));
         let Some(sql) = paged else {
@@ -1048,6 +1055,7 @@ impl Workspace {
         let Some(connection) = profile.connection() else {
             return;
         };
+        let paging = connection.paging(engine);
         let (profile_id, generation) = (profile.id.clone(), profile.generation);
         let Some(tab) = profile.session.active_object() else {
             return;
@@ -1090,7 +1098,7 @@ impl Workspace {
                 let filter = derived_filter(engine, &[bar], &columns);
                 let sql = explorer::probe_sql(engine, &reference.schema, &reference.table, &filter);
                 let sql = sql::is_generated_select(engine, &sql)
-                    .then(|| sql::paged(engine, &sql, &[]))
+                    .then(|| sql::paged_as(paging, engine, &sql, &[]))
                     .flatten();
                 Some((index, label, sql))
             })

@@ -34,7 +34,7 @@ use tracing::span;
 
 use super::ssh::{Tunnel, tunnelled};
 use super::{
-    Catalog, Cell, Column, DbError, EditTarget, Engine, Fetch, QueryResult, Reference,
+    Catalog, Cell, Column, DbError, EditTarget, Engine, Fetch, Paging, QueryResult, Reference,
     RelationKind, Routine, RoutineParameter, Row, ServerConfig, SslMode, Stopped, Structure,
     ViewDefinition, assemble_catalog, assemble_databases, assemble_foreign_keys,
     assemble_parameters, assemble_references, assemble_structure, assemble_view_definitions,
@@ -87,11 +87,17 @@ SELECT
     s.name AS schema_name,
     o.name AS routine_name,
     CASE WHEN o.type IN ('P', 'PC') THEN 'procedure' ELSE 'function' END AS routine_kind,
+    -- `STUFF … FOR XML` rather than `STRING_AGG`, which SQL Server 2008 R2
+    -- does not have: it is this catalog's own text, and `.value('.', …)` reads
+    -- the concatenation back as text rather than as escaped XML.
     COALESCE((
-        SELECT STRING_AGG(CAST(p.name COLLATE DATABASE_DEFAULT + N' ' + {type} AS nvarchar(max)), N', ')
-            WITHIN GROUP (ORDER BY p.parameter_id)
-        FROM sys.parameters AS p
-        WHERE p.object_id = o.object_id AND p.parameter_id > 0
+        SELECT STUFF((
+            SELECT N', ' + CAST(p.name COLLATE DATABASE_DEFAULT + N' ' + {type} AS nvarchar(max))
+            FROM sys.parameters AS p
+            WHERE p.object_id = o.object_id AND p.parameter_id > 0
+            ORDER BY p.parameter_id
+            FOR XML PATH(''), TYPE
+        ).value('.', 'nvarchar(max)'), 1, 2, N'')
     ), N'') AS identity_arguments,
     CASE
         WHEN o.type IN ('IF', 'TF', 'FT') THEN N'TABLE'
@@ -183,19 +189,17 @@ SELECT
     CASE WHEN p.is_nullable = 1 THEN 'yes' ELSE 'no' END AS nullable,
     -- An identity or computed column has no default constraint, so reading
     -- only the default would report that the user must supply a value the
-    -- server generates.
+    -- server generates. `+` rather than `CONCAT`, which arrived in SQL Server
+    -- 2012, so every nullable part is wrapped.
     CASE
-        WHEN p.is_identity = 1 THEN CONCAT(
-            N'IDENTITY(',
-            CAST(identity_column.seed_value AS nvarchar(40)), N',',
-            CAST(identity_column.increment_value AS nvarchar(40)), N')'
-        )
-        -- `computed.definition` is null without `VIEW DEFINITION`, and `CONCAT`
-        -- turns that into a silent `N'AS '`; say the definition is hidden instead.
-        WHEN p.is_computed = 1 THEN CONCAT(
-            N'AS ', COALESCE(computed.definition COLLATE DATABASE_DEFAULT, N'<hidden>'),
-            CASE WHEN computed.is_persisted = 1 THEN N' PERSISTED' ELSE N'' END
-        )
+        WHEN p.is_identity = 1 THEN N'IDENTITY('
+            + CAST(identity_column.seed_value AS nvarchar(40)) + N','
+            + CAST(identity_column.increment_value AS nvarchar(40)) + N')'
+        -- `computed.definition` is null without `VIEW DEFINITION`, and `+`
+        -- would take the whole definition with it; say it is hidden instead.
+        WHEN p.is_computed = 1 THEN N'AS '
+            + COALESCE(computed.definition COLLATE DATABASE_DEFAULT, N'<hidden>')
+            + CASE WHEN computed.is_persisted = 1 THEN N' PERSISTED' ELSE N'' END
         ELSE COALESCE(default_constraint.definition COLLATE DATABASE_DEFAULT, N'')
     END AS column_default
 FROM sys.columns AS p
@@ -220,21 +224,20 @@ SELECT
     CASE i.type
         -- A clustered columnstore index has no key: every column is stored,
         -- and none is worth naming.
-        WHEN 5 THEN CONCAT(i.type_desc COLLATE DATABASE_DEFAULT, N' INDEX')
+        WHEN 5 THEN i.type_desc COLLATE DATABASE_DEFAULT + N' INDEX'
         -- A nonclustered columnstore index has no key either; what it has is
         -- the columns it stores, read the same way an INCLUDE list is.
-        WHEN 6 THEN CONCAT(
-            i.type_desc COLLATE DATABASE_DEFAULT, N' INDEX (', included.list, N')'
-        )
-        ELSE CONCAT(
-            CASE WHEN i.is_unique = 1 THEN N'UNIQUE ' ELSE N'' END,
-            i.type_desc COLLATE DATABASE_DEFAULT, N' INDEX (', keyed.list, N')',
-            CASE WHEN included.list IS NULL THEN N''
-                ELSE CONCAT(N' INCLUDE (', included.list, N')') END,
-            CASE WHEN i.has_filter = 1
-                THEN CONCAT(N' WHERE ', i.filter_definition COLLATE DATABASE_DEFAULT)
+        WHEN 6 THEN i.type_desc COLLATE DATABASE_DEFAULT + N' INDEX ('
+            + COALESCE(included.list, N'') + N')'
+        ELSE
+            CASE WHEN i.is_unique = 1 THEN N'UNIQUE ' ELSE N'' END
+            + i.type_desc COLLATE DATABASE_DEFAULT + N' INDEX ('
+            + COALESCE(keyed.list, N'') + N')'
+            + CASE WHEN included.list IS NULL THEN N''
+                ELSE N' INCLUDE (' + included.list + N')' END
+            + CASE WHEN i.has_filter = 1
+                THEN N' WHERE ' + COALESCE(i.filter_definition COLLATE DATABASE_DEFAULT, N'')
                 ELSE N'' END
-        )
     END AS definition,
     CASE
         WHEN i.is_primary_key = 1 THEN N'primary'
@@ -244,29 +247,56 @@ SELECT
     CASE i.type WHEN 6 THEN included.separated ELSE keyed.separated END AS index_columns,
     i.filter_definition AS index_predicate
 FROM sys.indexes AS i
+-- `STUFF … FOR XML` for the lists, because `STRING_AGG` is SQL Server 2017
+-- and this has to answer on 2008 R2. `.value('.', …)` reads the text back
+-- rather than its XML escaping.
 OUTER APPLY (
-    SELECT STRING_AGG(
-        CAST({column} COLLATE DATABASE_DEFAULT + CASE WHEN ic.is_descending_key = 1 THEN N' DESC' ELSE N'' END
-            AS nvarchar(max)),
-        N', '
-    ) WITHIN GROUP (ORDER BY ic.key_ordinal) AS list,
-    STRING_AGG(
-        CAST({column} COLLATE DATABASE_DEFAULT + CASE WHEN ic.is_descending_key = 1 THEN N' DESC' ELSE N'' END
-            AS nvarchar(max)),
-        NCHAR(31)
-    ) WITHIN GROUP (ORDER BY ic.key_ordinal) AS separated
-    FROM sys.index_columns AS ic
-    JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-    WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0
+    SELECT
+        STUFF((
+            SELECT N', ' + CAST({column} COLLATE DATABASE_DEFAULT
+                + CASE WHEN ic.is_descending_key = 1 THEN N' DESC' ELSE N'' END
+                AS nvarchar(max))
+            FROM sys.index_columns AS ic
+            JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                AND ic.is_included_column = 0
+            ORDER BY ic.key_ordinal
+            FOR XML PATH(''), TYPE
+        ).value('.', 'nvarchar(max)'), 1, 2, N'') AS list,
+        -- 0x1F is what the app splits this list on, and XML cannot carry it:
+        -- aggregate with a private-use character instead and swap it back.
+        REPLACE(STUFF((
+            SELECT NCHAR(57344) + CAST({column} COLLATE DATABASE_DEFAULT
+                + CASE WHEN ic.is_descending_key = 1 THEN N' DESC' ELSE N'' END
+                AS nvarchar(max))
+            FROM sys.index_columns AS ic
+            JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                AND ic.is_included_column = 0
+            ORDER BY ic.key_ordinal
+            FOR XML PATH(''), TYPE
+        ).value('.', 'nvarchar(max)'), 1, 1, N''), NCHAR(57344), NCHAR(31)) AS separated
 ) AS keyed
 OUTER APPLY (
-    SELECT STRING_AGG(CAST({column} COLLATE DATABASE_DEFAULT AS nvarchar(max)), N', ')
-        WITHIN GROUP (ORDER BY ic.index_column_id) AS list,
-    STRING_AGG(CAST({column} COLLATE DATABASE_DEFAULT AS nvarchar(max)), NCHAR(31))
-        WITHIN GROUP (ORDER BY ic.index_column_id) AS separated
-    FROM sys.index_columns AS ic
-    JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-    WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 1
+    SELECT
+        STUFF((
+            SELECT N', ' + CAST({column} COLLATE DATABASE_DEFAULT AS nvarchar(max))
+            FROM sys.index_columns AS ic
+            JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                AND ic.is_included_column = 1
+            ORDER BY ic.index_column_id
+            FOR XML PATH(''), TYPE
+        ).value('.', 'nvarchar(max)'), 1, 2, N'') AS list,
+        REPLACE(STUFF((
+            SELECT NCHAR(57344) + CAST({column} COLLATE DATABASE_DEFAULT AS nvarchar(max))
+            FROM sys.index_columns AS ic
+            JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+            WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id
+                AND ic.is_included_column = 1
+            ORDER BY ic.index_column_id
+            FOR XML PATH(''), TYPE
+        ).value('.', 'nvarchar(max)'), 1, 1, N''), NCHAR(57344), NCHAR(31)) AS separated
 ) AS included
 WHERE i.object_id = {object} AND i.name IS NOT NULL
 ORDER BY i.name
@@ -275,26 +305,28 @@ ORDER BY i.name
 const STRUCTURE_CONSTRAINTS_SQL: &str = "
 SELECT
     k.name AS object_name,
-    CONCAT(
-        CASE k.type WHEN 'PK' THEN N'PRIMARY KEY' ELSE N'UNIQUE' END,
-        CASE WHEN {ddl} = 1 THEN N' ' + key_index.type_desc COLLATE DATABASE_DEFAULT ELSE N'' END,
-        N' (',
-        (
-            SELECT STRING_AGG(
-                CAST({column} COLLATE DATABASE_DEFAULT
-                    + CASE WHEN {ddl} = 1 AND ic.is_descending_key = 1 THEN N' DESC' ELSE N'' END
-                    AS nvarchar(max)),
-                N', '
-            ) WITHIN GROUP (ORDER BY ic.key_ordinal)
-            FROM sys.index_columns AS ic
-            JOIN sys.columns AS c
-                ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-            WHERE ic.object_id = k.parent_object_id
-                AND ic.index_id = k.unique_index_id
-                AND ic.is_included_column = 0
-        ),
-        N')'
-    ) AS definition
+    CASE k.type WHEN 'PK' THEN N'PRIMARY KEY' ELSE N'UNIQUE' END
+        + CASE WHEN {ddl} = 1
+            THEN N' ' + key_index.type_desc COLLATE DATABASE_DEFAULT
+            ELSE N'' END
+        + N' ('
+        + COALESCE((
+            SELECT STUFF((
+                SELECT N', ' + CAST({column} COLLATE DATABASE_DEFAULT
+                    + CASE WHEN {ddl} = 1 AND ic.is_descending_key = 1
+                        THEN N' DESC' ELSE N'' END
+                    AS nvarchar(max))
+                FROM sys.index_columns AS ic
+                JOIN sys.columns AS c
+                    ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                WHERE ic.object_id = k.parent_object_id
+                    AND ic.index_id = k.unique_index_id
+                    AND ic.is_included_column = 0
+                ORDER BY ic.key_ordinal
+                FOR XML PATH(''), TYPE
+            ).value('.', 'nvarchar(max)'), 1, 2, N'')
+        ), N'')
+        + N')' AS definition
 FROM sys.key_constraints AS k
 JOIN sys.indexes AS key_index
     ON key_index.object_id = k.parent_object_id AND key_index.index_id = k.unique_index_id
@@ -302,43 +334,56 @@ WHERE k.parent_object_id = {object}
 UNION ALL
 SELECT
     f.name,
-    CONCAT(
-        N'FOREIGN KEY (',
-        (
-            SELECT STRING_AGG(CAST({column} COLLATE DATABASE_DEFAULT AS nvarchar(max)), N', ')
-                WITHIN GROUP (ORDER BY fc.constraint_column_id)
-            FROM sys.foreign_key_columns AS fc
-            JOIN sys.columns AS c
-                ON c.object_id = fc.parent_object_id AND c.column_id = fc.parent_column_id
-            WHERE fc.constraint_object_id = f.object_id
-        ),
+    N'FOREIGN KEY ('
+        + COALESCE((
+            SELECT STUFF((
+                SELECT N', ' + CAST({column} COLLATE DATABASE_DEFAULT AS nvarchar(max))
+                FROM sys.foreign_key_columns AS fc
+                JOIN sys.columns AS c
+                    ON c.object_id = fc.parent_object_id AND c.column_id = fc.parent_column_id
+                WHERE fc.constraint_object_id = f.object_id
+                ORDER BY fc.constraint_column_id
+                FOR XML PATH(''), TYPE
+            ).value('.', 'nvarchar(max)'), 1, 2, N'')
+        ), N'')
+        + N') REFERENCES '
         -- Referenced identifiers are quoted: unlike the source column list
         -- above, they cross a schema boundary the reader has no other way to
-        -- see the bounds of.
-        N') REFERENCES ', QUOTENAME(OBJECT_SCHEMA_NAME(f.referenced_object_id), '\"') COLLATE DATABASE_DEFAULT,
-        N'.', QUOTENAME(OBJECT_NAME(f.referenced_object_id), '\"') COLLATE DATABASE_DEFAULT, N' (',
-        (
-            SELECT STRING_AGG(CAST(QUOTENAME(c.name, '\"') COLLATE DATABASE_DEFAULT AS nvarchar(max)), N', ')
-                WITHIN GROUP (ORDER BY fc.constraint_column_id)
-            FROM sys.foreign_key_columns AS fc
-            JOIN sys.columns AS c
-                ON c.object_id = fc.referenced_object_id AND c.column_id = fc.referenced_column_id
-            WHERE fc.constraint_object_id = f.object_id
-        ),
-        N')',
-        CASE WHEN f.delete_referential_action_desc <> 'NO_ACTION'
-            THEN CONCAT(N' ON DELETE ', REPLACE(f.delete_referential_action_desc, '_', ' ') COLLATE DATABASE_DEFAULT)
-            ELSE N'' END,
-        CASE WHEN f.update_referential_action_desc <> 'NO_ACTION'
-            THEN CONCAT(N' ON UPDATE ', REPLACE(f.update_referential_action_desc, '_', ' ') COLLATE DATABASE_DEFAULT)
-            ELSE N'' END,
-        CASE WHEN {ddl} = 0 AND f.is_disabled = 1 THEN N' DISABLED' ELSE N'' END,
-        CASE WHEN {ddl} = 0 AND f.is_not_trusted = 1 THEN N' NOT TRUSTED' ELSE N'' END
-    )
+        -- see the bounds of. A name the login cannot see is empty rather than
+        -- taking the whole definition with it.
+        + COALESCE(QUOTENAME(OBJECT_SCHEMA_NAME(f.referenced_object_id), '\"'), N'')
+            COLLATE DATABASE_DEFAULT
+        + N'.'
+        + COALESCE(QUOTENAME(OBJECT_NAME(f.referenced_object_id), '\"'), N'')
+            COLLATE DATABASE_DEFAULT
+        + N' ('
+        + COALESCE((
+            SELECT STUFF((
+                SELECT N', ' + CAST(QUOTENAME(c.name, '\"') COLLATE DATABASE_DEFAULT AS nvarchar(max))
+                FROM sys.foreign_key_columns AS fc
+                JOIN sys.columns AS c
+                    ON c.object_id = fc.referenced_object_id AND c.column_id = fc.referenced_column_id
+                WHERE fc.constraint_object_id = f.object_id
+                ORDER BY fc.constraint_column_id
+                FOR XML PATH(''), TYPE
+            ).value('.', 'nvarchar(max)'), 1, 2, N'')
+        ), N'')
+        + N')'
+        + CASE WHEN f.delete_referential_action_desc <> 'NO_ACTION'
+            THEN N' ON DELETE '
+                + REPLACE(f.delete_referential_action_desc, '_', ' ') COLLATE DATABASE_DEFAULT
+            ELSE N'' END
+        + CASE WHEN f.update_referential_action_desc <> 'NO_ACTION'
+            THEN N' ON UPDATE '
+                + REPLACE(f.update_referential_action_desc, '_', ' ') COLLATE DATABASE_DEFAULT
+            ELSE N'' END
+        + CASE WHEN {ddl} = 0 AND f.is_disabled = 1 THEN N' DISABLED' ELSE N'' END
+        + CASE WHEN {ddl} = 0 AND f.is_not_trusted = 1 THEN N' NOT TRUSTED' ELSE N'' END
 FROM sys.foreign_keys AS f
 WHERE f.parent_object_id = {object}
 UNION ALL
-SELECT c.name, CONCAT(N'CHECK ', c.definition COLLATE DATABASE_DEFAULT)
+SELECT c.name,
+    N'CHECK ' + COALESCE(c.definition COLLATE DATABASE_DEFAULT, N'')
 FROM sys.check_constraints AS c
 WHERE c.parent_object_id = {object}
 ORDER BY object_name
@@ -626,6 +671,35 @@ impl Session {
             }
         }
     }
+
+    /// The server's major version, read from `ProductVersion`: present on
+    /// every server, where `ProductMajorVersion` is absent (and reads NULL) on
+    /// the oldest ones. A probe that fails answers nothing rather than failing
+    /// the login.
+    fn major_version(&mut self) -> Option<u32> {
+        const VERSION: &str =
+            "SELECT CONVERT(nvarchar(128), SERVERPROPERTY(N'ProductVersion')) AS version";
+        let Some(Ok(collected)) = self.trip(VERSION) else {
+            return None;
+        };
+        major_of(collected.result.rows.first()?.get(0)?)
+    }
+}
+
+/// The major version a `ProductVersion` string opens with (`10.50.4000.0` is
+/// 10), or `None` for one that does not parse.
+fn major_of(version: &str) -> Option<u32> {
+    version.split('.').next()?.trim().parse().ok()
+}
+
+/// How a server of `major` spells a page: `OFFSET … FETCH` from SQL Server
+/// 2012 (11) on, and the `TOP`/`ROW_NUMBER` forms before it. An unknown
+/// version takes the older spelling, which every server accepts.
+fn paging_for(major: Option<u32>) -> Paging {
+    match major {
+        Some(major) if major >= 11 => Paging::OffsetFetch,
+        _ => Paging::TopRowNumber,
+    }
 }
 
 /// The line tiberius 0.12.3 logs an INFO token on, in `get_info`. Its
@@ -769,6 +843,11 @@ pub struct Connection {
     /// good rather than reconnecting, and has no session of the user's to
     /// report lost.
     alongside: bool,
+    /// The server's major version, read once at login: 10 is SQL Server 2008,
+    /// 11 is 2012, and pages before 11 are spelled without `OFFSET … FETCH`
+    /// ([`Self::paging`]). Shared by every clone, since one server answers
+    /// them all.
+    major: Arc<Mutex<Option<u32>>>,
 }
 
 impl Connection {
@@ -780,6 +859,7 @@ impl Connection {
                 server: server.clone(),
                 tunnel,
                 alongside: false,
+                major: Arc::new(Mutex::new(None)),
             };
             let mut session = connection.connect()?;
             // Asked even when the profile names one, for the server's spelling
@@ -801,8 +881,51 @@ impl Connection {
     }
 
     fn connect(&self) -> Result<Session, DbError> {
-        self.server
-            .forgetting_on_failure(Engine::SqlServer, self.sign_in())
+        let mut session = self
+            .server
+            .forgetting_on_failure(Engine::SqlServer, self.sign_in())?;
+        // Asked of the live session, once per login: what pages are spelled
+        // with depends on the server, not the dialect. A server that cannot
+        // answer (or names no version) leaves `major` unknown, and
+        // `paging` then takes the form that works everywhere.
+        if let Some(major) = session.major_version() {
+            *self
+                .major
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(major);
+        } else if session.lost.is_some() {
+            return Err(plain_error(
+                "The connection was lost while reading the server's version.".into(),
+            ));
+        }
+        Ok(session)
+    }
+
+    /// How this server spells a page of a generated preview.
+    ///
+    /// `OFFSET … FETCH` arrived with SQL Server 2012 (major 11); before that
+    /// the first page is `SELECT TOP (n)` and later pages are numbered with
+    /// `ROW_NUMBER()`. An unknown version takes the older spelling: it works
+    /// on every server, where `OFFSET` would fail outright on the ones this is
+    /// for.
+    pub fn paging(&self) -> Paging {
+        paging_for(
+            *self
+                .major
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+    }
+
+    /// Whether the server can say where a result's columns came from
+    /// (`sys.dm_exec_describe_first_result_set`), which is what makes a result
+    /// editable. SQL Server 2012 (11) added it; an unknown version says no,
+    /// and a relation's structure answers for its own `SELECT *`.
+    pub fn describes_results(&self) -> bool {
+        self.major
+            .lock()
+            .map(|major| major.is_some_and(|major| major >= 11))
+            .unwrap_or(false)
     }
 
     /// `prefer` and `disable` are the rungs that may reach less than their
@@ -1013,7 +1136,11 @@ impl Connection {
             unreachable!("a run that did not finish was stopped or lost the session")
         };
         let mut result = result?;
-        if !probed.is_empty() {
+        // A page before 2012 carries a row number of dbdelve's own, which is
+        // the statement's and not the user's: gone before anything reads the
+        // columns, the edit target included.
+        let paged = strip_page_column(&mut result, sql);
+        if !probed.is_empty() && !paged {
             drop(guard);
             result.edit = self.edit_target(&probed);
         }
@@ -2160,6 +2287,36 @@ fn iso_datetime(value: &str) -> Option<String> {
         .filter(|time| !time.is_empty())
         .unwrap_or("00:00:00");
     (clock && fraction_ok).then(|| format!("'{}T{time}'", &value[..10]))
+}
+
+/// The synthetic row number a paged statement before 2012 carries, dropped
+/// from the result so the grid sees the statement's own columns. `true` when
+/// it was dropped.
+///
+/// Recognised by the marker the statement ends in and the column's name, both
+/// of which dbdelve wrote: a result whose own statement happens to hold a
+/// column of that name is untouched.
+fn strip_page_column(result: &mut QueryResult, sql: &str) -> bool {
+    if !sql.trim_end().ends_with(crate::sql::PAGE_MARKER) {
+        return false;
+    }
+    if !result
+        .columns
+        .last()
+        .is_some_and(|column| column.name.eq_ignore_ascii_case(crate::sql::PAGE_ROW))
+    {
+        return false;
+    }
+    result.columns.pop();
+    let last = result.columns.len();
+    for row in &mut result.rows {
+        if let Some(dropped) = row.get(last) {
+            result.bytes = result.bytes.saturating_sub(dropped.len());
+        }
+    }
+    let rows = std::mem::take(&mut result.rows);
+    result.rows = rows.into_iter().map(Row::without_last).collect();
+    true
 }
 
 fn connect_error(error: &tiberius::error::Error, server: &ServerConfig) -> DbError {
@@ -5001,6 +5158,61 @@ mod tests {
     }
 
     #[test]
+    fn a_paged_result_loses_its_row_number() {
+        let mut result = QueryResult {
+            columns: vec![
+                Column {
+                    name: "id".into(),
+                    ..Default::default()
+                },
+                Column {
+                    name: crate::sql::PAGE_ROW.into(),
+                    ..Default::default()
+                },
+            ],
+            rows: vec![Row::new([Some("1"), Some("41")]).unwrap()],
+            bytes: 3,
+            ..Default::default()
+        };
+        assert!(strip_page_column(
+            &mut result,
+            &format!("SELECT 1 {}", crate::sql::PAGE_MARKER)
+        ));
+        assert_eq!(result.columns.len(), 1);
+        assert_eq!(result.rows[0].iter().collect::<Vec<_>>(), vec![Some("1")]);
+        assert_eq!(result.bytes, 1);
+    }
+
+    #[test]
+    fn a_result_that_is_not_a_page_keeps_its_columns() {
+        let mut result = QueryResult {
+            columns: vec![Column {
+                name: crate::sql::PAGE_ROW.into(),
+                ..Default::default()
+            }],
+            rows: vec![Row::new([Some("1")]).unwrap()],
+            ..Default::default()
+        };
+        // The statement is the user's, so a column named like the page's own
+        // row number is the user's too.
+        assert!(!strip_page_column(&mut result, "SELECT 1"));
+        assert_eq!(result.columns.len(), 1);
+    }
+
+    #[test]
+    fn the_servers_version_picks_the_page_spelling() {
+        assert_eq!(paging_for(Some(10)), Paging::TopRowNumber);
+        assert_eq!(paging_for(Some(11)), Paging::OffsetFetch);
+        assert_eq!(paging_for(Some(16)), Paging::OffsetFetch);
+        // Nothing known yet, or a server that would not say, takes the
+        // spelling every server accepts.
+        assert_eq!(paging_for(None), Paging::TopRowNumber);
+        assert_eq!(major_of("10.50.4000.0"), Some(10));
+        assert_eq!(major_of("13.0.1601.5"), Some(13));
+        assert_eq!(major_of(""), None);
+    }
+
+    #[test]
     fn a_cancel_while_reconnecting_stops_the_statement_before_it_is_sent() {
         // A server that accepts the connection and never answers the login.
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -5014,6 +5226,7 @@ mod tests {
             .unwrap(),
             tunnel: None,
             alongside: false,
+            major: Arc::new(Mutex::new(None)),
         };
         let user = connection.clone();
         let run = std::thread::spawn(move || user.query("SELECT 1", Fetch::default()));

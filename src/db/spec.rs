@@ -430,6 +430,13 @@ pub enum Paging {
     /// repeat or skip rows from one page to the next, so a preview's first
     /// page waits for the structure that names the key.
     OffsetFetch,
+    /// A SQL Server before 2012, which has no `OFFSET … FETCH`: the first page
+    /// is `SELECT TOP (n)` and one after it wraps the statement in a
+    /// `ROW_NUMBER()` filter, whose synthetic column the driver drops. Chosen
+    /// per connection from the server's own version
+    /// ([`Connection::paging`](super::Connection::paging)), never from the
+    /// dialect.
+    TopRowNumber,
     /// `LIMIT … OFFSET …` as the default, but a page of an unsorted preview is
     /// not stable without an `ORDER BY` (parallel reads, background merges), so
     /// the relation's key orders it and the first page waits for the structure.

@@ -55,8 +55,8 @@ use crate::{
     result_grid::{NewValue, ResultGrid},
     scroller::{SmoothScrollable, scroll_to, smooth, smooth_for, smooth_scoped},
     session::{
-        Explained, ObjectBody, ObjectTab, Profile, ProfileState, QueryState, QueryTab, Said,
-        Session, StructureState, Tab, insert_left_out, query_label, result_pane_is_expanded,
+        Explained, ObjectBody, ObjectTab, Profile, ProfileState, QueryState, QueryTab, RowCount,
+        Said, Session, StructureState, Tab, insert_left_out, query_label, result_pane_is_expanded,
     },
     sql::Mode,
     structure_grid::{Section, StructureGrid},
@@ -2819,6 +2819,30 @@ fn relation_preview(session: &Session) -> Option<(Option<usize>, usize, bool)> {
     })
 }
 
+/// The relation's page count, when the user has asked for its exact count
+/// under the filter on screen. A count is never run unasked, so this is
+/// `None` until the Count button has answered; the pager then reads
+/// `3 / 12`.
+fn counted_pages(profile: &Profile) -> Option<usize> {
+    let tab = profile.session.active_object()?;
+    let ObjectBody::Relation {
+        count,
+        filter,
+        limit,
+        ..
+    } = &tab.body
+    else {
+        return None;
+    };
+    let RowCount::Counted(asked, rows) = count else {
+        return None;
+    };
+    if asked != filter {
+        return None;
+    }
+    Some((*rows as usize).div_ceil((*limit)?))
+}
+
 /// A run in flight, centred in the status bar in place of the pager: how long
 /// it has taken, the rows that have streamed in so far, and the way to stop it.
 pub(crate) fn render_running(
@@ -2927,6 +2951,7 @@ pub(crate) fn render_paging(
     // controls that can do nothing. So is one over a statement with no page
     // after its first to ask for.
     let pages = profile.config.engine().pages();
+    let total_pages = counted_pages(profile);
     let pager = preview
         .filter(|_| pages)
         .and_then(|(_, offset, full_page)| {
@@ -2976,6 +3001,14 @@ pub(crate) fn render_paging(
                                     .text_size(px(layout::chrome(layout::TEXT_SM))),
                             ),
                     )
+                    .children(total_pages.map(|pages| {
+                        div()
+                            .flex_shrink_0()
+                            .whitespace_nowrap()
+                            .text_size(px(layout::chrome(layout::TEXT_SM)))
+                            .text_color(t.text_faint)
+                            .child(format!("/ {pages}"))
+                    }))
                     .children(full_page.then(|| {
                         icon_button(
                             "next-page",

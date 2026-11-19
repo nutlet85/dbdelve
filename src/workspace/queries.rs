@@ -2166,6 +2166,10 @@ impl Workspace {
             }
             return;
         };
+        // Read before the connection moves into the statement's task: what the
+        // landing path needs is whether this server can describe a result,
+        // not the connection itself.
+        let describes_results = connection.describes_results();
         // Lent only now the run is certain to start, so nothing refused above
         // leaves it lent.
         if let (Tab::Query(query), None, Some(Refresh::Earlier { index, .. })) =
@@ -2539,6 +2543,32 @@ impl Workspace {
                                 queue.remaining.clear();
                             }
                         }
+                        // A server that cannot describe a result cannot say
+                        // where its columns came from. A relation's own
+                        // `SELECT *` is the one statement whose source is known
+                        // without it: the tab's structure, captured here
+                        // because `slot_at` borrows the session below.
+                        let edit_hint = (!describes_results)
+                            .then(|| match tab {
+                                Tab::Object(object) => profile
+                                    .session
+                                    .objects
+                                    .iter()
+                                    .find(|tab| tab.id == object)
+                                    .and_then(|tab| match &tab.body {
+                                        ObjectBody::Relation {
+                                            structure: StructureState::Loaded(structure),
+                                            ..
+                                        } => Some((
+                                            structure.clone(),
+                                            tab.schema.clone(),
+                                            tab.name.clone(),
+                                        )),
+                                        _ => None,
+                                    }),
+                                Tab::Query(_) => None,
+                            })
+                            .flatten();
                         let Some((state, results)) = profile.session.slot_at(tab, lane.as_ref())
                         else {
                             return;
@@ -2648,6 +2678,20 @@ impl Workspace {
                                     if result.stopped == Some(Stopped::Cancelled) {
                                         result.bytes = result.rows.iter().map(Row::text_len).sum();
                                     }
+                                }
+                                // The driver could not describe the result (a
+                                // SQL Server before 2012). A relation's own
+                                // `SELECT *` is addressed by its structure,
+                                // which is what the tab already holds.
+                                if result.edit.is_none()
+                                    && let Some((structure, schema, name)) = &edit_hint
+                                {
+                                    result.edit = structure.edit_target_from(
+                                        engine,
+                                        schema,
+                                        name,
+                                        &result.columns,
+                                    );
                                 }
                                 // Off the result before it reaches the grid:
                                 // the sets behind the first become results of

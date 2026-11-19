@@ -344,16 +344,23 @@ pub fn with_order_by(engine: Engine, statement: &str, keys: &[SortKey]) -> Optio
     Some(splice(sql, &tree, insert_at..insert_at, &clause))
 }
 
-/// [`sql_paged`] for `engine`. A MongoDB or Redis preview comes back as it
-/// is.
+/// [`paged`] for an engine whose server spells a page the way its dialect does.
 pub fn paged(engine: Engine, statement: &str, key: &[String]) -> Option<String> {
+    paged_as(engine.spec().sql.paging, engine, statement, key)
+}
+
+/// [`paged`] for a server whose page is not its dialect's: a SQL Server before
+/// 2012 has no `OFFSET … FETCH` ([`Paging::TopRowNumber`]) and pages with
+/// `TOP` and a `ROW_NUMBER()` filter instead. Every other engine ignores
+/// `paging` and answers what its spec says.
+pub fn paged_as(paging: Paging, engine: Engine, statement: &str, key: &[String]) -> Option<String> {
     match engine.syntax() {
-        Syntax::Sql => sql_paged(engine.spec(), statement, key),
+        Syntax::Sql => sql_paged(paging, engine.spec(), statement, key),
         Syntax::Mongo | Syntax::Redis => Some(statement.to_string()),
     }
 }
 
-/// A generated preview's page, spelled the way `spec` reads one.
+/// A generated preview's page, spelled the way `paging` reads one.
 ///
 /// Every engine but SQL Server takes the `LIMIT … OFFSET …` a preview is
 /// generated with. T-SQL has no `LIMIT`, and the grammar the gates parse with
@@ -368,9 +375,18 @@ pub fn paged(engine: Engine, statement: &str, key: &[String]) -> Option<String> 
 /// a sort the user asked for, and is all there is when no key is known. A
 /// preview with no limit is one page already, and comes back as it is.
 ///
+/// A server before 2012 has neither spelling: its first page is `SELECT TOP
+/// (n)` and a page after it is wrapped in a `ROW_NUMBER()` filter, whose
+/// synthetic column the driver drops ([`sql_server_page`]).
+///
 /// `None` for a statement this cannot read, or whose limit it cannot.
-pub(crate) fn sql_paged(spec: &EngineSpec, statement: &str, key: &[String]) -> Option<String> {
-    if spec.sql.paging == Paging::LimitOffset {
+pub(crate) fn sql_paged(
+    paging: Paging,
+    spec: &EngineSpec,
+    statement: &str,
+    key: &[String],
+) -> Option<String> {
+    if paging == Paging::LimitOffset {
         return Some(statement.to_string());
     }
     let tree = parse(statement)?;
@@ -378,7 +394,7 @@ pub(crate) fn sql_paged(spec: &EngineSpec, statement: &str, key: &[String]) -> O
     let Some(limit) = child_of_kind(&anchor, "limit") else {
         return Some(statement.to_string());
     };
-    if spec.sql.paging == Paging::LimitOffsetByKey {
+    if paging == Paging::LimitOffsetByKey {
         // Without a key (none declared, or an expression such as `toDate(ts)`)
         // the page stays unordered: there is nothing honest to order it by.
         if child_of_kind(&anchor, "order_by").is_some() || key.is_empty() {
@@ -407,15 +423,24 @@ pub(crate) fn sql_paged(spec: &EngineSpec, statement: &str, key: &[String]) -> O
         Some(offset) => number(offset)?,
         None => 0,
     };
-    let order = match child_of_kind(&anchor, "order_by") {
+    let order = child_of_kind(&anchor, "order_by");
+    if paging == Paging::TopRowNumber {
+        return sql_server_page(
+            spec,
+            Page {
+                statement,
+                tree: &tree,
+                limit,
+                rows,
+                offset,
+                order,
+                key,
+            },
+        );
+    }
+    let order = match order {
         Some(_) => String::new(),
-        None => {
-            key.iter()
-                .fold("ORDER BY (SELECT NULL)".to_string(), |order, column| {
-                    format!("{order}, {}", spec.quote_identifier(column))
-                })
-                + " "
-        }
+        None => format!("ORDER BY {} ", default_order(spec, key)),
     };
     Some(splice(
         statement,
@@ -425,12 +450,157 @@ pub(crate) fn sql_paged(spec: &EngineSpec, statement: &str, key: &[String]) -> O
     ))
 }
 
-/// [`paged`] undone: the `LIMIT … OFFSET …` spelling back from the
-/// `OFFSET … FETCH` one, so the preview that runs can be read by the same
-/// parse that wrote it. Anything not in exactly the shape `paged` writes
-/// comes back unchanged.
+/// The marker a paged SQL Server statement ends in, so the driver knows the
+/// row number column in its result is dbdelve's and not the statement's.
+pub(crate) const PAGE_MARKER: &str = "/*__dbdelve_page*/";
+
+/// The synthetic column a paged SQL Server statement numbers its rows by.
+pub(crate) const PAGE_ROW: &str = "__dbdelve_row";
+
+/// One page's place in the statement: what to take out, the two numbers the
+/// limit held, and the order the rows are read in.
+struct Page<'a> {
+    statement: &'a str,
+    tree: &'a tree_sitter::Tree,
+    limit: tree_sitter::Node<'a>,
+    rows: usize,
+    offset: usize,
+    order: Option<tree_sitter::Node<'a>>,
+    key: &'a [String],
+}
+
+/// A page of a statement on a SQL Server before 2012, which has no
+/// `OFFSET … FETCH`.
+///
+/// The first page is `SELECT TOP (n)` on the statement itself, with the order
+/// an `OFFSET` would have needed written in, so the key still decides the rows
+/// when nothing else sorts them. A page after it cannot use `TOP`; it numbers
+/// the statement's rows with `ROW_NUMBER()` and keeps the ones it wants. Only
+/// a plain `SELECT *` of one relation is wrapped ([`one_relation_select`]):
+/// SQL Server refuses a derived table whose columns repeat, and a statement
+/// dbdelve cannot read whole is one it will not rewrite. `None` for anything
+/// else, so the page fails rather than sending a statement nobody can read.
+fn sql_server_page(spec: &EngineSpec, page: Page<'_>) -> Option<String> {
+    let Page {
+        statement,
+        tree,
+        limit,
+        rows,
+        offset,
+        order,
+        key,
+    } = page;
+    one_relation_select(statement, tree)?;
+    let expression = match order {
+        Some(clause) => order_expression(statement, clause)?,
+        None => default_order(spec, key),
+    };
+    let without_limit = splice(statement, tree, limit.byte_range(), "");
+    if offset == 0 {
+        let ordered = match order {
+            Some(_) => without_limit,
+            None => format!("{without_limit} ORDER BY {expression}"),
+        };
+        let tree = parse(&ordered)?;
+        let keyword = first_of_kind(tree.root_node(), "keyword_select")?;
+        let at = keyword.byte_range().end;
+        return Some(splice(&ordered, &tree, at..at, &format!("TOP ({rows})")));
+    }
+    let tree = parse(&without_limit)?;
+    let anchor = clause_anchor(&tree, &without_limit)?;
+    let inner = match child_of_kind(&anchor, "order_by") {
+        Some(clause) => splice(&without_limit, &tree, clause.byte_range(), ""),
+        None => without_limit,
+    };
+    let end = offset.saturating_add(rows);
+    Some(format!(
+        "SELECT * FROM (SELECT __dbdelve_src.*, ROW_NUMBER() OVER (ORDER BY {expression}) \
+         AS [{PAGE_ROW}] FROM ({inner}) AS __dbdelve_src) AS __dbdelve_page \
+         WHERE [{PAGE_ROW}] > {offset} AND [{PAGE_ROW}] <= {end} \
+         ORDER BY [{PAGE_ROW}] {PAGE_MARKER}"
+    ))
+}
+
+/// The order a page without one is read in: the key after a `(SELECT NULL)`
+/// that orders nothing, which is what an unsorted preview has always run with.
+fn default_order(spec: &EngineSpec, key: &[String]) -> String {
+    key.iter()
+        .fold("(SELECT NULL)".to_string(), |order, column| {
+            format!("{order}, {}", spec.quote_identifier(column))
+        })
+}
+
+/// An `ORDER BY` clause's expressions, without its keywords.
+fn order_expression(statement: &str, clause: tree_sitter::Node) -> Option<String> {
+    let by = child_of_kind(&clause, "keyword_by")?;
+    let expression = statement
+        .get(by.byte_range().end..clause.byte_range().end)?
+        .trim();
+    (!expression.is_empty()).then(|| expression.to_string())
+}
+
+/// Whether `statement` is one `SELECT *` of one relation and nothing else: no
+/// join, CTE, set operation or subquery in its place, and no trailing `;` a
+/// derived table could not hold. The one shape the SQL Server page wraps.
+fn one_relation_select(statement: &str, tree: &tree_sitter::Tree) -> Option<()> {
+    if statement.trim_end().ends_with(';')
+        || first_of_kind(tree.root_node(), "cte").is_some()
+        || first_of_kind(tree.root_node(), "set_operation").is_some()
+    {
+        return None;
+    }
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    let statements: Vec<_> = root
+        .named_children(&mut cursor)
+        .filter(|node| node.kind() == "statement")
+        .collect();
+    let [statement_node] = statements[..] else {
+        return None;
+    };
+    let select = child_of_kind(&statement_node, "select")?;
+    let mut cursor = select.walk();
+    let projections: Vec<_> = select
+        .named_children(&mut cursor)
+        .filter(|node| node.kind() == "select_expression")
+        .collect();
+    let [projection] = projections[..] else {
+        return None;
+    };
+    if statement.get(projection.byte_range())?.trim() != "*" {
+        return None;
+    }
+    let from = child_of_kind(&statement_node, "from")?;
+    let mut cursor = from.walk();
+    let mut relations = 0;
+    for child in from.named_children(&mut cursor) {
+        match child.kind() {
+            "relation" => relations += 1,
+            "keyword_from" | "where" | "order_by" | "limit" => {}
+            _ => return None,
+        }
+    }
+    if relations != 1 {
+        return None;
+    }
+    let relation = child_of_kind(&from, "relation")?;
+    let mut cursor = relation.walk();
+    let mut names = 0;
+    for child in relation.named_children(&mut cursor) {
+        match child.kind() {
+            "object_reference" => names += 1,
+            _ => return None,
+        }
+    }
+    (names == 1).then_some(())
+}
+
+/// [`paged`] undone: the `LIMIT … OFFSET …` spelling back from the forms a
+/// server reads, so the preview that runs can be read by the same parse that
+/// wrote it. Anything not in exactly the shape `paged` writes comes back
+/// unchanged.
 pub fn unpaged(statement: &str) -> String {
-    let unpage = || {
+    let offset_fetch = || {
         let (head, tail) = statement.rsplit_once(" OFFSET ")?;
         let (offset, tail) = tail.split_once(" ROWS FETCH NEXT ")?;
         let rows = tail.strip_suffix(" ROWS ONLY")?;
@@ -444,7 +614,46 @@ pub fn unpaged(statement: &str) -> String {
             .map_or(head, |(head, _)| head);
         Some(format!("{head} LIMIT {rows} OFFSET {offset}"))
     };
-    unpage().unwrap_or_else(|| statement.to_string())
+    let row_numbered = || {
+        let sql = statement.trim_end().strip_suffix(PAGE_MARKER)?.trim_end();
+        let rest = sql
+            .strip_prefix("SELECT * FROM (SELECT __dbdelve_src.*, ROW_NUMBER() OVER (ORDER BY ")?;
+        let (order, rest) = rest.split_once(&format!(") AS [{PAGE_ROW}] FROM ("))?;
+        let (inner, rest) = rest.split_once(&format!(
+            ") AS __dbdelve_src) AS __dbdelve_page WHERE [{PAGE_ROW}] > "
+        ))?;
+        let (offset, rest) = rest.split_once(&format!(" AND [{PAGE_ROW}] <= "))?;
+        let end = rest.strip_suffix(&format!(" ORDER BY [{PAGE_ROW}]"))?;
+        let offset = offset.parse::<usize>().ok()?;
+        let rows = end.parse::<usize>().ok()?.checked_sub(offset)?;
+        Some(match default_order_only(order) {
+            true => format!("{inner} LIMIT {rows} OFFSET {offset}"),
+            false => format!("{inner} ORDER BY {order} LIMIT {rows} OFFSET {offset}"),
+        })
+    };
+    let topped = || {
+        let rest = statement.strip_prefix("SELECT TOP (")?;
+        let (rows, rest) = rest.split_once(')')?;
+        let rows: usize = rows.parse().ok()?;
+        let rest = rest.strip_prefix(' ')?;
+        // The order a page is read in when nothing sorts it is not the
+        // statement's own: the header readout must not claim it.
+        let body = match rest.rsplit_once(" ORDER BY ") {
+            Some((body, order)) if default_order_only(order) => body,
+            _ => rest,
+        };
+        Some(format!("SELECT {body} LIMIT {rows}"))
+    };
+    offset_fetch()
+        .or_else(row_numbered)
+        .or_else(topped)
+        .unwrap_or_else(|| statement.to_string())
+}
+
+/// Whether `order` is only the order `paged` writes for a preview nothing
+/// sorts: `(SELECT NULL)` and the key it names, never a sort of the user's.
+fn default_order_only(order: &str) -> bool {
+    order == "(SELECT NULL)" || (order.starts_with("(SELECT NULL), ") && order.ends_with('"'))
 }
 
 /// [`sql_update_statement`] for `engine`. MongoDB's and Redis's edits are
@@ -8167,6 +8376,133 @@ mod tests {
             Some(statement("").as_str())
         );
         assert_eq!(paged(Engine::SqlServer, "DELETE FROM t LIMIT 1", &[]), None);
+    }
+
+    #[test]
+    fn a_page_before_2012_is_top_then_numbered() {
+        let statement = |page: &str| format!("SELECT * FROM \"dbo\".\"accounts\"{page}");
+        // The first page needs no `OFFSET`: `TOP` and the order every page is
+        // read in.
+        assert_eq!(
+            paged_as(
+                Paging::TopRowNumber,
+                Engine::SqlServer,
+                &statement(" LIMIT 1000"),
+                &["id".into()]
+            )
+            .as_deref(),
+            Some(
+                "SELECT TOP (1000) * FROM \"dbo\".\"accounts\" \
+                 ORDER BY (SELECT NULL), \"id\""
+            )
+        );
+        let page = paged_as(
+            Paging::TopRowNumber,
+            Engine::SqlServer,
+            &statement(" LIMIT 1000 OFFSET 2000"),
+            &["id".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            page,
+            "SELECT * FROM (SELECT __dbdelve_src.*, ROW_NUMBER() OVER \
+             (ORDER BY (SELECT NULL), \"id\") AS [__dbdelve_row] FROM \
+             (SELECT * FROM \"dbo\".\"accounts\") AS __dbdelve_src) AS __dbdelve_page \
+             WHERE [__dbdelve_row] > 2000 AND [__dbdelve_row] <= 3000 \
+             ORDER BY [__dbdelve_row] /*__dbdelve_page*/"
+        );
+        // A sort the user asked for is the row number's order, and the query
+        // the rows come from carries none of its own.
+        let sorted = with_order_by(
+            Engine::SqlServer,
+            "SELECT * FROM \"dbo\".\"accounts\" LIMIT 10 OFFSET 20",
+            &[SortKey::new("\"id\"", false)],
+        )
+        .unwrap();
+        let page = paged_as(Paging::TopRowNumber, Engine::SqlServer, &sorted, &[]).unwrap();
+        assert!(
+            page.contains("ROW_NUMBER() OVER (ORDER BY \"id\" DESC)"),
+            "{page}"
+        );
+        assert!(!page.contains("ORDER BY \"id\" DESC FROM"), "{page}");
+    }
+
+    #[test]
+    fn a_page_before_2012_refuses_what_it_cannot_wrap() {
+        // A derived table whose columns repeat, a statement with more than one
+        // query in it, and anything that is not one `SELECT *`: refused, so the
+        // page cannot send a statement nobody can read.
+        for statement in [
+            "SELECT * FROM \"a\" JOIN \"b\" ON \"a\".\"id\" = \"b\".\"id\" LIMIT 10",
+            "WITH \"c\" AS (SELECT * FROM \"t\") SELECT * FROM \"c\" LIMIT 10",
+            "SELECT \"a\", \"b\" FROM \"t\" LIMIT 10",
+            "SELECT * FROM \"t\" LIMIT 10;",
+        ] {
+            assert_eq!(
+                paged_as(Paging::TopRowNumber, Engine::SqlServer, statement, &[]),
+                None,
+                "{statement}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_page_before_2012_reads_back_as_the_limit_it_was_generated_from() {
+        let statement = |page: &str| format!("SELECT * FROM \"dbo\".\"accounts\"{page}");
+        let key = ["id".to_string()];
+        let first = paged_as(
+            Paging::TopRowNumber,
+            Engine::SqlServer,
+            &statement(" LIMIT 1000"),
+            &key,
+        )
+        .unwrap();
+        // The order a page is read in when nothing sorts it is not the
+        // statement's, so the readback carries no `ORDER BY` at all.
+        assert_eq!(
+            unpaged(&first),
+            "SELECT * FROM \"dbo\".\"accounts\" LIMIT 1000"
+        );
+        let later = paged_as(
+            Paging::TopRowNumber,
+            Engine::SqlServer,
+            &statement(" LIMIT 1000 OFFSET 2000"),
+            &key,
+        )
+        .unwrap();
+        assert_eq!(
+            unpaged(&later),
+            "SELECT * FROM \"dbo\".\"accounts\" LIMIT 1000 OFFSET 2000"
+        );
+        // A sort is the statement's own, so it comes back with it.
+        let sorted = with_order_by(
+            Engine::SqlServer,
+            &statement(" LIMIT 10"),
+            &[SortKey::new("\"id\"", false)],
+        )
+        .unwrap();
+        let page = paged_as(Paging::TopRowNumber, Engine::SqlServer, &sorted, &[]).unwrap();
+        assert_eq!(
+            unpaged(&page),
+            "SELECT * FROM \"dbo\".\"accounts\" ORDER BY \"id\" DESC LIMIT 10"
+        );
+        // What the header readout does: the sort is read back off the
+        // statement, so the arrow lands on the column that orders the page.
+        assert_eq!(
+            order_by(Engine::SqlServer, &unpaged(&page)).map(|keys| keys[0].expression.clone()),
+            Some("\"id\"".to_string())
+        );
+        let sorted_later = with_order_by(
+            Engine::SqlServer,
+            &statement(" LIMIT 10 OFFSET 20"),
+            &[SortKey::new("\"id\"", false)],
+        )
+        .unwrap();
+        let page = paged_as(Paging::TopRowNumber, Engine::SqlServer, &sorted_later, &[]).unwrap();
+        assert_eq!(
+            unpaged(&page),
+            "SELECT * FROM \"dbo\".\"accounts\" ORDER BY \"id\" DESC LIMIT 10 OFFSET 20"
+        );
     }
 
     #[test]

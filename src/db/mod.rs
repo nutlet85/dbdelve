@@ -644,10 +644,11 @@ impl Engine {
         self.spec().abilities.schema_switch_waits_for_transaction
     }
 
-    /// What the filter bar's raw input asks for.
+    /// What the filter bar's raw input asks for: an example it can read as
+    /// one, rather than the word for the dialect the dropdown already names.
     pub fn raw_filter_placeholder(self) -> &'static str {
         match self.syntax() {
-            Syntax::Sql => "SQL…",
+            Syntax::Sql => "id > 100",
             Syntax::Mongo => "{ status: \"active\" }",
             Syntax::Redis => "user:*",
         }
@@ -2146,6 +2147,28 @@ impl Connection {
             _ => true,
         }
     }
+
+    /// How this server spells a page of a generated preview: its dialect's,
+    /// except on a SQL Server before 2012, whose connection asks the server's
+    /// own version ([`mssql::Connection::paging`]) because the dialect alone
+    /// cannot say. `engine` is the one `sql::paged_as` quotes identifiers for.
+    pub fn paging(&self, engine: Engine) -> Paging {
+        match self {
+            Self::SqlServer(connection) => connection.paging(),
+            _ => engine.spec().sql.paging,
+        }
+    }
+
+    /// Whether the server can say where a result's columns came from, which is
+    /// what makes a result editable. True everywhere but a SQL Server before
+    /// 2012, whose connection answers from the version it read at login
+    /// ([`mssql::Connection::describes_results`]).
+    pub fn describes_results(&self) -> bool {
+        match self {
+            Self::SqlServer(connection) => connection.describes_results(),
+            _ => true,
+        }
+    }
 }
 
 /// One column of a result set.
@@ -2297,6 +2320,20 @@ impl Row {
         if let Ok(row) = builder.finish() {
             *self = row;
         }
+    }
+
+    /// This row without its last cell. The SQL Server driver reads the row
+    /// number a page before 2012 numbers its rows with: the column is the
+    /// statement's, and the grid never sees it.
+    pub(crate) fn without_last(mut self) -> Self {
+        let Some((_, rest)) = self.ends.split_last() else {
+            return self;
+        };
+        let cut = rest.last().map_or(0, |end| (end & !NULL) as usize);
+        self.text = self.text[..cut].to_string().into_boxed_str();
+        let ends = rest.to_vec();
+        self.ends = ends.into_boxed_slice();
+        self
     }
 }
 
@@ -2630,6 +2667,53 @@ impl Structure {
     /// rather than for writing SQL.
     pub fn primary_key(&self) -> Vec<String> {
         self.key_of("PRIMARY KEY (", true).unwrap_or_default()
+    }
+
+    /// The write target a relation's own `SELECT *` makes editable, built from
+    /// the structure rather than from a describe: a SQL Server before 2012 has
+    /// no `sys.dm_exec_describe_first_result_set`. `None` without a key, or
+    /// when a result column is one the structure does not know -- a stale
+    /// structure names no row.
+    ///
+    /// A computed or identity column is never a `SET` target, though a key one
+    /// still names its row, exactly as the describe's `is_updateable` says.
+    pub fn edit_target_from(
+        &self,
+        engine: Engine,
+        schema: &str,
+        table: &str,
+        columns: &[Column],
+    ) -> Option<EditTarget> {
+        let key = self.row_key();
+        if key.is_empty() {
+            return None;
+        }
+        let spec = engine.spec();
+        let mut sources = Vec::with_capacity(columns.len());
+        let mut keys = Vec::with_capacity(key.len());
+        for (index, column) in columns.iter().enumerate() {
+            let known = self
+                .columns
+                .iter()
+                .find(|known| known.name == column.name)?;
+            let is_key = key.contains(&known.name);
+            let writable = !spec.computes(known) && !spec.numbers(known);
+            if is_key {
+                keys.push(index);
+            }
+            sources.push((writable || is_key).then(|| known.name.clone()));
+        }
+        // A key column the result does not hold names no row.
+        if keys.len() != key.len() {
+            return None;
+        }
+        Some(EditTarget {
+            schema: schema.to_string(),
+            table: table.to_string(),
+            columns: sources,
+            keys,
+            ..Default::default()
+        })
     }
 
     fn key_of(&self, prefix: &str, unquote: bool) -> Option<Vec<String>> {
@@ -5117,6 +5201,92 @@ mod tests {
                 .is_empty()
         );
         assert!(structure(&["CHECK (id > 0)"]).row_key().is_empty());
+    }
+
+    #[test]
+    fn a_relation_names_its_rows_from_its_structure_when_the_server_cannot_describe_them() {
+        let structure = Structure {
+            columns: vec![
+                ColumnDefinition {
+                    name: "id".into(),
+                    data_type: "int".into(),
+                    nullable: false,
+                    default: Some("IDENTITY(1,1)".into()),
+                },
+                ColumnDefinition {
+                    name: "name".into(),
+                    data_type: "nvarchar(10)".into(),
+                    nullable: true,
+                    default: None,
+                },
+                ColumnDefinition {
+                    name: "total".into(),
+                    data_type: "int".into(),
+                    nullable: true,
+                    default: Some("AS (1 + 1)".into()),
+                },
+            ],
+            constraints: vec![NamedDefinition {
+                name: "pk".into(),
+                definition: "PRIMARY KEY (id)".into(),
+            }],
+            ..Structure::default()
+        };
+        let columns = |names: &[&str]| {
+            names
+                .iter()
+                .map(|name| Column {
+                    name: name.to_string(),
+                    ..Column::default()
+                })
+                .collect::<Vec<_>>()
+        };
+        let target = structure
+            .edit_target_from(
+                Engine::SqlServer,
+                "dbo",
+                "accounts",
+                &columns(&["id", "name", "total"]),
+            )
+            .expect("a keyed result is editable");
+        assert_eq!(
+            (target.schema.as_str(), target.table.as_str()),
+            ("dbo", "accounts")
+        );
+        assert_eq!(target.keys, [0]);
+        // The identity key still names its row; the computed column is no
+        // `SET` target, which is what the describe's `is_updateable` said.
+        assert_eq!(
+            target.columns,
+            [Some("id".to_string()), Some("name".to_string()), None]
+        );
+        // A key column the result does not hold names no row.
+        assert!(
+            structure
+                .edit_target_from(Engine::SqlServer, "dbo", "accounts", &columns(&["name"]))
+                .is_none()
+        );
+        // A column the structure does not know is a stale structure.
+        assert!(
+            structure
+                .edit_target_from(
+                    Engine::SqlServer,
+                    "dbo",
+                    "accounts",
+                    &columns(&["id", "gone"]),
+                )
+                .is_none()
+        );
+        // No key, no target: the grid stays read-only.
+        let keyless = Structure {
+            constraints: Vec::new(),
+            ..structure.clone()
+        };
+        assert!(
+            keyless
+                .edit_target_from(Engine::SqlServer, "dbo", "accounts", &columns(&["id"]))
+                .is_none()
+        );
     }
 
     #[test]

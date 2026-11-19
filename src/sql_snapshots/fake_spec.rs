@@ -44,7 +44,7 @@ fn a_fake_engine_spec_writes_sql_through_the_shared_strategies() {
         r#"SELECT COUNT(*) FROM "s"."t" WHERE "a" = 'x'"#
     );
     assert_eq!(
-        sql::sql_paged(&FAKE, &preview, &["id".into()]).as_deref(),
+        sql::sql_paged(FAKE.sql.paging, &FAKE, &preview, &["id".into()]).as_deref(),
         Some(preview.as_str())
     );
 
@@ -56,7 +56,7 @@ fn a_fake_engine_spec_writes_sql_through_the_shared_strategies() {
         ..FAKE
     };
     assert_eq!(
-        sql::sql_paged(&FETCH, &preview, &["id".into()]).as_deref(),
+        sql::sql_paged(Paging::OffsetFetch, &FETCH, &preview, &["id".into()]).as_deref(),
         Some(
             r#"SELECT * FROM "s"."t" ORDER BY (SELECT NULL), "id" OFFSET 200 ROWS FETCH NEXT 100 ROWS ONLY"#
         )

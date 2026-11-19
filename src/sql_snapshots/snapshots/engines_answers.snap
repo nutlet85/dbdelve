@@ -26,7 +26,7 @@ source: src/sql_snapshots.rs
 [postgres] picks_schema => |true|
 [postgres] edits_query_rows => |false|
 [postgres] sort_clause => |an ORDER BY|
-[postgres] raw_filter_placeholder => |SQL…|
+[postgres] raw_filter_placeholder => |id > 100|
 [postgres] raw_filter_label => |Raw SQL|
 [postgres] review_label => |Review SQL|
 [postgres] reads_literal_offsets => |true|
@@ -155,7 +155,7 @@ source: src/sql_snapshots.rs
 [postgres] filters_on key => |true|
 [postgres] filters_on type => |true|
 [postgres] filters_on Name => |true|
-[postgres] value_placeholder raw Equals => |SQL…|
+[postgres] value_placeholder raw Equals => |id > 100|
 [mysql] label => |MySQL|
 [mysql] as_str => |mysql|
 [mysql] logo => |icons/engine-mysql.svg|
@@ -181,7 +181,7 @@ source: src/sql_snapshots.rs
 [mysql] picks_schema => |false|
 [mysql] edits_query_rows => |false|
 [mysql] sort_clause => |an ORDER BY|
-[mysql] raw_filter_placeholder => |SQL…|
+[mysql] raw_filter_placeholder => |id > 100|
 [mysql] raw_filter_label => |Raw SQL|
 [mysql] review_label => |Review SQL|
 [mysql] reads_literal_offsets => |true|
@@ -310,7 +310,7 @@ source: src/sql_snapshots.rs
 [mysql] filters_on key => |true|
 [mysql] filters_on type => |true|
 [mysql] filters_on Name => |true|
-[mysql] value_placeholder raw Equals => |SQL…|
+[mysql] value_placeholder raw Equals => |id > 100|
 [mariadb] label => |MariaDB|
 [mariadb] as_str => |mariadb|
 [mariadb] logo => |icons/engine-mariadb.svg|
@@ -336,7 +336,7 @@ source: src/sql_snapshots.rs
 [mariadb] picks_schema => |false|
 [mariadb] edits_query_rows => |false|
 [mariadb] sort_clause => |an ORDER BY|
-[mariadb] raw_filter_placeholder => |SQL…|
+[mariadb] raw_filter_placeholder => |id > 100|
 [mariadb] raw_filter_label => |Raw SQL|
 [mariadb] review_label => |Review SQL|
 [mariadb] reads_literal_offsets => |false|
@@ -465,7 +465,7 @@ source: src/sql_snapshots.rs
 [mariadb] filters_on key => |true|
 [mariadb] filters_on type => |true|
 [mariadb] filters_on Name => |true|
-[mariadb] value_placeholder raw Equals => |SQL…|
+[mariadb] value_placeholder raw Equals => |id > 100|
 [sqlite] label => |SQLite|
 [sqlite] as_str => |sqlite|
 [sqlite] logo => |icons/engine-sqlite.svg|
@@ -491,7 +491,7 @@ source: src/sql_snapshots.rs
 [sqlite] picks_schema => |false|
 [sqlite] edits_query_rows => |false|
 [sqlite] sort_clause => |an ORDER BY|
-[sqlite] raw_filter_placeholder => |SQL…|
+[sqlite] raw_filter_placeholder => |id > 100|
 [sqlite] raw_filter_label => |Raw SQL|
 [sqlite] review_label => |Review SQL|
 [sqlite] reads_literal_offsets => |true|
@@ -620,7 +620,7 @@ source: src/sql_snapshots.rs
 [sqlite] filters_on key => |true|
 [sqlite] filters_on type => |true|
 [sqlite] filters_on Name => |true|
-[sqlite] value_placeholder raw Equals => |SQL…|
+[sqlite] value_placeholder raw Equals => |id > 100|
 [turso] label => |Turso|
 [turso] as_str => |turso|
 [turso] logo => |icons/engine-turso.svg|
@@ -646,7 +646,7 @@ source: src/sql_snapshots.rs
 [turso] picks_schema => |false|
 [turso] edits_query_rows => |false|
 [turso] sort_clause => |an ORDER BY|
-[turso] raw_filter_placeholder => |SQL…|
+[turso] raw_filter_placeholder => |id > 100|
 [turso] raw_filter_label => |Raw SQL|
 [turso] review_label => |Review SQL|
 [turso] reads_literal_offsets => |true|
@@ -775,7 +775,7 @@ source: src/sql_snapshots.rs
 [turso] filters_on key => |true|
 [turso] filters_on type => |true|
 [turso] filters_on Name => |true|
-[turso] value_placeholder raw Equals => |SQL…|
+[turso] value_placeholder raw Equals => |id > 100|
 [duckdb] label => |DuckDB|
 [duckdb] as_str => |duckdb|
 [duckdb] logo => |icons/engine-duckdb.svg|
@@ -801,7 +801,7 @@ source: src/sql_snapshots.rs
 [duckdb] picks_schema => |true|
 [duckdb] edits_query_rows => |false|
 [duckdb] sort_clause => |an ORDER BY|
-[duckdb] raw_filter_placeholder => |SQL…|
+[duckdb] raw_filter_placeholder => |id > 100|
 [duckdb] raw_filter_label => |Raw SQL|
 [duckdb] review_label => |Review SQL|
 [duckdb] reads_literal_offsets => |true|
@@ -930,7 +930,7 @@ source: src/sql_snapshots.rs
 [duckdb] filters_on key => |true|
 [duckdb] filters_on type => |true|
 [duckdb] filters_on Name => |true|
-[duckdb] value_placeholder raw Equals => |SQL…|
+[duckdb] value_placeholder raw Equals => |id > 100|
 [snowflake] label => |Snowflake|
 [snowflake] as_str => |snowflake|
 [snowflake] logo => |icons/engine-snowflake.svg|
@@ -956,7 +956,7 @@ source: src/sql_snapshots.rs
 [snowflake] picks_schema => |true|
 [snowflake] edits_query_rows => |false|
 [snowflake] sort_clause => |an ORDER BY|
-[snowflake] raw_filter_placeholder => |SQL…|
+[snowflake] raw_filter_placeholder => |id > 100|
 [snowflake] raw_filter_label => |Raw SQL|
 [snowflake] review_label => |Review SQL|
 [snowflake] reads_literal_offsets => |true|
@@ -1085,7 +1085,7 @@ source: src/sql_snapshots.rs
 [snowflake] filters_on key => |true|
 [snowflake] filters_on type => |true|
 [snowflake] filters_on Name => |true|
-[snowflake] value_placeholder raw Equals => |SQL…|
+[snowflake] value_placeholder raw Equals => |id > 100|
 [clickhouse] label => |ClickHouse|
 [clickhouse] as_str => |clickhouse|
 [clickhouse] logo => |icons/engine-clickhouse.svg|
@@ -1111,7 +1111,7 @@ source: src/sql_snapshots.rs
 [clickhouse] picks_schema => |false|
 [clickhouse] edits_query_rows => |true|
 [clickhouse] sort_clause => |an ORDER BY|
-[clickhouse] raw_filter_placeholder => |SQL…|
+[clickhouse] raw_filter_placeholder => |id > 100|
 [clickhouse] raw_filter_label => |Raw SQL|
 [clickhouse] review_label => |Review SQL|
 [clickhouse] reads_literal_offsets => |false|
@@ -1240,7 +1240,7 @@ source: src/sql_snapshots.rs
 [clickhouse] filters_on key => |true|
 [clickhouse] filters_on type => |true|
 [clickhouse] filters_on Name => |true|
-[clickhouse] value_placeholder raw Equals => |SQL…|
+[clickhouse] value_placeholder raw Equals => |id > 100|
 [mssql] label => |SQL Server|
 [mssql] as_str => |mssql|
 [mssql] logo => |icons/engine-sqlserver.svg|
@@ -1266,7 +1266,7 @@ source: src/sql_snapshots.rs
 [mssql] picks_schema => |false|
 [mssql] edits_query_rows => |false|
 [mssql] sort_clause => |an ORDER BY|
-[mssql] raw_filter_placeholder => |SQL…|
+[mssql] raw_filter_placeholder => |id > 100|
 [mssql] raw_filter_label => |Raw SQL|
 [mssql] review_label => |Review SQL|
 [mssql] reads_literal_offsets => |true|
@@ -1395,7 +1395,7 @@ source: src/sql_snapshots.rs
 [mssql] filters_on key => |true|
 [mssql] filters_on type => |true|
 [mssql] filters_on Name => |true|
-[mssql] value_placeholder raw Equals => |SQL…|
+[mssql] value_placeholder raw Equals => |id > 100|
 [mongodb] label => |MongoDB|
 [mongodb] as_str => |mongodb|
 [mongodb] logo => |icons/engine-mongodb.svg|
@@ -1731,7 +1731,7 @@ source: src/sql_snapshots.rs
 [generic] picks_schema => |false|
 [generic] edits_query_rows => |false|
 [generic] sort_clause => |an ORDER BY|
-[generic] raw_filter_placeholder => |SQL…|
+[generic] raw_filter_placeholder => |id > 100|
 [generic] raw_filter_label => |Raw SQL|
 [generic] review_label => |Review SQL|
 [generic] reads_literal_offsets => |false|
@@ -1860,7 +1860,7 @@ source: src/sql_snapshots.rs
 [generic] filters_on key => |true|
 [generic] filters_on type => |true|
 [generic] filters_on Name => |true|
-[generic] value_placeholder raw Equals => |SQL…|
+[generic] value_placeholder raw Equals => |id > 100|
 parse |postgres| => postgres
 parse |POSTGRES| => postgres
 parse |\u{9}postgres | => postgres
