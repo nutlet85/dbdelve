@@ -3456,11 +3456,37 @@ fn the_editor_follows_its_buffer_until_the_split_is_dragged(cx: &mut TestAppCont
             f32::from(long)
         );
 
+        // A drag moves the divider. Nothing about the content changed, so the
+        // next frame must leave it where the drag put it -- a render that
+        // re-applies the content height every frame makes the results pane
+        // impossible to grow.
+        let split = query_tab(&workspace, cx, |tab, _, _| tab.editor_split.clone());
+        cx.update(|window, cx| {
+            split.update(cx, |state, cx| {
+                state.resize_panel(0, gpui::px(400.), window, cx)
+            })
+        });
+        settle(cx);
+        assert_eq!(
+            panel(cx),
+            Some(gpui::px(400.)),
+            "the split follows the drag"
+        );
+        settle(cx);
+        assert_eq!(
+            panel(cx),
+            Some(gpui::px(400.)),
+            "and stays there while nothing else changes"
+        );
+
         // Once dragged, the split is the user's: shrinking the buffer no
         // longer pulls it back to the content.
         let id = workspace.read_with(cx, |workspace, _| {
             let profile = workspace.profile().unwrap();
-            (profile.id.clone(), profile.session.active_query_tab().unwrap().id)
+            (
+                profile.id.clone(),
+                profile.session.active_query_tab().unwrap().id,
+            )
         });
         workspace.update(cx, |workspace, cx| {
             workspace.mark_editor_resized(&id.0, id.1, cx);
@@ -3470,8 +3496,46 @@ fn the_editor_follows_its_buffer_until_the_split_is_dragged(cx: &mut TestAppCont
         settle(cx);
         assert_eq!(
             panel(cx),
-            Some(long),
+            Some(gpui::px(400.)),
             "a dragged split does not follow the buffer"
+        );
+
+        quit(workspace, cx);
+    });
+}
+
+#[gpui::test]
+fn the_sorting_toggle_sits_with_the_rows_and_gives_the_keyboard_back(cx: &mut TestAppContext) {
+    store::tests::with_home(|| {
+        let (workspace, cx) = launch_on_sqlite(cx);
+        cx.executor().allow_parking();
+        cx.simulate_input("select 1 as n");
+        cx.simulate_keystrokes("secondary-enter");
+        settle(cx);
+
+        // It is a control over the rows, drawn in their toolbar rather than in
+        // the status bar below them.
+        let client = cx
+            .debug_bounds("view-sorting-client")
+            .expect("the client chip is drawn")
+            .center();
+        assert!(cx.debug_bounds("view-sorting-server").is_some());
+        let viewport = cx.update(|window, _| window.viewport_size().height.as_f32());
+        assert!(
+            f32::from(client.y)
+                < viewport - crate::theme::layout::chrome(crate::theme::layout::STATUS_HEIGHT),
+            "the toggle belongs to the rows, not the bar"
+        );
+
+        // A click switches who sorts and puts the keyboard back on the grid.
+        cx.simulate_click(client, gpui::Modifiers::default());
+        settle(cx);
+        assert!(workspace.read_with(cx, |workspace, cx| {
+            crate::views::view_sorts_on_client(workspace.profile().unwrap(), cx) == Some(true)
+        }));
+        assert!(
+            grid_has_keyboard(&workspace, cx),
+            "the grid takes the keyboard back"
         );
 
         quit(workspace, cx);

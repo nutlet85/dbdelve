@@ -1870,6 +1870,11 @@ pub(crate) struct QueryTab {
     /// follows the buffer's own line count; afterwards it is theirs and typing
     /// no longer moves it. Not persisted -- a fresh tab starts following.
     pub(crate) editor_resized: bool,
+    /// The line count and window height the editor was last sized for. The
+    /// render compares against these rather than the split's current size: a
+    /// drag changes the size without changing either, and a resize forced on
+    /// every frame is a split that cannot be dragged.
+    pub(crate) editor_basis: std::cell::Cell<(usize, f32)>,
 }
 
 /// A plan, and what it is a plan of.
@@ -2478,6 +2483,7 @@ impl QueryTab {
             row_panel_split: cx.new(|_| ResizableState::default()),
             editor_split: cx.new(|_| ResizableState::default()),
             editor_resized: false,
+            editor_basis: std::cell::Cell::new((usize::MAX, 0.)),
         };
         (tab, notice)
     }

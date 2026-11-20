@@ -249,9 +249,8 @@ fn editor_panel_height(
         true => 3,
         false => lines.max(1),
     };
-    let ceiling = (viewport_height * 0.4)
-        .min(layout::EDITOR_MAX_HEIGHT)
-        .max(layout::EDITOR_MIN_HEIGHT);
+    let ceiling =
+        (viewport_height * 0.4).clamp(layout::EDITOR_MIN_HEIGHT, layout::EDITOR_MAX_HEIGHT);
     (lines as f32 * line_height + 2. * layout::SPACE_LG + bar)
         .clamp(layout::EDITOR_MIN_HEIGHT, ceiling)
 }
@@ -259,6 +258,7 @@ fn editor_panel_height(
 /// The editor over the rows it produces. Every runnable surface is this:
 /// the query buffer and an opened relation differ in where their SQL came
 /// from, not in what they are.
+#[allow(clippy::too_many_arguments)]
 fn render_editor_surface(
     split: gpui::ElementId,
     tab: &QueryTab,
@@ -280,15 +280,16 @@ fn render_editor_surface(
     let bar = layout::chrome(layout::TAB_HEIGHT);
     let wanted = editor_panel_height(lines, empty, line_height, viewport_height, bar);
 
-    // A dragged split is the user's, and typing must not pull it back to the
-    // content. Until then the panel's measured size is the content's, which
-    // changes as the buffer grows or shrinks.
-    if !tab.editor_resized
-        && let Some(current) = tab.editor_split.read(cx).sizes().first()
-        && (*current - px(wanted)).abs() > px(0.5)
-    {
-        tab.editor_split
-            .update(cx, |state, cx| state.resize_panel(0, px(wanted), window, cx));
+    // Follow the content only when the content (or the window) changed. A
+    // drag changes the split's size and neither of those, so the split stays
+    // where the pointer put it -- a resize forced every frame is a drag that
+    // snaps back and a results pane that cannot be grown.
+    let basis = (lines, viewport_height.round());
+    if !tab.editor_resized && tab.editor_basis.get() != basis {
+        tab.editor_basis.set(basis);
+        tab.editor_split.update(cx, |state, cx| {
+            state.resize_panel(0, px(wanted), window, cx)
+        });
     }
 
     // The editor is the prompt, one tone behind its results -- and one step
@@ -343,17 +344,10 @@ fn render_editor_surface(
                         .justify_center()
                         .gap(px(layout::SPACE_SM))
                         .text_color(t.text_faint)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            move |_, window, cx| {
-                                editor.focus_handle(cx).focus(window, cx);
-                            },
-                        )
-                        .child(key_hint(
-                            t,
-                            "secondary-enter",
-                            t!("editor.hint_empty_run"),
-                        ))
+                        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                            editor.focus_handle(cx).focus(window, cx);
+                        })
+                        .child(key_hint(t, "secondary-enter", t!("editor.hint_empty_run")))
                         .child(key_hint(
                             t,
                             "secondary-shift-p",
@@ -361,12 +355,15 @@ fn render_editor_surface(
                         ))
                 })),
         );
+    // The controls lead the buffer. Under it, the editor's own element takes
+    // the clicks meant for the strip: a control bar with no working buttons is
+    // worse than one in a less familiar place.
     let top = div()
         .size_full()
         .flex()
         .flex_col()
-        .child(buffer)
-        .child(toolbar);
+        .child(toolbar)
+        .child(buffer);
 
     let expanded = result_pane_is_expanded(query);
     let results_height = if expanded {
@@ -400,6 +397,7 @@ fn render_editor_surface(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_query_surface(
     profile: &Profile,
     editor_font_size: f32,
@@ -1838,6 +1836,17 @@ fn render_results(
             .flex_col()
             .child(switcher)
             .child(div().flex_1().min_h_0().child(content)),
+    // Behaviours about the rows sit over the rows, with the actions that use
+    // them: the status bar below is left to readouts. The sorting switch
+    // leads the strip, where a segmented control is looked for.
+    let mut toolbar = result_toolbar(t);
+    if let Some(sorting) = render_view_sorting(profile, cx) {
+        toolbar = toolbar.child(sorting);
+    }
+    toolbar = toolbar.children(result_actions(profile, results, object, cx));
+    if let Some(hidden) = render_hidden_columns(profile, cx) {
+        toolbar = toolbar.child(hidden);
+    }
     }
     .into_any_element()
 }
@@ -2642,7 +2651,7 @@ fn json_highlights(
 /// and plan -- and a label is not what tells them apart.
 fn preview_tab(
     label: Cow<'static, str>,
-    path: &'static str,
+    _path: &'static str,
     selected: bool,
     command: Command,
     cx: &mut Context<Workspace>,
@@ -3203,13 +3212,22 @@ pub(crate) fn render_view_sorting(
                     (true, t!("settings.sorting.client")),
                 ]
                 .map(|(choice, label)| {
-                    choice_chip(
+                    // The chip as a button, so tab reaches it and Enter picks
+                    // it, the way a form's choice does.
+                    choice_button(
                         ("view-sorting", choice as usize),
                         label.to_string(),
                         choice == client,
+                        t,
                         cx,
-                        move |workspace, window, cx| workspace.set_view_sorting(choice, window, cx),
                     )
+                    .debug_selector(move || {
+                        format!("view-sorting-{}", if choice { "client" } else { "server" })
+                    })
+                    .on_click(cx.listener(move |workspace, _, window, cx| {
+                        workspace.set_view_sorting(choice, window, cx)
+                    }))
+                    .into_any_element()
                 }),
             )
             .into_any_element()
@@ -3993,7 +4011,9 @@ fn relation_controls(
 /// Insert reads as an action, not a third view beside Data and Plan: a plus
 /// leads it and it takes the same button box as the controls around it.
 fn insert_button(id: &'static str, label: String, t: Theme) -> Button {
-    control(id, Tone::Quiet, Control::Compact)
+    // Secondary, not quiet: a hairline box is what says this is a button and
+    // not a line of help text beside the table.
+    control(id, Tone::Secondary, Control::Compact)
         .px(px(Control::Compact.padding()))
         .child(
             div()
@@ -4003,47 +4023,13 @@ fn insert_button(id: &'static str, label: String, t: Theme) -> Button {
                 .child(
                     icon(icon::PLUS)
                         .size(px(layout::chrome(layout::ICON_SIZE)))
-                        .text_color(Tone::Quiet.ink(t)),
+                        .text_color(Tone::Secondary.ink(t)),
                 )
-                .child(button_label(label, Tone::Quiet, Control::Compact, t)),
+                .child(button_label(label, Tone::Secondary, Control::Compact, t)),
         )
         .on_click(|_, window, cx| {
             window.dispatch_action(Box::new(NewRow), cx);
         })
-}
-
-/// One choice of a handful, in the row-limit chips' clothes: all of them on
-/// screen, the one in force filled in.
-fn choice_chip(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<gpui::SharedString>,
-    selected: bool,
-    cx: &mut Context<Workspace>,
-    apply: impl Fn(&mut Workspace, &mut Window, &mut Context<Workspace>) + 'static,
-) -> AnyElement {
-    let t = *theme(cx);
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .h(px(layout::chrome(24.)))
-        .px(px(layout::SPACE_SM))
-        .rounded(px(layout::RADIUS_CONTROL))
-        .text_size(px(layout::chrome(layout::TEXT_SM)))
-        .whitespace_nowrap()
-        .map(|chip| {
-            if selected {
-                chip.bg(t.element_active).text_color(t.text)
-            } else {
-                chip.text_color(t.text_muted)
-                    .hover(|style| style.bg(t.element_hover))
-            }
-        })
-        .child(label.into())
-        .on_click(cx.listener(move |workspace, _: &ClickEvent, window, cx| {
-            apply(workspace, window, cx);
-        }))
-        .into_any_element()
 }
 
 #[cfg(test)]
@@ -4209,6 +4195,7 @@ mod tests {
             editor_panel_height(1, false, line, 900., bar),
             layout::EDITOR_MIN_HEIGHT
         );
+        assert!(layout::EDITOR_MIN_HEIGHT > bar, "the toolbar has its room");
         // Forty lines stop at the window's 40%, leaving the rows the rest.
         assert_eq!(editor_panel_height(40, false, line, 900., bar), 360.);
         // And never past the absolute ceiling on a very tall window.

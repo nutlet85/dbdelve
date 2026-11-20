@@ -2207,8 +2207,6 @@ impl Render for Workspace {
         };
         let paging =
             running.or_else(|| views::render_paging(profile, self.custom_limit.as_ref(), cx));
-        let view_sorting = views::render_view_sorting(profile, cx);
-        let hidden_columns = views::render_hidden_columns(profile, cx);
         let relation = profile
             .session
             .active_object()
@@ -2496,8 +2494,6 @@ impl Render for Workspace {
             || export_status.is_some()
             || notice.is_some()
             || paging.is_some()
-            || view_sorting.is_some()
-            || hidden_columns.is_some()
             || query_status.is_some()
             || refreshable_snapshot
             || has_results
@@ -2525,8 +2521,6 @@ impl Render for Workspace {
                         .flex()
                         .items_center()
                         .gap(px(layout::SPACE_SM))
-                        .children(view_sorting)
-                        .children(hidden_columns)
                         .children(left_stats.map(|stats| {
                             div()
                                 .flex_shrink_0()
@@ -3529,7 +3523,7 @@ mod tests {
             .into_iter()
             .find(|t| t.is_glass && t.appearance == theme::Appearance::Light)
             .unwrap();
-        assert_eq!(settings.opacity_for(&light), 0.79);
+        assert_eq!(settings.opacity_for(&light), 0.86);
         assert_eq!(settings.opacity_for(&Theme::glass()), 0.6);
         let mut settings = settings;
         settings.set_opacity_for(&light, 0.5);

@@ -1454,7 +1454,7 @@ impl Workspace {
 
     pub(crate) fn labelled_field(
         &self,
-        label: &'static str,
+        label: impl Into<gpui::SharedString>,
         control: impl IntoElement,
         cx: &App,
     ) -> impl IntoElement {
@@ -1467,7 +1467,7 @@ impl Workspace {
                     .text_size(px(layout::chrome(layout::TEXT_SM)))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme(cx).text_muted)
-                    .child(label),
+                    .child(label.into()),
             )
             .child(control)
     }
@@ -1915,20 +1915,12 @@ impl Workspace {
                                     self.choice(
                                         "pending-run",
                                         0,
-                                        confirm_button(
-                                            "approve-pending-run",
-                                            confirm,
-                                            tone,
-                                            t,
-                                            cx,
-                                        )
-                                        .on_click(
-                                            move |_, _, cx| {
+                                        confirm_button("approve-pending-run", confirm, tone, t, cx)
+                                            .on_click(move |_, _, cx| {
                                                 _ = approve.update(cx, |workspace, cx| {
                                                     workspace.approve_pending_run(cx);
                                                 });
-                                            },
-                                        ),
+                                            }),
                                         t,
                                     ),
                                 ),
@@ -2447,6 +2439,14 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// Whether the database is a step of its own: not when its name is the
+    /// connection's own, where the two chips would be one word twice. A
+    /// database not yet known still gets its placeholder, so the picker stays
+    /// reachable.
+    fn shows_database_crumb(connection: &str, database: Option<&str>) -> bool {
+        database != Some(connection)
+    }
+
     /// The database the connection is on and, where the engine has one, the
     /// active schema, each a step after the connection that opens its picker,
     /// and the way to read what they hold again.
@@ -2467,7 +2467,11 @@ impl Workspace {
         };
         let separator = || crumb_separator(t);
         let mut steps = Vec::new();
-        if profile.config.target().switches_database() {
+        // A connection whose name is its database says it once: the second
+        // chip would read as the same step twice.
+        if profile.config.target().switches_database()
+            && Self::shows_database_crumb(&profile.name, profile.active_database().as_deref())
+        {
             let database = profile
                 .active_database()
                 .unwrap_or_else(|| t!("target.database").to_string());
@@ -2830,16 +2834,9 @@ impl Workspace {
                                             .child(schema),
                                     )
                                 })
-                                .when_some(leaf.and_then(|leaf| leaf.size), |row, size| {
-                                    row.child(
-                                        div()
-                                            .flex_none()
-                                            .whitespace_nowrap()
-                                            .text_color(t.text_faint)
-                                            .text_size(px(layout::chrome(layout::TEXT_XS)))
-                                            .child(human_bytes(size)),
-                                    )
-                                })
+                                // The size is a detail, not a label: it rides
+                                // on the row's tooltip rather than taking a
+                                // column of its own down the tree.
                                 // In a slot as wide as the icon column, so the
                                 // dot has something to hover and sits as far
                                 // in from the right edge as the icons do from
@@ -2882,6 +2879,11 @@ impl Workspace {
                                 }),
                         )
                         .debug_selector(move || format!("explorer-row-{index}"));
+                    let row = row.when_some(leaf.and_then(|leaf| leaf.size), |row, size| {
+                        row.tooltip(move |window, cx| {
+                            Tooltip::new(human_bytes(size)).build(window, cx)
+                        })
+                    });
                     // A drag that starts while the database is not known
                     // carries nothing, as the menus offer nothing then.
                     let dragged = match (shortcut, &query, leaf) {
@@ -3720,6 +3722,7 @@ fn crumb(
         .text_color(t.text)
         .font_weight(FontWeight::MEDIUM)
         .hover(|style| style.bg(t.element_hover))
+        .active(|style| style.bg(t.element_active))
         .children(marker)
         .child(
             div()
@@ -3947,6 +3950,20 @@ fn footer_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_connection_named_after_its_database_says_it_once() {
+        assert!(!Workspace::shows_database_crumb(
+            "dbdelve_dev",
+            Some("dbdelve_dev")
+        ));
+        assert!(Workspace::shows_database_crumb(
+            "local",
+            Some("dbdelve_dev")
+        ));
+        // Nothing picked yet still shows the placeholder, and its picker.
+        assert!(Workspace::shows_database_crumb("local", None));
+    }
 
     #[test]
     fn a_help_notice_covers_the_form_status_without_replacing_it() {

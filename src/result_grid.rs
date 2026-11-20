@@ -13,6 +13,7 @@ use gpui_component::{
     menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
     table::TableEvent,
     table::{Column, TableDelegate, TableState},
+    tooltip::Tooltip,
 };
 use rust_i18n::t;
 
@@ -91,6 +92,11 @@ pub const DEFAULT_LABEL: SharedString = SharedString::new_static("DEFAULT");
 
 /// The narrowest a drag can leave a column, and the narrowest one is fitted to.
 const MIN_COLUMN_WIDTH: f32 = 60.0;
+/// How long a header click waits before sorting: long enough for the second
+/// click of a double-click to turn it into a fit instead, short enough not to
+/// feel like lag. A single click still sorts, just after the gesture is
+/// certain.
+const HEADER_CLICK_DELAY: std::time::Duration = std::time::Duration::from_millis(220);
 /// The widest a column is fitted to, at the grid's default size. A JSON or a
 /// long text column would otherwise take the screen to show one value, which
 /// the row inspector shows better.
@@ -249,6 +255,9 @@ pub struct ResultGrid {
     /// A fitted width changed since the table last read the widths, which it
     /// does only on a refresh.
     resized: bool,
+    /// Which header click is waiting out the double-click delay. A second
+    /// click on the same header bumps it, so the first one's sort is dropped.
+    header_click_generation: u64,
     /// The columns as drawn, left to right: indices into `columns`, the pinned
     /// ones first. A column missing from it is hidden. Everything else in the
     /// grid -- `active`, the pending edits, the sort -- speaks in indices into
@@ -530,6 +539,7 @@ impl ResultGrid {
             face: None,
             advances: Advances::estimated(),
             resized: false,
+            header_click_generation: 0,
             sort: Vec::new(),
             sortable: false,
             fetched: Vec::new(),
@@ -886,6 +896,35 @@ impl ResultGrid {
     fn refit_from_the_top(&mut self) {
         self.fitted_rows = 0;
         self.refit();
+    }
+
+    /// Fit one column to its header and the widest value fitted so far, on a
+    /// header double-click. Marked as dragged so a later `refit` leaves it
+    /// alone: the user asked for this width, the same way they ask by
+    /// dragging.
+    fn fit_column(&mut self, col: usize) {
+        let width = px(fitted_width(
+            self.header_width(col),
+            self.value_width(col),
+            layout::grid(MAX_FITTED_WIDTH),
+            MIN_COLUMN_WIDTH,
+        ));
+        if self.columns[col].width != width {
+            self.columns[col].width = width;
+            self.resized = true;
+        }
+        self.sizing[col] = Sizing::Dragged;
+    }
+
+    /// Whether the type label still has room at the column's current width.
+    /// A name that had to be cut leaves no room for it, and the tooltip is
+    /// where the type goes then.
+    fn type_fits(&self, col: usize) -> bool {
+        self.result
+            .columns
+            .get(col)
+            .is_some_and(|column| column.data_type.is_some())
+            && f32::from(self.columns[col].width) >= self.header_width(col)
     }
 
     /// Everything a header draws across its column, at `advances`: its
@@ -3036,6 +3075,20 @@ impl ResultGrid {
             .position(|(column, _)| *column == col_ix)
             .map(|position| (position, self.sort[position].1));
         let numeric = self.is_numeric_column(col_ix);
+        let name = self.columns[col_ix].name.clone();
+        let data_type = self
+            .result
+            .columns
+            .get(col_ix)
+            .and_then(|column| column.data_type.clone())
+            .map(|data_type| data_type.to_uppercase());
+        // A type that no longer fits is dropped rather than cut to two
+        // letters, and the tooltip keeps both the whole name and the type.
+        let shows_type = self.type_fits(col_ix);
+        let tooltip = match &data_type {
+            Some(data_type) => format!("{name} · {data_type}"),
+            None => name.to_string(),
+        };
 
         let base = div()
             .id(("column-header", col_ix))
@@ -3072,38 +3125,30 @@ impl ResultGrid {
                     .text_ellipsis()
                     .child(self.columns[col_ix].name.clone()),
             )
-            .children(
-                self.result
-                    .columns
-                    .get(col_ix)
-                    .and_then(|column| column.data_type.clone())
-                    .map(|data_type| {
-                        let label = data_type.to_uppercase();
-                        // Only the room the name leaves: from no width of its
-                        // own, the type ellipsizes and goes before the name
-                        // gives up a character. Both shrinking from their full
-                        // widths cut the name while the type still showed.
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .text_size(px(layout::grid(layout::TEXT_XS)))
-                            .font_weight(gpui::FontWeight::NORMAL)
-                            .text_color(faint)
-                            // Over a right-aligned column the type stops
-                            // growing at its own width, so the header's spare
-                            // room falls to the left of the name. The extra
-                            // pixel keeps a layout rounded down from cutting
-                            // the label that fits.
-                            .when(numeric, |data_type| {
-                                data_type
-                                    .max_w(px(self.data_type_width(&label).ceil() + 1.))
-                                    .text_right()
-                            })
-                            .child(label)
-                    }),
-            )
+            .children(data_type.clone().filter(|_| shows_type).map(|label| {
+                // Only the room the name leaves: from no width of its own,
+                // the type ellipsizes and goes before the name gives up a
+                // character. Both shrinking from their full widths cut the
+                // name while the type still showed.
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .text_size(px(layout::grid(layout::TEXT_XS)))
+                    .font_weight(gpui::FontWeight::NORMAL)
+                    .text_color(faint)
+                    // Over a right-aligned column the type stops growing at
+                    // its own width, so the header's spare room falls to the
+                    // left of the name. The extra pixel keeps a layout rounded
+                    // down from cutting the label that fits.
+                    .when(numeric, |data_type| {
+                        data_type
+                            .max_w(px(self.data_type_width(&label).ceil() + 1.))
+                            .text_right()
+                    })
+                    .child(label)
+            }))
             .child(
                 div()
                     .when(!numeric, |control| control.ml_auto())
@@ -3139,11 +3184,36 @@ impl ResultGrid {
                             .child((position + 1).to_string())
                     })),
             )
+            // Both the whole name and the type, for a name the column had to
+            // cut and a type it had to drop.
+            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
             // The click goes to the workspace, which knows whether this view
             // is sorted by the server -- a change to the SQL and a re-run --
-            // or in memory.
-            .on_click(cx.listener(move |_, _, window, cx| {
-                window.dispatch_action(Box::new(crate::SortColumn { column: col_ix }), cx);
+            // or in memory. A double-click fits the column instead, and the
+            // first click's sort is dropped rather than applied and undone.
+            .on_click(cx.listener(move |table, event: &ClickEvent, _window, cx| {
+                let generation = {
+                    let grid = table.delegate_mut();
+                    grid.header_click_generation = grid.header_click_generation.wrapping_add(1);
+                    grid.header_click_generation
+                };
+                if event.click_count() >= 2 {
+                    table.delegate_mut().fit_column(col_ix);
+                    cx.notify();
+                    return;
+                }
+                cx.spawn(async move |table, cx| {
+                    cx.background_executor().timer(HEADER_CLICK_DELAY).await;
+                    _ = table.update_in(cx, |table, window, cx| {
+                        if table.delegate().header_click_generation == generation {
+                            window.dispatch_action(
+                                Box::new(crate::SortColumn { column: col_ix }),
+                                cx,
+                            );
+                        }
+                    });
+                })
+                .detach();
             }))
     }
 
@@ -5693,6 +5763,32 @@ mod tests {
         assert!(grid.follows_a_key(1));
 
         assert!(!keyed_grid().follows_a_key(1));
+    }
+
+    #[test]
+    fn fitting_a_column_on_a_double_click_brings_its_type_label_back() {
+        let mut grid = measured(
+            vec![typed("n", "integer")],
+            vec![vec![Some("1234567".into())]],
+        );
+        // A drag narrow enough to cut the header drops the type rather than
+        // printing two letters of it.
+        let narrow = px(MIN_COLUMN_WIDTH);
+        grid.set_drawn_widths(&[narrow]);
+        assert!(!grid.type_fits(0), "a 60px header has no room for INTEGER");
+
+        grid.fit_column(0);
+        assert!(grid.type_fits(0), "the fit leaves room for the type");
+        assert_eq!(grid.sizing[0], Sizing::Dragged);
+        assert_eq!(
+            grid.columns[0].width,
+            px(fitted_width(
+                grid.header_width(0),
+                grid.value_width(0),
+                layout::grid(MAX_FITTED_WIDTH),
+                MIN_COLUMN_WIDTH
+            ))
+        );
     }
 
     #[test]

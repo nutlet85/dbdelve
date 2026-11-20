@@ -596,6 +596,15 @@ impl Workspace {
                 }
             }
         }
+        // The toggle acts on the rows, so the keyboard goes back to them
+        // rather than staying on a chip that has done its job.
+        if let Some(results) = self
+            .profile()
+            .and_then(|profile| profile.session.active_results())
+            .cloned()
+        {
+            results.focus_handle(cx).focus(window, cx);
+        }
         cx.notify();
     }
 

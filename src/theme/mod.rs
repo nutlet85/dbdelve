@@ -107,7 +107,10 @@ pub mod layout {
     /// times this, plus its padding, is what the editor asks for -- see
     /// `views::render_editor_surface`.
     pub const EDITOR_LINE_HEIGHT: f32 = 1.55;
-    pub const EDITOR_MIN_HEIGHT: f32 = 120.0;
+    /// The editor's own minimum plus the toolbar under it. An editor panel
+    /// shorter than this lets the toolbar spill past the split, where the
+    /// results pane paints over it.
+    pub const EDITOR_MIN_HEIGHT: f32 = 160.0;
     /// A ceiling whatever the window size, so a long buffer cannot take the
     /// results off a very tall screen. The window's own 40% is the tighter
     /// limit on most screens.

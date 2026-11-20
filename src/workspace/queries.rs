@@ -20,17 +20,18 @@ use crate::session::{
 impl Workspace {
     /// The divider between one tab's editor and its results was dragged, so
     /// the buffer stops deciding that tab's editor height.
-    pub(crate) fn mark_editor_resized(
-        &mut self,
-        profile: &str,
-        tab: u64,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn mark_editor_resized(&mut self, profile: &str, tab: u64, cx: &mut Context<Self>) {
         if let Some(tab) = self
             .profiles
             .iter_mut()
             .find(|candidate| candidate.id == profile)
-            .and_then(|profile| profile.session.queries.iter_mut().find(|query| query.id == tab))
+            .and_then(|profile| {
+                profile
+                    .session
+                    .queries
+                    .iter_mut()
+                    .find(|query| query.id == tab)
+            })
         {
             tab.editor_resized = true;
             cx.notify();
