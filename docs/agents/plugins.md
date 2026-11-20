@@ -274,8 +274,9 @@ executable = "bin/dbdelve-odbc"   # relative, no ".."; ".exe" appended on Window
 
 ## Running it
 
-- `dev/plugins.sh` (`--release`, `--echo`) builds and stages the plugins under
-  `target/<profile>/plugins/`, where `cargo run` discovers them.
+- `dev/plugins.sh` (`--release`, `--profile <name>`, `--echo`) builds and stages
+  the plugins under `target/<profile>/plugins/`, where `cargo run` discovers
+  them. `--profile bundle` is the faster local bundle profile.
 - The host's tests build echo themselves on first use
   (`external::echo::plugin`, into the test binary's own target directory and
   profile), so `cargo test` needs nothing staged. Echo is driven by the

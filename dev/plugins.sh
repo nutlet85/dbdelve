@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the plugin crates and stages them where `db::plugin::discover()` looks
 # under `cargo run`: target/<profile>/plugins/<id>/{dbdelve-plugin.toml,bin/<exe>}.
-# Usage: dev/plugins.sh [--release] [--echo]
+# Usage: dev/plugins.sh [--release|--profile <name>] [--echo]
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,12 +10,21 @@ cd "$ROOT"
 profile=debug
 cargo_flags=()
 plugins=(odbc)
-for arg in "$@"; do
-  case "$arg" in
-    --release) profile=release; cargo_flags=(--release) ;;
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --release) profile=release; cargo_flags=(--release); shift ;;
+    --profile)
+      [[ "$#" -ge 2 ]] || {
+        echo "dev/plugins.sh: --profile needs a name" >&2
+        exit 2
+      }
+      profile="$2"
+      cargo_flags=(--profile "$2")
+      shift 2
+      ;;
     # Test code, never shipped: the fake engine the host's tests drive.
-    --echo) plugins+=(echo) ;;
-    *) echo "usage: dev/plugins.sh [--release] [--echo]" >&2; exit 2 ;;
+    --echo) plugins+=(echo); shift ;;
+    *) echo "usage: dev/plugins.sh [--release|--profile <name>] [--echo]" >&2; exit 2 ;;
   esac
 done
 

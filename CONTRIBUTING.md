@@ -35,7 +35,8 @@ cargo run
 ```
 
 To see the ODBC tile, stage the bridge first with `dev/plugins.sh` (`--release` for the
-release profile, `--echo` to add the test plugin). On Linux the bridge links the
+release profile, `--profile bundle` for the dev bundle's faster profile, `--echo`
+to add the test plugin). On Linux the bridge links the
 system unixODBC, so building it needs `sudo apt install unixodbc-dev`.
 
 `docker compose up -d` starts the Postgres, MySQL, MariaDB, SQL Server, MongoDB, Redis and ClickHouse dev databases (see

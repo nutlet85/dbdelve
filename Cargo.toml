@@ -528,3 +528,11 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# The local bundle's profile: the release artifact's optimization and thin LTO,
+# with codegen spread over the machine's cores. Release stays at one unit
+# because that is what ships; this one only feeds dev/bundle.sh. Measured on an
+# M4: 227s to 146s for a dbdelve rebuild.
+[profile.bundle]
+inherits = "release"
+codegen-units = 16

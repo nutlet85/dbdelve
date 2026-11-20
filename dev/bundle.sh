@@ -50,6 +50,10 @@ VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
 CHANNEL="${DBDELVE_CHANNEL:-dev}"
 
 if [[ "$CHANNEL" == release ]]; then
+  # What the release workflow ships keeps the release profile's single codegen
+  # unit. The dev bundle uses the bundle profile below, which spreads codegen
+  # over the cores because nothing it builds is shipped.
+  PROFILE=release
   APP="target/DBDelve.app"
   # CFBundleIdentifier is what the Keychain scopes saved profile passwords to.
   # Changing it orphans every password already stored.
@@ -59,6 +63,7 @@ if [[ "$CHANNEL" == release ]]; then
   NAME="DBDelve"
   ENVIRONMENT=""
 else
+  PROFILE=bundle
   APP="target/macos-dev/DBDelve Dev.app"
   IDENTIFIER="com.shayanabbas.dbdelve.dev"
   NAME="DBDelve Dev"
@@ -82,7 +87,7 @@ FEATURES=()
 if [[ -n "${DBDELVE_FEATURES:-}" ]]; then
   FEATURES=(--features "$DBDELVE_FEATURES")
 fi
-BUILD_ARGS=(build --release)
+BUILD_ARGS=(build --profile "$PROFILE")
 if [[ "${DBDELVE_TIMINGS:-1}" != 0 ]]; then
   BUILD_ARGS+=(--timings)
 fi
@@ -95,15 +100,15 @@ if [[ "${DBDELVE_TIMINGS:-1}" != 0 ]]; then
   fi
 fi
 # Builds the ODBC bridge, which links unixODBC statically on macOS, and stages
-# it under target/release/plugins/odbc.
-step "Build ODBC bridge" dev/plugins.sh --release
+# it under target/$PROFILE/plugins/odbc.
+step "Build ODBC bridge" dev/plugins.sh --profile "$PROFILE"
 
 assemble_bundle() {
   rm -rf "$APP"
   mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/plugins/odbc" "$APP/Contents/Helpers"
 
   cp assets/macos/DBDelve.icns "$APP/Contents/Resources/DBDelve.icns"
-  cp target/release/dbdelve "$APP/Contents/MacOS/$NAME"
+  cp "target/$PROFILE/dbdelve" "$APP/Contents/MacOS/$NAME"
 
   # The OFL asks that the licence travel with the fonts, and the fonts are
   # compiled into the binary above -- so the notices ship inside the bundle
@@ -115,9 +120,9 @@ assemble_bundle() {
   # (Resources/plugins/<id>/), and the executable goes in Helpers/, where
   # codesign expects nested code: one under Resources is treated as an unsealed
   # resource rather than code to be signed.
-  cp target/release/plugins/odbc/dbdelve-plugin.toml "$APP/Contents/Resources/plugins/odbc/"
+  cp "target/$PROFILE/plugins/odbc/dbdelve-plugin.toml" "$APP/Contents/Resources/plugins/odbc/"
   BRIDGE="$APP/Contents/Helpers/dbdelve-odbc"
-  cp target/release/plugins/odbc/bin/dbdelve-odbc "$BRIDGE"
+  cp "target/$PROFILE/plugins/odbc/bin/dbdelve-odbc" "$BRIDGE"
 }
 step "Assemble bundle" assemble_bundle
 
