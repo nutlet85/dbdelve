@@ -40,6 +40,7 @@ use gpui::{
 use gpui_component::{
     VirtualListScrollHandle,
     input::{InputEvent, InputState},
+    tooltip::Tooltip,
     v_virtual_list,
 };
 use rust_i18n::t;
@@ -2000,6 +2001,12 @@ impl Palette {
         // runs down from the middle of its tile.
         let indent = tile + layout::SPACE_MD;
         let guide = 2. * layout::SPACE_SM + tile / 2.;
+        // A theme row shows the four colours a theme is read by, so the list
+        // can be compared before any of them is put on the window.
+        let swatches = match &item.command {
+            Command::SetTheme(_, candidate) => Some(**candidate),
+            _ => None,
+        };
 
         div()
             .id(("palette-row", at))
@@ -2069,6 +2076,34 @@ impl Palette {
                             .when(snippet.is_some(), |area| {
                                 area.flex_col().items_start().gap(px(layout::SPACE_XS))
                             })
+                            .children(swatches.map(|candidate| {
+                                div()
+                                    .id(("theme-swatches", index))
+                                    .flex_shrink_0()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(2.))
+                                    .children(
+                                        [
+                                            candidate.bg,
+                                            candidate.text,
+                                            candidate.accent,
+                                            candidate.syntax_keyword,
+                                        ]
+                                        .map(|color| {
+                                            div()
+                                                .size(px(6.))
+                                                .rounded_full()
+                                                .bg(color)
+                                                .border_1()
+                                                .border_color(t.border)
+                                        }),
+                                    )
+                                    .tooltip(move |window, cx| {
+                                        Tooltip::new(t!("palette.theme.colors").to_string())
+                                            .build(window, cx)
+                                    })
+                            }))
                             .child(
                                 div()
                                     .min_w_0()

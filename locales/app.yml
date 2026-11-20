@@ -670,6 +670,40 @@ status.reconnect:           { en: "Reconnect", zh-CN: "重新连接" }
 status.import:              { en: "Import", zh-CN: "导入" }
 status.import_clipboard:    { en: "From Clipboard", zh-CN: "从剪贴板" }
 status.import_file:         { en: "From File…", zh-CN: "从文件…" }
+
+# —— Import Rows 选项 ——
+import.group.format:        { en: "Format", zh-CN: "格式" }
+import.group.csv:           { en: "CSV options", zh-CN: "CSV 选项" }
+import.group.values:        { en: "Values", zh-CN: "值" }
+import.group.duplicate:     { en: "On duplicate key", zh-CN: "遇到重复键时" }
+import.group.transaction:   { en: "Transaction", zh-CN: "事务" }
+import.header_row:          { en: "First row is a header", zh-CN: "首行是表头" }
+import.delimiter:           { en: "Delimiter", zh-CN: "分隔符" }
+import.quote:               { en: "Quote", zh-CN: "引号" }
+import.skip_lines:          { en: "Skip first N lines", zh-CN: "跳过前 N 行" }
+import.encoding:            { en: "Encoding", zh-CN: "编码" }
+import.empty_field:         { en: "Empty field means", zh-CN: "空字段表示" }
+import.empty_string:        { en: "Empty string", zh-CN: "空字符串" }
+import.null_word:           { en: "Also treat as NULL", zh-CN: "同时视为 NULL" }
+import.trim:                { en: "Trim whitespace", zh-CN: "去除空白" }
+import.booleans:            { en: "True / false spellings", zh-CN: "真假值写法" }
+import.stop:                { en: "Stop", zh-CN: "停止" }
+import.skip:                { en: "Skip", zh-CN: "跳过" }
+import.all_or_nothing:      { en: "All or nothing", zh-CN: "全部成功或全部回滚" }
+import.commit_as_it_goes:   { en: "Commit as it goes", zh-CN: "逐段提交" }
+import.map_column:          { en: "Map a column", zh-CN: "指定列" }
+import.left_out:            { en: "left out", zh-CN: "未导入" }
+import.required:            { en: "NOT NULL, no default", zh-CN: "NOT NULL，无默认值" }
+import.change_file:         { en: "Change file…", zh-CN: "更换文件…" }
+import.copy_sql:            { en: "Copy SQL", zh-CN: "复制 SQL" }
+import.checking:            { en: "Checking…", zh-CN: "正在检查…" }
+import.import_rows:         { en: "Import %{rows}", zh-CN: "导入 %{rows}" }
+import.unmapped:            { en: "Unmapped table columns", zh-CN: "未映射的表列" }
+import.uses_default:        { en: "uses default", zh-CN: "使用默认值" }
+import.generated:           { en: "generated", zh-CN: "自动生成" }
+import.help_duplicate:      { en: "Skips a row that conflicts with an existing row on any unique key, not only the primary key.", zh-CN: "跳过与现有行在任一唯一键上冲突的行，而不只是主键。" }
+import.help_all_or_nothing: { en: "Every chunk runs in one transaction: a failure or Cancel leaves the table as it was.", zh-CN: "每个分块都在同一事务中运行：失败或取消后表保持原样。" }
+import.help_commit_as_it_goes: { en: "Each chunk commits on its own: if a later chunk fails, the rows already committed stay.", zh-CN: "每个分块单独提交：后续分块失败时，已提交的行会保留。" }
 status.export:              { en: "Export", zh-CN: "导出" }
 status.copy_create:         { en: "Copy CREATE", zh-CN: "复制 CREATE" }
 status.copy_insert:         { en: "Copy INSERT", zh-CN: "复制 INSERT" }
@@ -789,6 +823,7 @@ palette.footer.select:     { en: "Select", zh-CN: "选择" }
 palette.footer.expand:     { en: "Expand", zh-CN: "展开" }
 palette.footer.collapse:   { en: "Collapse", zh-CN: "折叠" }
 palette.footer.disconnect: { en: "Disconnect", zh-CN: "断开连接" }
+palette.theme.colors:      { en: "Background · Text · Accent · Syntax", zh-CN: "背景 · 正文 · 强调色 · 语法色" }
 
 palette.history.status.all:       { en: "All", zh-CN: "全部" }
 palette.history.status.succeeded: { en: "Succeeded", zh-CN: "成功" }
