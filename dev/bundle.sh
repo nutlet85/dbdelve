@@ -14,6 +14,35 @@
 # Usage: dev/bundle.sh
 set -euo pipefail
 
+# Every step below announces itself and how long it took. Cargo's own progress
+# is one line that updates in place, which says nothing about where a bundle
+# build spends its minutes; `--timings` leaves the crate-level report behind.
+# Set DBDELVE_TIMINGS=0 to skip that report, and CARGO_TERM_PROGRESS_WHEN to
+# keep cargo's own progress line instead of one line per crate.
+export CARGO_TERM_PROGRESS_WHEN="${CARGO_TERM_PROGRESS_WHEN:-never}"
+
+TOTAL_START=$SECONDS
+CURRENT_STEP="setup"
+STEP_START=$TOTAL_START
+
+on_error() {
+  local status=$?
+  printf '\n!! %s failed after %ss (total %ss)\n' \
+    "$CURRENT_STEP" "$((SECONDS - STEP_START))" "$((SECONDS - TOTAL_START))" >&2
+  exit "$status"
+}
+trap on_error ERR
+
+step() {
+  local name="$1"
+  shift
+  CURRENT_STEP="$name"
+  STEP_START=$SECONDS
+  printf '\n==> %s\n' "$name"
+  "$@"
+  printf '<== %s  %ss\n' "$name" "$((SECONDS - STEP_START))"
+}
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -53,30 +82,44 @@ FEATURES=()
 if [[ -n "${DBDELVE_FEATURES:-}" ]]; then
   FEATURES=(--features "$DBDELVE_FEATURES")
 fi
-cargo build --release ${FEATURES[@]+"${FEATURES[@]}"}
+BUILD_ARGS=(build --release)
+if [[ "${DBDELVE_TIMINGS:-1}" != 0 ]]; then
+  BUILD_ARGS+=(--timings)
+fi
+BUILD_ARGS+=(${FEATURES[@]+"${FEATURES[@]}"})
+step "Build app (release)" cargo "${BUILD_ARGS[@]}"
+if [[ "${DBDELVE_TIMINGS:-1}" != 0 ]]; then
+  report="$(ls -t "$ROOT"/target/cargo-timings/cargo-timing-*.html 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$report" ]]; then
+    printf 'crate timings: %s\n' "$report"
+  fi
+fi
 # Builds the ODBC bridge, which links unixODBC statically on macOS, and stages
 # it under target/release/plugins/odbc.
-dev/plugins.sh --release
+step "Build ODBC bridge" dev/plugins.sh --release
 
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/plugins/odbc" "$APP/Contents/Helpers"
+assemble_bundle() {
+  rm -rf "$APP"
+  mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/plugins/odbc" "$APP/Contents/Helpers"
 
-cp assets/macos/DBDelve.icns "$APP/Contents/Resources/DBDelve.icns"
-cp target/release/dbdelve "$APP/Contents/MacOS/$NAME"
+  cp assets/macos/DBDelve.icns "$APP/Contents/Resources/DBDelve.icns"
+  cp target/release/dbdelve "$APP/Contents/MacOS/$NAME"
 
-# The OFL asks that the licence travel with the fonts, and the fonts are
-# compiled into the binary above -- so the notices ship inside the bundle
-# rather than only sitting in the repository.
-cp NOTICES.md "$APP/Contents/Resources/"
-cp -R licenses "$APP/Contents/Resources/"
+  # The OFL asks that the licence travel with the fonts, and the fonts are
+  # compiled into the binary above -- so the notices ship inside the bundle
+  # rather than only sitting in the repository.
+  cp NOTICES.md "$APP/Contents/Resources/"
+  cp -R licenses "$APP/Contents/Resources/"
 
-# The manifest goes where db::plugin::discover() reads manifests in a bundle
-# (Resources/plugins/<id>/), and the executable goes in Helpers/, where
-# codesign expects nested code: one under Resources is treated as an unsealed
-# resource rather than code to be signed.
-cp target/release/plugins/odbc/dbdelve-plugin.toml "$APP/Contents/Resources/plugins/odbc/"
-BRIDGE="$APP/Contents/Helpers/dbdelve-odbc"
-cp target/release/plugins/odbc/bin/dbdelve-odbc "$BRIDGE"
+  # The manifest goes where db::plugin::discover() reads manifests in a bundle
+  # (Resources/plugins/<id>/), and the executable goes in Helpers/, where
+  # codesign expects nested code: one under Resources is treated as an unsealed
+  # resource rather than code to be signed.
+  cp target/release/plugins/odbc/dbdelve-plugin.toml "$APP/Contents/Resources/plugins/odbc/"
+  BRIDGE="$APP/Contents/Helpers/dbdelve-odbc"
+  cp target/release/plugins/odbc/bin/dbdelve-odbc "$BRIDGE"
+}
+step "Assemble bundle" assemble_bundle
 
 # unixODBC is compiled into the bridge: one linked to a Homebrew libodbc runs
 # here and fails on every machine without it.
@@ -85,19 +128,24 @@ cp target/release/plugins/odbc/bin/dbdelve-odbc "$BRIDGE"
 # reading as an empty, clean list. `strings` catches a Homebrew search path
 # that otool cannot see on a statically linked library. A bare /usr/local/lib is
 # not matched: unixODBC's own default search path spells it, in a clean build.
-linked="$(otool -L "$BRIDGE")" || {
-  echo "otool could not read the bridge" >&2
-  exit 1
+verify_bridge() {
+  local linked
+  linked="$(otool -L "$BRIDGE")" || {
+    echo "otool could not read the bridge" >&2
+    exit 1
+  }
+  if printf '%s\n' "$linked" | tail -n +2 | grep -E 'odbc|/opt/homebrew|/usr/local'; then
+    echo "the bridge links a library outside the system: unixODBC must be static" >&2
+    exit 1
+  fi
+  if strings "$BRIDGE" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)'; then
+    echo "the bridge holds a Homebrew path: unixODBC must come from the crate" >&2
+    exit 1
+  fi
 }
-if printf '%s\n' "$linked" | tail -n +2 | grep -E 'odbc|/opt/homebrew|/usr/local'; then
-  echo "the bridge links a library outside the system: unixODBC must be static" >&2
-  exit 1
-fi
-if strings "$BRIDGE" | grep -E '/opt/homebrew|/usr/local/(Cellar|opt)'; then
-  echo "the bridge holds a Homebrew path: unixODBC must come from the crate" >&2
-  exit 1
-fi
+step "Verify ODBC bridge" verify_bridge
 
+write_plist() {
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -119,17 +167,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 plutil -lint -s "$APP/Contents/Info.plist"
+}
+step "Write Info.plist" write_plist
 
 # An arm64 binary will not launch without a signature, and copying it into the
 # bundle invalidates the one rustc left behind. DBDELVE_SIGN_ID takes a real
 # identity when there is one to distribute under, and dev/identity.sh's
 # self-signed one is what keeps the Keychain from re-asking after every
 # rebuild. Ad-hoc is the fallback, and it runs -- it just prompts.
-DEV_IDENTITY="DBDelve Dev Signing"
-if [[ -z "${DBDELVE_SIGN_ID:-}" ]] &&
-  security find-certificate -c "$DEV_IDENTITY" >/dev/null 2>&1; then
-  DBDELVE_SIGN_ID="$DEV_IDENTITY"
-fi
+sign_bundle() {
+  local DEV_IDENTITY="DBDelve Dev Signing"
+  if [[ -z "${DBDELVE_SIGN_ID:-}" ]] &&
+    security find-certificate -c "$DEV_IDENTITY" >/dev/null 2>&1; then
+    DBDELVE_SIGN_ID="$DEV_IDENTITY"
+  fi
 # --identifier spelled out rather than inferred from CFBundleIdentifier: the
 # Keychain pins its "Always Allow" to the signature's identifier, so the one
 # thing that must not drift between builds is the one thing stated here.
@@ -142,19 +193,25 @@ fi
 # entitlement: it loads vendor ODBC drivers signed by other teams, and the app
 # must keep library validation. Not added yet: nothing here enables the
 # hardened runtime.
-codesign --force --sign "${DBDELVE_SIGN_ID:--}" --identifier "$IDENTIFIER.odbc" "$BRIDGE"
-codesign --force --sign "${DBDELVE_SIGN_ID:--}" --identifier "$IDENTIFIER" "$APP"
-codesign --verify --deep --strict "$APP"
+  codesign --force --sign "${DBDELVE_SIGN_ID:--}" --identifier "$IDENTIFIER.odbc" "$BRIDGE"
+  codesign --force --sign "${DBDELVE_SIGN_ID:--}" --identifier "$IDENTIFIER" "$APP"
+  codesign --verify --deep --strict "$APP"
+}
+step "Sign bundle" sign_bundle
 
 # Neither variant installs. The release reaches /Applications by the DMG's
 # drag-to-install, and the dev app runs where it was built so it can never be
 # mistaken for -- or dropped over -- the real one.
-if [[ "$CHANNEL" == release || "${DBDELVE_NO_LAUNCH:-}" == 1 ]]; then
-  echo "built $APP (v$VERSION)"
-  exit 0
-fi
+finish() {
+  if [[ "$CHANNEL" == release || "${DBDELVE_NO_LAUNCH:-}" == 1 ]]; then
+    echo "built $APP (v$VERSION)"
+    return 0
+  fi
 
-# open rather than exec: LaunchServices owns the process, so the app outlives
-# this script and behaves like the Dock launched it.
-open "$APP"
-echo "launched $APP (v$VERSION)"
+  # open rather than exec: LaunchServices owns the process, so the app outlives
+  # this script and behaves like the Dock launched it.
+  open "$APP"
+  echo "launched $APP (v$VERSION)"
+}
+step "Finish" finish
+printf '\ntotal %ss\n' "$((SECONDS - TOTAL_START))"
