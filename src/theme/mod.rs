@@ -295,7 +295,6 @@ impl Appearance {
             gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => Self::Dark,
         }
     }
-
 }
 
 impl gpui::Global for Theme {}
