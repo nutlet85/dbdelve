@@ -14,6 +14,25 @@ inspectable, never spliced into anyone's buffer.
 DBDelve is built and why. Each area's detail lives in `docs/agents/`; the
 [Reference](#reference) list at the end says which file a task needs.
 
+## Diagnose before editing
+
+This overrides the general instruction to act on the best available answer.
+What the user asked for decides whether code changes are in scope, not whether
+an edit looks like the obvious next step.
+
+- **A request to check, verify, diagnose, explain, review, or confirm a cause
+  is read-only.** Investigate, then report what is happening, the evidence, the
+  likely cause, and the options with their tradeoffs. Do not edit, stage,
+  commit, or push until the user explicitly asks.
+- **A request to fix, implement, change, add, remove, tune, or adjust
+  authorizes edits within that scope.** Do not widen it.
+- A diagnosis never carries an unrequested fix. "I found X" is not permission
+  to change X.
+- If the cause is a hypothesis, say so. If the fix changes behaviour beyond
+  the reported symptom, present it and wait for confirmation.
+- When a decision has materially different tradeoffs, use `ask` with the
+  findings and options rather than choosing silently.
+
 ## Hard rules
 
 Violating one of these is a bug regardless of the benefit. If a task seems to
