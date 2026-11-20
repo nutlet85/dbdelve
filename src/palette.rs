@@ -242,67 +242,78 @@ impl Mode {
     }
 
     fn placeholder(self) -> String {
-        let text = match self {
-            Mode::Font(_) => "Pick a font…",
-            Mode::Theme(None) => "Pick a theme…",
-            Mode::Theme(Some(Appearance::Light)) => "Pick a light theme…",
-            Mode::Theme(Some(Appearance::Dark)) => "Pick a dark theme…",
-            Mode::ImportTheme(..) => "Import a theme…",
-            Mode::Database => "Switch database…",
-            Mode::Schema => "Switch schema…",
-            Mode::Columns => "Go to a column…",
-            Mode::RowLimit => "Set the row limit…",
-            Mode::Engine => "Pick an engine…",
-            Mode::ImportProject => "Choose the project they join…",
-            Mode::References => "Open a referencing table…",
-            Mode::ConnectionActions(_) | Mode::ProjectActions(_) => "Pick an action…",
-            Mode::MoveToProject(_) => "Move to a project…",
-            Mode::NameProject(None) => "Name the new project…",
-            Mode::NameProject(Some(_)) => "Rename the project…",
-            Mode::Projects(ProjectVerb::Rename) => "Rename a project…",
-            Mode::Projects(ProjectVerb::Delete) => "Delete a project…",
-            Mode::DeleteQuery => "Delete a saved query…",
-            Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => {
-                "Remove this connection?"
+        match self {
+            Mode::Search(scope) => scope.placeholder(),
+            Mode::Font(_) => t!("palette.picker.font").to_string(),
+            Mode::Theme(None) => t!("palette.picker.theme").to_string(),
+            Mode::Theme(Some(Appearance::Light)) => t!("palette.picker.light_theme").to_string(),
+            Mode::Theme(Some(Appearance::Dark)) => t!("palette.picker.dark_theme").to_string(),
+            Mode::ImportTheme(..) => t!("palette.picker.import_theme").to_string(),
+            Mode::Database => t!("palette.picker.database").to_string(),
+            Mode::Schema => t!("palette.picker.schema").to_string(),
+            Mode::Columns => t!("palette.picker.column").to_string(),
+            Mode::RowLimit => t!("palette.picker.row_limit").to_string(),
+            Mode::Engine => t!("palette.picker.engine").to_string(),
+            Mode::ImportProject => t!("palette.picker.import_project").to_string(),
+            Mode::References => t!("palette.picker.reference").to_string(),
+            Mode::ConnectionActions(_) | Mode::ProjectActions(_) => {
+                t!("palette.picker.action").to_string()
             }
-            Mode::Confirm(Target::Project(_)) => "Delete this project?",
-            Mode::Search(scope) => return scope.placeholder(),
-        };
-        text.to_string()
+            Mode::MoveToProject(_) => t!("palette.picker.move_project").to_string(),
+            Mode::NameProject(None) => t!("palette.picker.name_project").to_string(),
+            Mode::NameProject(Some(_)) => t!("palette.picker.rename_project").to_string(),
+            Mode::Projects(ProjectVerb::Rename) => {
+                t!("palette.picker.rename_a_project").to_string()
+            }
+            Mode::Projects(ProjectVerb::Delete) => {
+                t!("palette.picker.delete_a_project").to_string()
+            }
+            Mode::DeleteQuery => t!("palette.picker.delete_query").to_string(),
+            Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => {
+                t!("palette.picker.remove_connection").to_string()
+            }
+            Mode::Confirm(Target::Project(_)) => t!("palette.picker.delete_project").to_string(),
+        }
     }
 
     /// The one pill a picker shows in place of the scopes, naming its list.
     fn title(self) -> String {
-        match self {
-            Mode::Search(scope) => scope.title(),
-            Mode::Font(FontSlot::Chrome) => "Chrome font".to_string(),
-            Mode::Font(FontSlot::Editor) => "Editor font".to_string(),
-            Mode::Font(FontSlot::Grid) => "Grid font".to_string(),
-            Mode::Theme(None) => "Themes".to_string(),
-            Mode::Theme(Some(side)) => side.theme_label().to_string(),
-            Mode::ImportTheme(..) => "Import theme".to_string(),
-            Mode::Database => "Databases".to_string(),
-            Mode::Schema => "Schemas".to_string(),
-            Mode::Columns => "Columns".to_string(),
-            Mode::RowLimit => "Row limit".to_string(),
-            Mode::Engine => "Engines".to_string(),
-            Mode::ImportProject => "Project".to_string(),
-            Mode::References => "Referenced by".to_string(),
-            Mode::DeleteQuery => "Delete query".to_string(),
-            Mode::ConnectionActions(_) => "Connection".to_string(),
-            Mode::ProjectActions(_) => "Project".to_string(),
-            Mode::MoveToProject(_) => "Move to project".to_string(),
-            Mode::NameProject(None) => "New project".to_string(),
+        let key = match self {
+            Mode::Search(scope) => return scope.title(),
+            Mode::Font(FontSlot::Chrome) => "palette.title.chrome_font",
+            Mode::Font(FontSlot::Editor) => "palette.title.editor_font",
+            Mode::Font(FontSlot::Grid) => "palette.title.grid_font",
+            Mode::Theme(Some(Appearance::Light)) => {
+                return t!("palette.title.light_theme").to_string();
+            }
+            Mode::Theme(Some(Appearance::Dark)) => {
+                return t!("palette.title.dark_theme").to_string();
+            }
+            Mode::Theme(None) => "palette.title.themes",
+            Mode::ImportTheme(..) => "palette.title.import_theme",
+            Mode::Database => "palette.title.databases",
+            Mode::Schema => "palette.title.schemas",
+            Mode::Columns => "palette.title.columns",
+            Mode::RowLimit => "palette.title.row_limit",
+            Mode::Engine => "palette.title.engines",
+            Mode::ImportProject => "palette.title.project",
+            Mode::References => "palette.title.referenced_by",
+            Mode::DeleteQuery => "palette.title.delete_query",
+            Mode::ConnectionActions(_) => "palette.title.connection",
+            Mode::ProjectActions(_) => "palette.title.project",
+            Mode::MoveToProject(_) => "palette.title.move_to_project",
+            Mode::NameProject(None) => "palette.title.new_project",
             Mode::NameProject(Some(_)) | Mode::Projects(ProjectVerb::Rename) => {
-                "Rename project".to_string()
+                "palette.title.rename_project"
             }
             Mode::Projects(ProjectVerb::Delete) | Mode::Confirm(Target::Project(_)) => {
-                "Delete project".to_string()
+                "palette.title.delete_project"
             }
             Mode::Confirm(Target::Connection(_) | Target::Unavailable(_)) => {
-                "Remove connection".to_string()
+                "palette.title.remove_connection"
             }
-        }
+        };
+        t!(key).to_string()
     }
 
     /// What `enter` does to the row, for the footer.
@@ -526,6 +537,15 @@ pub enum Command {
     RestartIntoUpdate(std::path::PathBuf),
 }
 
+/// The one row in force, told apart from what its hint happens to read in
+/// this language. The hint is drawn; the marker is what the code finds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Marker {
+    Current,
+    Active,
+    Imported,
+}
+
 struct Item {
     /// What the matcher scores, and what the row reads as. One string for both,
     /// so nothing can be found by text that is not on screen.
@@ -539,6 +559,9 @@ struct Item {
     /// Muted, at the far end: what kind of object this is, or which row is the
     /// one in force.
     hint: SharedString,
+    /// The one row in force or already imported, independent of the hint's
+    /// language.
+    marker: Option<Marker>,
     /// The chord the action holds, drawn as a keycap per key.
     keys: Option<String>,
     icon: &'static str,
@@ -728,6 +751,33 @@ fn group_header(group: &Group) -> SharedString {
     t!(key).into()
 }
 
+/// The one row in force: its hint says so in the language on screen, and its
+/// marker is what the code finds by.
+fn mark_current(item: Item, here: bool) -> Item {
+    match here {
+        true => item
+            .hint(t!("palette.hint.current"))
+            .marker(Marker::Current),
+        false => item,
+    }
+}
+
+fn mark_imported(item: Item, already: bool) -> Item {
+    match already {
+        true => item
+            .hint(t!("palette.hint.imported"))
+            .marker(Marker::Imported),
+        false => item,
+    }
+}
+
+fn mark_active(item: Item, here: bool) -> Item {
+    match here {
+        true => item.hint(t!("palette.hint.active")).marker(Marker::Active),
+        false => item,
+    }
+}
+
 impl Item {
     fn new(label: impl Into<String>, icon: &'static str, command: Command) -> Self {
         Self {
@@ -735,6 +785,7 @@ impl Item {
             also: Vec::new(),
             detail: None,
             hint: SharedString::default(),
+            marker: None,
             keys: None,
             icon,
             tint: None,
@@ -753,6 +804,15 @@ impl Item {
     fn hint(mut self, hint: impl Into<SharedString>) -> Self {
         self.hint = hint.into();
         self
+    }
+
+    fn marker(mut self, marker: Marker) -> Self {
+        self.marker = Some(marker);
+        self
+    }
+
+    fn is_current(&self) -> bool {
+        self.marker == Some(Marker::Current)
     }
 
     fn keys(mut self, keys: Option<String>) -> Self {
@@ -886,10 +946,11 @@ fn arrange(
         recents
             .iter()
             .filter_map(|(scope, label)| {
-                ranked
-                    .iter()
-                    .map(|((index, _), _)| *index)
-                    .find(|&index| items[index].scope == *scope && items[index].label == *label)
+                ranked.iter().map(|((index, _), _)| *index).find(|&index| {
+                    items[index].scope == *scope
+                        && (items[index].label == *label
+                            || items[index].also.iter().any(|also| also == label))
+                })
             })
             .take(RECENT_ROWS)
             .collect()
@@ -2729,13 +2790,19 @@ fn search_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item>
 /// The scratch buffer and every saved query.
 fn query_items(profile: &Profile) -> Vec<Item> {
     let saved = saved_query_icon(profile.config.engine().syntax());
-    let scratch = Item::new("Scratch query", icon::SCRATCH_QUERY, Command::OpenScratch)
-        .hint("scratch")
-        .scope(Scope::Queries);
+    let scratch = command_key(
+        "palette.command.scratch_query",
+        "Scratch query",
+        icon::SCRATCH_QUERY,
+        Command::OpenScratch,
+        QUERY,
+    )
+    .hint(t!("palette.hint.scratch"))
+    .scope(Scope::Queries);
     std::iter::once(scratch)
         .chain(profile.session.saved_queries.iter().map(|name| {
             Item::new(name.clone(), saved, Command::OpenQuery(name.clone()))
-                .hint("query")
+                .hint(t!("palette.hint.query"))
                 .scope(Scope::Queries)
         }))
         .collect()
@@ -2751,8 +2818,8 @@ fn delete_query_items(profile: &Profile) -> Vec<Item> {
         .map(|name| {
             Item::new(name.clone(), saved, Command::DeleteQuery(name.clone())).hint(
                 match profile.session.tab_holding(name) {
-                    Some(_) => "open",
-                    None => "query",
+                    Some(_) => t!("palette.hint.open"),
+                    None => t!("palette.hint.query"),
                 },
             )
         })
@@ -2943,6 +3010,10 @@ pub fn without_a_connection(mode: Mode, profiles: bool, unavailable: bool) -> Op
 }
 
 const NO_PROJECT: &str = "No project";
+
+fn no_project_label() -> String {
+    t!("palette.group.no_project").to_string()
+}
 const PROJECTS: &str = "Projects";
 const MANAGE: &str = "Manage";
 const THEMES: &str = "Themes";
@@ -3012,18 +3083,28 @@ fn connection_items(workspace: &Workspace) -> Vec<Item> {
         workspace.active,
     ));
     items.push(
-        Item::new("New connection…", icon::PLUS, Command::NewConnection)
-            .keys(chord_for("new_connection", overrides))
-            .scope(Scope::Connections)
-            .group(Group::Named(MANAGE))
-            .beyond_all(),
+        command_key(
+            "palette.command.new_connection",
+            "New connection…",
+            icon::PLUS,
+            Command::NewConnection,
+            MANAGE,
+        )
+        .keys(chord_for("new_connection", overrides))
+        .scope(Scope::Connections)
+        .beyond_all(),
     );
     items.push(
-        Item::new("New project…", icon::ADD_TO_PROJECT, Command::NewProject)
-            .keys(chord_for("new_project", overrides))
-            .scope(Scope::Connections)
-            .group(Group::Named(MANAGE))
-            .beyond_all(),
+        command_key(
+            "palette.command.new_project",
+            "New project…",
+            icon::ADD_TO_PROJECT,
+            Command::NewProject,
+            MANAGE,
+        )
+        .keys(chord_for("new_project", overrides))
+        .scope(Scope::Connections)
+        .beyond_all(),
     );
     items
 }
@@ -3032,10 +3113,12 @@ fn connection_items(workspace: &Workspace) -> Vec<Item> {
 fn disconnect_row(front: Option<&str>) -> Option<Item> {
     let name = front?;
     Some(
-        Item::new(
+        command_text(
+            t!("palette.action.disconnect_from", name = name).to_string(),
             format!("Disconnect from {name}"),
             icon::DISCONNECT,
             Command::Disconnect,
+            CONNECTION,
         )
         .scope(Scope::Connections)
         .beyond_all(),
@@ -3106,18 +3189,20 @@ fn listed_connections(
                 );
                 continue;
             }
-            let item = Item::new(
-                connection.name,
-                connection.logo,
-                Command::SwitchProfile(index),
-            )
-            .detail(connection.endpoint.clone())
-            .tint(connection.color)
-            .status(index)
-            .hint(if Some(index) == active { "current" } else { "" })
-            .also(vec![connection.host.clone()])
-            .scope(Scope::Connections)
-            .group(header.clone());
+            let item = mark_current(
+                Item::new(
+                    connection.name,
+                    connection.logo,
+                    Command::SwitchProfile(index),
+                )
+                .detail(connection.endpoint.clone())
+                .tint(connection.color)
+                .status(index)
+                .also(vec![connection.host.clone()])
+                .scope(Scope::Connections)
+                .group(header.clone()),
+                Some(index) == active,
+            );
             items.push(if Some(index) == active || group != current {
                 item.beyond_all()
             } else {
@@ -3128,12 +3213,18 @@ fn listed_connections(
             && items.len() == before
         {
             let name = &projects[at].name;
+            let label = t!("palette.action.new_connection_in", project = name).to_string();
+            let english = format!("New connection in {name}…");
+            let item = Item::new(
+                label.clone(),
+                icon::PLUS,
+                Command::NewConnectionIn(Some(name.clone())),
+            );
             items.push(
-                Item::new(
-                    format!("New connection in {name}…"),
-                    icon::PLUS,
-                    Command::NewConnectionIn(Some(name.clone())),
-                )
+                match label == english {
+                    true => item,
+                    false => item.also(vec![english]),
+                }
                 .scope(Scope::Connections)
                 .group(header)
                 .beyond_all(),
@@ -3154,13 +3245,17 @@ fn connection_action_items(workspace: &Workspace, index: usize) -> Vec<Item> {
         .projects
         .iter()
         .position(|project| project.connections.contains(&profile.id));
-    let row = |label: String, icon: &'static str, command: Command, group: &'static str| {
-        Item::new(label, icon, command).group(Group::Named(group))
-    };
+    let row =
+        |label: String,
+         english: String,
+         icon: &'static str,
+         command: Command,
+         group: &'static str| { command_text(label, english, icon, command, group) };
     let mut items = Vec::new();
     if Some(index) != workspace.active {
         items.push(
             row(
+                t!("palette.action.switch_to", name = name).to_string(),
                 format!("Switch to {name}"),
                 profile.config.target().logo(),
                 Command::SwitchProfile(index),
@@ -3170,12 +3265,14 @@ fn connection_action_items(workspace: &Workspace, index: usize) -> Vec<Item> {
         );
     }
     items.push(row(
+        t!("palette.action.edit", name = name).to_string(),
         format!("Edit {name}…"),
         icon::RENAME,
         Command::EditConnection(index),
         CONNECTION,
     ));
     items.push(row(
+        t!("palette.action.duplicate", name = name).to_string(),
         format!("Duplicate {name}…"),
         icon::COPY,
         Command::DuplicateConnection(index),
@@ -3183,6 +3280,7 @@ fn connection_action_items(workspace: &Workspace, index: usize) -> Vec<Item> {
     ));
     if !workspace.projects.is_empty() {
         items.push(row(
+            t!("palette.action.move", name = name).to_string(),
             format!("Move {name} to a project…"),
             icon::ADD_TO_PROJECT,
             Command::ChooseProject(index),
@@ -3191,6 +3289,12 @@ fn connection_action_items(workspace: &Workspace, index: usize) -> Vec<Item> {
     }
     if let Some(at) = project {
         items.push(row(
+            t!(
+                "palette.action.remove_from",
+                name = name,
+                project = workspace.projects[at].name
+            )
+            .to_string(),
             format!("Remove {name} from {}", workspace.projects[at].name),
             icon::LEAVE_PROJECT,
             Command::MoveToProject(index, None),
@@ -3198,6 +3302,7 @@ fn connection_action_items(workspace: &Workspace, index: usize) -> Vec<Item> {
         ));
     }
     items.push(row(
+        t!("palette.action.remove", name = name).to_string(),
         format!("Remove {name}…"),
         icon::DELETE,
         Command::Confirm(Target::Connection(index)),
@@ -3216,20 +3321,26 @@ fn connection_action_items(workspace: &Workspace, index: usize) -> Vec<Item> {
 /// Everything that can be done to one project.
 fn project_action_items(at: usize, name: &str, group: Group) -> Vec<Item> {
     [
-        Item::new(
+        command_text(
+            t!("palette.action.new_connection_in", project = name).to_string(),
             format!("New connection in {name}…"),
             icon::PLUS,
             Command::NewConnectionIn(Some(name.to_string())),
+            PROJECT,
         ),
-        Item::new(
+        command_text(
+            t!("palette.action.rename", project = name).to_string(),
             format!("Rename {name}…"),
             icon::RENAME,
             Command::NameProject(Some(at)),
+            PROJECT,
         ),
-        Item::new(
+        command_text(
+            t!("palette.action.delete", project = name).to_string(),
             format!("Delete {name}…"),
             icon::DELETE,
             Command::Confirm(Target::Project(at)),
+            PROJECT,
         ),
     ]
     .into_iter()
@@ -3243,22 +3354,23 @@ fn move_items(index: usize, id: &str, projects: &[StoredProject]) -> Vec<Item> {
     let current = projects
         .iter()
         .position(|project| project.connections.iter().any(|member| member == id));
-    let hint = |here: bool| if here { "current" } else { "" };
-    std::iter::once(
+    std::iter::once(mark_current(
         Item::new(
-            NO_PROJECT,
+            no_project_label(),
             icon::LEAVE_PROJECT,
             Command::MoveToProject(index, None),
-        )
-        .hint(hint(current.is_none())),
-    )
+        ),
+        current.is_none(),
+    ))
     .chain(projects.iter().enumerate().map(|(at, project)| {
-        Item::new(
-            project.name.clone(),
-            icon::PROJECT,
-            Command::MoveToProject(index, Some(project.name.clone())),
+        mark_current(
+            Item::new(
+                project.name.clone(),
+                icon::PROJECT,
+                Command::MoveToProject(index, Some(project.name.clone())),
+            ),
+            current == Some(at),
         )
-        .hint(hint(current == Some(at)))
     }))
     .collect()
 }
@@ -3275,19 +3387,19 @@ fn import_project_items(workspace: &Workspace) -> Vec<Item> {
         .into_iter()
         .flatten()
         .map(|project| {
-            let hint = if picked.as_ref() == Some(&project) {
-                "current"
-            } else {
-                ""
-            };
+            let here = picked.as_ref() == Some(&project);
             let (label, icon) = match &project {
-                None => (NO_PROJECT.to_string(), icon::LEAVE_PROJECT),
-                Some(name) if workspace.import_makes(&project) => {
-                    (format!("{name} (new project)"), icon::PLUS)
-                }
+                None => (no_project_label(), icon::LEAVE_PROJECT),
+                Some(name) if workspace.import_makes(&project) => (
+                    format!("{name} ({})", t!("palette.new_project")),
+                    icon::PLUS,
+                ),
                 Some(name) => (name.clone(), icon::PROJECT),
             };
-            Item::new(label, icon, Command::SetImportProject(project)).hint(hint)
+            mark_current(
+                Item::new(label, icon, Command::SetImportProject(project)),
+                here,
+            )
         })
         .collect()
 }
@@ -3297,7 +3409,7 @@ fn import_project_items(workspace: &Workspace) -> Vec<Item> {
 pub(crate) fn picked_import_row(workspace: &Workspace) -> Option<usize> {
     import_project_items(workspace)
         .iter()
-        .position(|item| item.hint.as_ref() == "current")
+        .position(Item::is_current)
 }
 
 /// The relations the last reference check found rows in. One whose check
@@ -3317,7 +3429,9 @@ fn reference_items(workspace: &Workspace) -> Vec<Item> {
             let item = Item::new(label.to_string(), icon::TABLE, command);
             match answer {
                 Ok(()) => item,
-                Err(message) => item.hint(format!("Could not check: {message}")).muted(),
+                Err(message) => item
+                    .hint(t!("palette.hint.could_not_check", message = message))
+                    .muted(),
             }
         })
         .collect()
@@ -3332,7 +3446,7 @@ pub(crate) fn current_project_row(
 ) -> Option<usize> {
     move_items(index, id, projects)
         .iter()
-        .position(|item| item.hint.as_ref() == "current")
+        .position(Item::is_current)
 }
 
 /// Every project, with how many connections it holds.
@@ -3353,9 +3467,9 @@ fn project_items(verb: ProjectVerb, projects: &[StoredProject]) -> Vec<Item> {
 
 pub(crate) fn connection_count(count: usize) -> String {
     match count {
-        0 => "empty".to_string(),
-        1 => "1 connection".to_string(),
-        count => format!("{count} connections"),
+        0 => t!("palette.hint.empty").to_string(),
+        1 => t!("palette.hint.one_connection").to_string(),
+        count => t!("palette.hint.connections", count = count).to_string(),
     }
 }
 
@@ -3367,9 +3481,9 @@ fn confirm_items(workspace: &Workspace, target: Target) -> Vec<Item> {
                 return Vec::new();
             };
             (
-                format!("Remove {}", profile.name),
+                t!("palette.confirm.remove_named", name = profile.name).to_string(),
                 Command::RemoveConnection(index),
-                "its saved queries go too",
+                t!("palette.hint.saved_queries_go").to_string(),
             )
         }
         Target::Project(at) => {
@@ -3377,9 +3491,9 @@ fn confirm_items(workspace: &Workspace, target: Target) -> Vec<Item> {
                 return Vec::new();
             };
             (
-                format!("Delete {}", project.name),
+                t!("palette.confirm.delete_named", name = project.name).to_string(),
                 Command::DeleteProject(project.name.clone()),
-                "its connections are kept",
+                t!("palette.hint.connections_kept").to_string(),
             )
         }
         Target::Unavailable(at) => {
@@ -3387,9 +3501,9 @@ fn confirm_items(workspace: &Workspace, target: Target) -> Vec<Item> {
                 return Vec::new();
             };
             (
-                format!("Remove {}", gone.name),
+                t!("palette.confirm.remove_named", name = gone.name).to_string(),
                 Command::RemoveUnavailable(at),
-                "its saved queries go too",
+                t!("palette.hint.saved_queries_go").to_string(),
             )
         }
     };
@@ -3421,15 +3535,19 @@ fn naming_items(typed: &str, naming: &Naming) -> (Vec<Item>, Option<String>) {
         );
     }
     let item = match &naming.renaming {
-        Some(old) => Item::new(
+        Some(old) => command_text(
+            t!("palette.action.rename_to", old = old, new = name).to_string(),
             format!("Rename {old} to {name}"),
             icon::RENAME,
             Command::RenameProject(old.clone(), name.to_string()),
+            PROJECT,
         ),
-        None => Item::new(
+        None => command_text(
+            t!("palette.action.create_project", name = name).to_string(),
             format!("Create project {name}"),
             icon::ADD_TO_PROJECT,
             Command::CreateProject(name.to_string()),
+            PROJECT,
         ),
     };
     (vec![item], None)
@@ -3488,20 +3606,25 @@ fn history_items(profile: &Profile) -> Vec<Item> {
 /// a statement from before runs were timed, which has none of the three.
 fn history_hint(entry: &HistoryEntry, now: u64) -> String {
     let outcome = if entry.error.is_some() {
-        Some("failed".to_string())
+        Some(t!("palette.hint.failed").to_string())
     } else if entry.cancelled {
-        Some("cancelled".to_string())
+        Some(t!("palette.hint.cancelled").to_string())
     } else if let Some(rows) = entry.rows {
-        Some(match rows {
-            1 => "1 row".to_string(),
-            rows => format!("{} rows", group_thousands(rows)),
-        })
+        Some(
+            t!(
+                "palette.rows",
+                rows = group_thousands(rows),
+                plural = if rows == 1 { "row" } else { "rows" }
+            )
+            .to_string(),
+        )
     } else {
-        entry
-            .affected
-            .map(|affected| format!("{} affected", group_thousands(affected)))
+        entry.affected.map(|affected| {
+            t!("palette.hint.affected", count = group_thousands(affected)).to_string()
+        })
     };
-    let capped = (entry.capped && entry.error.is_none()).then(|| "capped".to_string());
+    let capped =
+        (entry.capped && entry.error.is_none()).then(|| t!("palette.hint.capped").to_string());
     [
         entry.at.map(|at| ago(at, now)),
         outcome,
@@ -3525,11 +3648,11 @@ fn ago(at: u64, now: u64) -> String {
     const DAY: u64 = 24 * HOUR;
     let since = now.saturating_sub(at);
     match since {
-        _ if since < MINUTE => "just now".to_string(),
-        _ if since < HOUR => format!("{}m ago", since / MINUTE),
-        _ if since < DAY => format!("{}h ago", since / HOUR),
-        _ if since < 2 * DAY => "yesterday".to_string(),
-        _ if since < 7 * DAY => format!("{}d ago", since / DAY),
+        _ if since < MINUTE => t!("palette.hint.just_now").to_string(),
+        _ if since < HOUR => t!("palette.hint.minutes_ago", count = since / MINUTE).to_string(),
+        _ if since < DAY => t!("palette.hint.hours_ago", count = since / HOUR).to_string(),
+        _ if since < 2 * DAY => t!("palette.hint.yesterday").to_string(),
+        _ if since < 7 * DAY => t!("palette.hint.days_ago", count = since / DAY).to_string(),
         _ => {
             let date = |ms: u64| {
                 time::OffsetDateTime::from_unix_timestamp((ms / 1_000) as i64)
@@ -3544,7 +3667,7 @@ fn ago(at: u64, now: u64) -> String {
                         false => format!("{month} {}, {}", then.day(), then.year()),
                     }
                 }
-                _ => format!("{}d ago", since / DAY),
+                _ => t!("palette.hint.days_ago", count = since / DAY).to_string(),
             }
         }
     }
@@ -3554,10 +3677,24 @@ fn ago(at: u64, now: u64) -> String {
 /// ones, seconds to one place, then minutes.
 fn took(ms: u64) -> String {
     match ms {
-        _ if ms < 1_000 => format!("{ms} ms"),
-        _ if ms < 60_000 => format!("{:.1} s", ms as f64 / 1_000.),
-        _ if ms < 3_600_000 => format!("{}m {}s", ms / 60_000, ms % 60_000 / 1_000),
-        _ => format!("{}h {}m", ms / 3_600_000, ms % 3_600_000 / 60_000),
+        _ if ms < 1_000 => t!("palette.duration.ms", value = ms).to_string(),
+        _ if ms < 60_000 => t!(
+            "palette.duration.seconds",
+            value = format!("{:.1}", ms as f64 / 1_000.)
+        )
+        .to_string(),
+        _ if ms < 3_600_000 => t!(
+            "palette.duration.minutes",
+            minutes = ms / 60_000,
+            seconds = ms % 60_000 / 1_000
+        )
+        .to_string(),
+        _ => t!(
+            "palette.duration.hours",
+            hours = ms / 3_600_000,
+            minutes = ms % 3_600_000 / 60_000
+        )
+        .to_string(),
     }
 }
 
@@ -3590,13 +3727,18 @@ fn font_items_from(slot: FontSlot, current: &str, mut names: Vec<String>) -> Vec
         .into_iter()
         .filter(|name| !name.starts_with('.'))
         .map(|name| {
-            let hint = if name == current { "current" } else { "" };
-            Item::new(name.clone(), icon::FONT, Command::SetFont(slot, name)).hint(hint)
+            let here = name == current;
+            mark_current(
+                Item::new(name.clone(), icon::FONT, Command::SetFont(slot, name)),
+                here,
+            )
         });
-    std::iter::once(Item::new(
+    std::iter::once(command_text(
+        t!("palette.default_font", font = default).to_string(),
         format!("Default ({default})"),
         icon::RESET,
         Command::SetFont(slot, default),
+        APPEARANCE,
     ))
     .chain(families)
     .collect()
@@ -3638,28 +3780,27 @@ pub(crate) fn listed_themes(side: Option<Appearance>) -> impl Iterator<Item = Th
 /// Every theme [`listed_themes`] lists, the one picked marked the way the
 /// font list marks its family. The ways to import one follow under their own
 /// header, so the list opens on a theme and reads as themes first.
-fn theme_items(side: Option<Appearance>, picked: &str) -> Vec<Item> {
+fn theme_items(side: Option<Appearance>, current: &str) -> Vec<Item> {
     let themes = listed_themes(side).map(|candidate| {
-        let hint = if candidate.name == picked {
-            "current"
-        } else {
-            ""
-        };
-        Item::new(
-            candidate.name,
-            icon::THEME,
-            Command::SetTheme(side, Box::new(candidate)),
+        let here = candidate.name == current;
+        mark_current(
+            Item::new(
+                candidate.name,
+                icon::THEME,
+                Command::SetTheme(side, Box::new(candidate)),
+            )
+            .group(Group::Named(THEMES)),
+            here,
         )
-        .hint(hint)
-        .group(Group::Named(THEMES))
     });
     let imports = user::Source::ALL.into_iter().map(|source| {
-        Item::new(
+        command_text(
+            t!("palette.import_from", source = source.name()).to_string(),
             format!("Import from {}…", source.name()),
             icon::PLUS,
             Command::BrowseThemes(source, side),
+            IMPORT,
         )
-        .group(Group::Named(IMPORT))
     });
     themes.chain(imports).collect()
 }
@@ -3685,17 +3826,14 @@ fn import_items(source: user::Source, side: Option<Appearance>) -> Vec<Item> {
                 .name
                 .split_once(": ")
                 .map_or(candidate.name, |(_, name)| name);
-            let hint = if user::is_imported(candidate.name) {
-                "imported"
-            } else {
-                ""
-            };
-            Item::new(
-                label,
-                icon::THEME,
-                Command::ImportTheme(source, index, side),
+            mark_imported(
+                Item::new(
+                    label,
+                    icon::THEME,
+                    Command::ImportTheme(source, index, side),
+                ),
+                user::is_imported(candidate.name),
             )
-            .hint(hint)
         })
         .collect()
 }
@@ -3710,19 +3848,18 @@ fn database_items(profile: &Profile) -> Vec<Item> {
         .names
         .iter()
         .map(|name| {
-            let hint = if databases.current.as_ref() == Some(name) {
-                "current"
-            } else if engine.is_system_database(name) {
-                "system"
-            } else {
-                ""
-            };
-            Item::new(
-                name.clone(),
-                icon::DATABASE,
-                Command::SetDatabase(name.clone()),
-            )
-            .hint(hint)
+            let item = mark_current(
+                Item::new(
+                    name.clone(),
+                    icon::DATABASE,
+                    Command::SetDatabase(name.clone()),
+                ),
+                databases.current.as_ref() == Some(name),
+            );
+            match item.marker.is_some() || !engine.is_system_database(name) {
+                true => item,
+                false => item.hint(t!("palette.hint.system")),
+            }
         })
         .collect()
 }
@@ -3733,9 +3870,11 @@ fn engine_items(workspace: &Workspace) -> Vec<Item> {
     let current = workspace.form.as_ref().map(|form| form.target());
     crate::db::Target::tiles(&workspace.plugins)
         .map(|target| {
-            let picked = current.is_some_and(|current| target.is_tile_of(current));
-            let hint = if picked { "current" } else { "" };
-            Item::new(target.label(), target.logo(), Command::SetTarget(target)).hint(hint)
+            let here = current.is_some_and(|current| target.is_tile_of(current));
+            mark_current(
+                Item::new(target.label(), target.logo(), Command::SetTarget(target)),
+                here,
+            )
         })
         .collect()
 }
@@ -3743,16 +3882,14 @@ fn engine_items(workspace: &Workspace) -> Vec<Item> {
 /// Where [`engine_items`] lists the form's current engine, for the palette to
 /// open on.
 pub(crate) fn active_engine_row(workspace: &Workspace) -> Option<usize> {
-    engine_items(workspace)
-        .iter()
-        .position(|item| item.hint.as_ref() == "current")
+    engine_items(workspace).iter().position(Item::is_current)
 }
 
 /// Where [`schema_items`] lists the active schema, for the palette to open on.
 pub(crate) fn active_schema_row(profile: &Profile) -> Option<usize> {
     schema_items(profile)
         .iter()
-        .position(|item| item.hint.as_ref() == "active")
+        .position(|item| item.marker == Some(Marker::Active))
 }
 
 /// The catalog's schemas by name, the active one marked as the current
@@ -3766,17 +3903,14 @@ fn schema_items(profile: &Profile) -> Vec<Item> {
         .by_name()
         .into_iter()
         .map(|(_, schema)| {
-            let hint = if active == Some(schema.name.as_str()) {
-                "active"
-            } else {
-                ""
-            };
-            Item::new(
-                schema.name.clone(),
-                icon::SCHEMA,
-                Command::SetSchema(schema.name.clone()),
+            mark_active(
+                Item::new(
+                    schema.name.clone(),
+                    icon::SCHEMA,
+                    Command::SetSchema(schema.name.clone()),
+                ),
+                active == Some(schema.name.as_str()),
             )
-            .hint(hint)
         })
         .collect()
 }
@@ -3798,7 +3932,12 @@ pub(crate) fn row_limit_target(session: &Session) -> Option<(LimitTarget, Option
 }
 
 fn rows_label(rows: usize) -> String {
-    format!("{} rows", group_thousands(rows as u64))
+    t!(
+        "palette.rows",
+        rows = group_thousands(rows as u64),
+        plural = if rows == 1 { "row" } else { "rows" }
+    )
+    .to_string()
 }
 
 /// What the row limit menu offers, the limit in force marked current.
@@ -3806,35 +3945,33 @@ fn row_limit_items(session: &Session) -> Vec<Item> {
     let Some((_, limit)) = row_limit_target(session) else {
         return Vec::new();
     };
-    let current = |rows: Option<usize>| if limit == rows { "current" } else { "" };
     let custom = limit.filter(|rows| !ROW_LIMITS.contains(rows));
     let custom_label = match custom {
         Some(rows) => t!("palette.custom_value", rows = group_thousands(rows as u64)).to_string(),
         None => t!("palette.custom").to_string(),
     };
-    std::iter::once(
+    std::iter::once(mark_current(
         Item::new(
             t!("palette.no_limit").to_string(),
             icon::TABLE,
             Command::SetRowLimit(None),
-        )
-        .hint(current(None)),
-    )
-    .chain(ROW_LIMITS.into_iter().map(|rows| {
-        Item::new(
-            rows_label(rows),
-            icon::TABLE,
-            Command::SetRowLimit(Some(rows)),
-        )
-        .hint(current(Some(rows)))
-    }))
-    .chain(std::iter::once(
-        Item::new(custom_label, icon::RENAME, Command::CustomRowLimit).hint(if custom.is_some() {
-            "current"
-        } else {
-            ""
-        }),
+        ),
+        limit.is_none(),
     ))
+    .chain(ROW_LIMITS.into_iter().map(|rows| {
+        mark_current(
+            Item::new(
+                rows_label(rows),
+                icon::TABLE,
+                Command::SetRowLimit(Some(rows)),
+            ),
+            limit == Some(rows),
+        )
+    }))
+    .chain(std::iter::once(mark_current(
+        Item::new(custom_label, icon::RENAME, Command::CustomRowLimit),
+        custom.is_some(),
+    )))
     .collect()
 }
 
@@ -3843,7 +3980,7 @@ fn row_limit_items(session: &Session) -> Vec<Item> {
 pub(crate) fn active_row_limit_row(profile: &Profile) -> Option<usize> {
     row_limit_items(&profile.session)
         .iter()
-        .position(|item| item.hint.as_ref() == "current")
+        .position(Item::is_current)
 }
 
 fn mode_icon(mode: sql::Mode) -> &'static str {
@@ -3908,6 +4045,38 @@ fn command(label: &str, icon: &'static str, command: Command, group: &'static st
     Item::new(label, icon, command).group(Group::Named(group))
 }
 
+/// A command whose label is translated. The English text stays as a second
+/// thing to find it by, so a Chinese list can still be searched in English.
+fn command_key(
+    key: &'static str,
+    english: &'static str,
+    icon: &'static str,
+    command: Command,
+    group: &'static str,
+) -> Item {
+    command_text(
+        t!(key).to_string(),
+        english.to_string(),
+        icon,
+        command,
+        group,
+    )
+}
+
+fn command_text(
+    label: String,
+    english: String,
+    icon: &'static str,
+    command: Command,
+    group: &'static str,
+) -> Item {
+    let item = Item::new(label.clone(), icon, command).group(Group::Named(group));
+    match label == english {
+        true => item,
+        false => item.also(vec![english]),
+    }
+}
+
 fn with_chord(item: Item, id: &str, overrides: &HashMap<String, String>) -> Item {
     item.keys(chord_for(id, overrides))
 }
@@ -3917,7 +4086,8 @@ fn with_chord(item: Item, id: &str, overrides: &HashMap<String, String>) -> Item
 fn starting_items(overrides: &HashMap<String, String>) -> Vec<Item> {
     let mut items = vec![
         with_chord(
-            command(
+            command_key(
+                "palette.command.new_connection",
                 "New connection…",
                 icon::PLUS,
                 Command::NewConnection,
@@ -3926,14 +4096,16 @@ fn starting_items(overrides: &HashMap<String, String>) -> Vec<Item> {
             "new_connection",
             overrides,
         ),
-        command(
+        command_key(
+            "palette.command.open_data_file",
             "Open data file (CSV, Excel, Parquet, JSON)…",
             icon::TABLE,
             Command::OpenDataFiles,
             CONNECTION,
         ),
         with_chord(
-            command(
+            command_key(
+                "palette.command.new_project",
                 "New project…",
                 icon::ADD_TO_PROJECT,
                 Command::NewProject,
@@ -3951,21 +4123,24 @@ fn import_connection_items(overrides: &HashMap<String, String>) -> Vec<Item> {
     [
         (
             Source::DBeaver,
+            "palette.command.import_dbeaver",
             "Import connections from DBeaver…",
             "import_dbeaver",
         ),
         (
             Source::TablePlus,
+            "palette.command.import_tableplus",
             "Import connections from TablePlus…",
             "import_tableplus",
         ),
     ]
     .into_iter()
     .filter(|(source, ..)| source.found())
-    .map(|(source, label, id)| {
+    .map(|(source, key, english, id)| {
         with_chord(
-            command(
-                label,
+            command_key(
+                key,
+                english,
                 icon::PLUS,
                 Command::ImportConnections(source),
                 CONNECTION,
@@ -3980,7 +4155,8 @@ fn import_connection_items(overrides: &HashMap<String, String>) -> Vec<Item> {
 /// The theme and font lists, Settings, and the Help menu's two.
 fn appearance_items(overrides: &HashMap<String, String>) -> Vec<Item> {
     let mut items = vec![with_chord(
-        command(
+        command_key(
+            "palette.command.select_theme",
             "Select theme…",
             icon::THEME,
             Command::SelectTheme,
@@ -3989,20 +4165,35 @@ fn appearance_items(overrides: &HashMap<String, String>) -> Vec<Item> {
         "cycle_theme",
         overrides,
     )];
-    for (label, slot) in [
-        ("Chrome font…", FontSlot::Chrome),
-        ("Editor font…", FontSlot::Editor),
-        ("Grid font…", FontSlot::Grid),
+    for (key, english, slot) in [
+        (
+            "palette.command.chrome_font",
+            "Chrome font…",
+            FontSlot::Chrome,
+        ),
+        (
+            "palette.command.editor_font",
+            "Editor font…",
+            FontSlot::Editor,
+        ),
+        ("palette.command.grid_font", "Grid font…", FontSlot::Grid),
     ] {
-        items.push(command(
-            label,
+        items.push(command_key(
+            key,
+            english,
             icon::FONT,
             Command::PickFont(slot),
             APPEARANCE,
         ));
     }
     items.push(with_chord(
-        command("Settings", icon::SETTINGS, Command::OpenSettings, WINDOW),
+        command_key(
+            "palette.command.settings",
+            "Settings",
+            icon::SETTINGS,
+            Command::OpenSettings,
+            WINDOW,
+        ),
         "open_settings",
         overrides,
     ));
@@ -4033,7 +4224,8 @@ fn help_items(overrides: &HashMap<String, String>) -> Vec<Item> {
     };
     vec![
         with_chord(
-            command(
+            command_key(
+                "palette.command.copy_diagnostics",
                 "Copy diagnostics",
                 icon::COPY,
                 Command::CopyDiagnostics,
@@ -4044,7 +4236,8 @@ fn help_items(overrides: &HashMap<String, String>) -> Vec<Item> {
             overrides,
         ),
         with_chord(
-            command(
+            command_key(
+                "palette.command.open_logs_folder",
                 "Open logs folder",
                 icon::FOLDER,
                 Command::OpenLogsFolder,
@@ -4058,9 +4251,7 @@ fn help_items(overrides: &HashMap<String, String>) -> Vec<Item> {
 }
 
 /// One of the results-pane view commands: named in the UI language, with the
-/// English name as a second way to find it. The rest of the palette's commands
-/// are English, so somebody reading a Chinese list should still be able to
-/// type either word.
+/// English name as a second way to find it.
 fn view_command(key: &str, english: &'static str, path: &'static str, action: Command) -> Item {
     let label = t!(key).to_string();
     let also = match label == english {
@@ -4080,11 +4271,18 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     let bound = |item: Item, id: &str| with_chord(item, id, overrides);
     let runnable = session.editor(session.active).is_some();
     let mut items = vec![bound(
-        command("New query", icon::SCRATCH_QUERY, Command::NewQuery, QUERY),
+        command_key(
+            "palette.command.new_query",
+            "New query",
+            icon::SCRATCH_QUERY,
+            Command::NewQuery,
+            QUERY,
+        ),
         "new_query",
     )];
     if profile.config.engine().syntax() == Syntax::Sql {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.open_sql_file",
             "Open SQL file…",
             icon::SCRATCH_QUERY,
             Command::OpenSqlFiles,
@@ -4094,7 +4292,13 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
 
     if runnable {
         items.push(bound(
-            command("Run query", icon::RUN, Command::RunQuery, QUERY),
+            command_key(
+                "palette.command.run_query",
+                "Run query",
+                icon::RUN,
+                Command::RunQuery,
+                QUERY,
+            ),
             "run_query",
         ));
         // Offered only in the modes this engine has: SQLite cannot report what
@@ -4119,7 +4323,13 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 }),
         );
         items.push(bound(
-            command("Format query", icon::STRUCTURE, Command::FormatQuery, QUERY),
+            command_key(
+                "palette.command.format_query",
+                "Format query",
+                icon::STRUCTURE,
+                Command::FormatQuery,
+                QUERY,
+            ),
             "format_query",
         ));
         if let Some(tab) = session.active_query_tab() {
@@ -4161,12 +4371,19 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             .is_some_and(|tab| tab.plan_shown().is_some())
         {
             items.push(bound(
-                command("Copy plan", icon::COPY, Command::CopyPlan, QUERY),
+                command_key(
+                    "palette.command.copy_plan",
+                    "Copy plan",
+                    icon::COPY,
+                    Command::CopyPlan,
+                    QUERY,
+                ),
                 "copy_plan",
             ));
         }
         if session.open_query().is_some() {
-            items.push(command(
+            items.push(command_key(
+                "palette.command.rename_query",
                 "Rename query…",
                 icon::RENAME,
                 Command::RenameQuery,
@@ -4174,7 +4391,13 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ));
         } else {
             items.push(bound(
-                command("Save query…", icon::SAVE, Command::SaveQuery, QUERY),
+                command_key(
+                    "palette.command.save_query",
+                    "Save query…",
+                    icon::SAVE,
+                    Command::SaveQuery,
+                    QUERY,
+                ),
                 "rename_query_tab",
             ));
         }
@@ -4192,14 +4415,21 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     });
     if session.running(session.active) || counting {
         items.push(bound(
-            command("Cancel query", icon::CLOSE, Command::CancelQuery, QUERY),
+            command_key(
+                "palette.command.cancel_query",
+                "Cancel query",
+                icon::CLOSE,
+                Command::CancelQuery,
+                QUERY,
+            ),
             "cancel_query",
         ));
     }
 
     // Not gated on a query tab: a saved query need not be open to be deleted.
     if !session.saved_queries.is_empty() {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.delete_saved_query",
             "Delete saved query…",
             icon::DELETE,
             Command::PickQueryToDelete,
@@ -4210,7 +4440,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // Not gated on the query tab being in front: recalling a statement brings
     // it forward, which is where the statement is going anyway.
     if !session.history.is_empty() {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.query_history",
             "Query history…",
             icon::HISTORY,
             Command::QueryHistory,
@@ -4223,15 +4454,17 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // them there as well as on a relation's.
     if session.active_query_tab().is_some() {
         if let Some((_, table, _)) = session.query_insert_target(profile.config.target(), cx) {
-            items.push(command(
-                &format!("Insert in {table}…"),
+            items.push(command_text(
+                t!("palette.command.insert_in", table = table).to_string(),
+                format!("Insert in {table}…"),
                 icon::PLUS,
                 Command::NewRow,
                 ROWS,
             ));
         }
         if profile.config.target().edits_query_rows() && workspace.has_nameable_row(cx) {
-            items.push(command(
+            items.push(command_key(
+                "palette.command.delete_row",
                 "Delete row…",
                 icon::DELETE,
                 Command::DeleteRow,
@@ -4246,7 +4479,13 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         } = &tab.body
         {
             items.push(bound(
-                command("Show data", icon::TABLE, Command::ShowStructure(false), TAB),
+                command_key(
+                    "palette.view.data",
+                    "Show data",
+                    icon::TABLE,
+                    Command::ShowStructure(false),
+                    TAB,
+                ),
                 "toggle_structure",
             ));
             // The chips above the structure, less the one already showing.
@@ -4257,8 +4496,13 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                         .into_iter()
                         .filter(|section| *section != shown && section.offered(structure))
                         .map(|section| {
-                            command(
-                                &format!("Structure: {}", section.label()),
+                            command_text(
+                                t!(
+                                    "palette.command.structure_section",
+                                    section = section.label()
+                                )
+                                .to_string(),
+                                format!("Structure: {}", section.label()),
                                 icon::STRUCTURE,
                                 Command::ShowStructureSection(section),
                                 TAB,
@@ -4267,7 +4511,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 );
             }
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.refresh_structure",
                     "Refresh structure",
                     icon::RUN,
                     Command::RefreshRelation(tab.id),
@@ -4288,7 +4533,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         } = &tab.body
         {
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.show_structure",
                     "Show structure",
                     icon::STRUCTURE,
                     Command::ShowStructure(true),
@@ -4297,7 +4543,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 "toggle_structure",
             ));
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.refresh_rows",
                     "Refresh rows",
                     icon::RUN,
                     Command::RefreshRelation(tab.id),
@@ -4311,7 +4558,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 query,
                 QueryState::Complete { rows, .. } if limit.is_some_and(|limit| *rows >= limit)
             ) {
-                items.push(command(
+                items.push(command_key(
+                    "palette.command.next_page",
                     "Next page",
                     icon::CHEVRON_RIGHT,
                     Command::NextPage,
@@ -4319,7 +4567,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 ));
             }
             if *offset > 0 {
-                items.push(command(
+                items.push(command_key(
+                    "palette.command.previous_page",
                     "Previous page",
                     icon::CHEVRON_LEFT,
                     Command::PreviousPage,
@@ -4327,14 +4576,16 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 ));
             }
             if !count.answers(filter) {
-                items.push(command(
+                items.push(command_key(
+                    "palette.command.count_rows",
                     "Count rows",
                     icon::TABLE,
                     Command::CountRows(tab.id),
                     ROWS,
                 ));
             }
-            items.push(command(
+            items.push(command_key(
+                "palette.command.filter_rows",
                 "Filter rows…",
                 icon::SEARCH,
                 Command::FilterRows,
@@ -4343,12 +4594,23 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             // With no bar yet, Filter rows… adds the first.
             if !filters.is_empty() {
                 items.push(bound(
-                    command("Add filter", icon::PLUS, Command::AddFilter, ROWS),
+                    command_key(
+                        "palette.command.add_filter",
+                        "Add filter",
+                        icon::PLUS,
+                        Command::AddFilter,
+                        ROWS,
+                    ),
                     "add_filter",
                 ));
                 items.push(bound(
-                    command(
-                        &format!("Join the next filter with {}", next_join.toggled().as_str()),
+                    command_text(
+                        t!(
+                            "palette.command.join_next",
+                            join = next_join.toggled().as_str()
+                        )
+                        .to_string(),
+                        format!("Join the next filter with {}", next_join.toggled().as_str()),
                         icon::CHOOSE,
                         Command::ToggleNextJoin,
                         ROWS,
@@ -4358,7 +4620,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             }
             // A row that would do nothing is worse than no row at all.
             if !filter.is_empty() {
-                items.push(command(
+                items.push(command_key(
+                    "palette.command.clear_filter",
                     "Clear filter",
                     icon::CLOSE,
                     Command::ClearFilter,
@@ -4366,18 +4629,26 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 ));
             }
             if tab.takes_inserts(profile.config.target()) {
-                items.push(command("Insert…", icon::PLUS, Command::NewRow, ROWS));
+                items.push(command_key(
+                    "palette.command.insert",
+                    "Insert…",
+                    icon::PLUS,
+                    Command::NewRow,
+                    ROWS,
+                ));
             }
             if tab.takes_imports(profile.config.target()) {
-                items.push(command(
-                    &format!("Import Rows into {}…", tab.name),
+                items.push(command_text(
+                    t!("palette.command.import_rows_into", table = tab.name).to_string(),
+                    format!("Import Rows into {}…", tab.name),
                     icon::PLUS,
                     Command::ImportRows,
                     ROWS,
                 ));
                 items.push(bound(
-                    command(
-                        &format!("Import Rows into {} from Clipboard…", tab.name),
+                    command_text(
+                        t!("palette.command.import_rows_clipboard", table = tab.name).to_string(),
+                        format!("Import Rows into {} from Clipboard…", tab.name),
                         icon::PLUS,
                         Command::ImportRowsFromClipboard,
                         ROWS,
@@ -4388,7 +4659,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             // Only on a row dbdelve can name by its primary key -- the same
             // condition that makes a cell of it editable.
             if workspace.has_nameable_row(cx) {
-                items.push(command(
+                items.push(command_key(
+                    "palette.command.delete_row",
                     "Delete row…",
                     icon::DELETE,
                     Command::DeleteRow,
@@ -4417,15 +4689,27 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             );
         }
         items.push(bound(
-            command("Close tab", icon::CLOSE, Command::CloseObject(tab.id), TAB),
+            command_key(
+                "palette.command.close_tab",
+                "Close tab",
+                icon::CLOSE,
+                Command::CloseObject(tab.id),
+                TAB,
+            ),
             "close_tab",
         ));
     }
 
     if let Some((_, limit)) = row_limit_target(session) {
         items.push(
-            command("Set row limit…", icon::TABLE, Command::PickRowLimit, ROWS)
-                .hint(limit.map_or_else(|| t!("palette.no_limit").to_string(), rows_label)),
+            command_key(
+                "palette.command.set_row_limit",
+                "Set row limit…",
+                icon::TABLE,
+                Command::PickRowLimit,
+                ROWS,
+            )
+            .hint(limit.map_or_else(|| t!("palette.no_limit").to_string(), rows_label)),
         );
     }
 
@@ -4433,7 +4717,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     if let Some(at) = strip.iter().position(|tab| *tab == session.active) {
         if at > 0 {
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.move_tab_left",
                     "Move tab left",
                     icon::CHEVRON_LEFT,
                     Command::MoveTabLeft,
@@ -4444,7 +4729,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         }
         if at + 1 < strip.len() {
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.move_tab_right",
                     "Move tab right",
                     icon::CHEVRON_RIGHT,
                     Command::MoveTabRight,
@@ -4457,7 +4743,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
 
     // Wherever the user is standing: the export runs apart from every tab.
     if session.exporting.is_some() {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.cancel_export",
             "Cancel export",
             icon::CLOSE,
             Command::CancelExport,
@@ -4469,7 +4756,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // nothing has nothing to write out.
     if workspace.has_results(cx) {
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.go_to_column",
                 "Go to column…",
                 icon::STRUCTURE,
                 Command::GoToColumn,
@@ -4477,20 +4765,23 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ),
             "go_to_column",
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.export_csv",
             "Export results as CSV…",
             icon::SAVE,
             Command::ExportResults(FileAs::Rows(Format::Csv)),
             RESULTS,
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.export_json",
             "Export results as JSON…",
             icon::SAVE,
             Command::ExportResults(FileAs::Rows(Format::Json)),
             RESULTS,
         ));
         if profile.config.engine().syntax() == Syntax::Sql {
-            items.push(command(
+            items.push(command_key(
+                "palette.command.export_sql",
                 "Export results as SQL…",
                 icon::SAVE,
                 Command::ExportResults(FileAs::Inserts),
@@ -4498,7 +4789,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ));
         }
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.copy_tsv",
                 "Copy results as TSV",
                 icon::COPY,
                 Command::CopyResults(ClipboardFormat::Tsv),
@@ -4507,8 +4799,9 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             "copy_results",
         ));
         for format in ClipboardFormat::ALL.into_iter().skip(1) {
-            items.push(command(
-                &format!("Copy results as {}", format.label()),
+            items.push(command_text(
+                t!("palette.command.copy_results_as", format = format.label()).to_string(),
+                format!("Copy results as {}", format.label()),
                 icon::COPY,
                 Command::CopyResults(format),
                 RESULTS,
@@ -4521,7 +4814,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         let chips = tab.switcher_chips();
         if !chips.is_empty() {
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.next_result",
                     "Next result",
                     icon::CHEVRON_RIGHT,
                     Command::NextResult,
@@ -4530,7 +4824,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
                 "next_result",
             ));
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.previous_result",
                     "Previous result",
                     icon::CHEVRON_LEFT,
                     Command::PreviousResult,
@@ -4540,20 +4835,35 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ));
         }
         if chips.contains(&None) {
-            let label = match tab.switcher_selected() {
-                Some(_) => "Show messages",
-                None => "Show result",
+            let item = match tab.switcher_selected() {
+                Some(_) => command_key(
+                    "palette.command.show_messages",
+                    "Show messages",
+                    icon::HISTORY,
+                    Command::ToggleMessages,
+                    RESULTS,
+                ),
+                None => command_key(
+                    "palette.command.show_result",
+                    "Show result",
+                    icon::HISTORY,
+                    Command::ToggleMessages,
+                    RESULTS,
+                ),
             };
-            items.push(bound(
-                command(label, icon::HISTORY, Command::ToggleMessages, RESULTS),
-                "show_messages",
-            ));
+            items.push(bound(item, "show_messages"));
         }
     }
 
     if workspace.has_active_cell(cx) {
         items.push(bound(
-            command("Copy row", icon::COPY, Command::CopyRow, RESULTS),
+            command_key(
+                "palette.command.copy_row",
+                "Copy row",
+                icon::COPY,
+                Command::CopyRow,
+                RESULTS,
+            ),
             "copy_row",
         ));
     }
@@ -4571,25 +4881,41 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         && let Some((row, col)) = grid.active()
         && let Some(name) = grid.columns().get(col).map(|column| column.name.clone())
     {
-        let rows = match grid.selected_row_indices().len() {
-            0 | 1 => "row",
-            _ => "rows",
+        let one = grid.selected_row_indices().len() <= 1;
+        let rows = match one {
+            true => t!("palette.row_word").to_string(),
+            false => t!("palette.rows_word").to_string(),
+        };
+        let rows_english = match one {
+            true => "row".to_string(),
+            false => "rows".to_string(),
         };
         let engine = profile.config.engine();
         for kind in RowsAs::ALL
             .into_iter()
             .filter(|kind| kind.offered_on(engine))
         {
-            let (shape, id) = match kind {
-                RowsAs::Text => ("text", "copy_rows_text"),
-                RowsAs::Csv => ("CSV", "copy_rows_csv"),
-                RowsAs::CsvWithHeader => ("CSV with header", "copy_rows_csv_header"),
-                RowsAs::Json => ("JSON", "copy_rows_json"),
-                RowsAs::InsertSql => ("INSERT SQL", "copy_rows_insert"),
+            let (key, shape, id) = match kind {
+                RowsAs::Text => ("palette.shape.text", "text", "copy_rows_text"),
+                RowsAs::Csv => ("palette.shape.csv", "CSV", "copy_rows_csv"),
+                RowsAs::CsvWithHeader => (
+                    "palette.shape.csv_header",
+                    "CSV with header",
+                    "copy_rows_csv_header",
+                ),
+                RowsAs::Json => ("palette.shape.json", "JSON", "copy_rows_json"),
+                RowsAs::InsertSql => ("palette.shape.insert_sql", "INSERT SQL", "copy_rows_insert"),
             };
+            let shape_label = t!(key).to_string();
             items.push(bound(
-                command(
-                    &format!("Copy {rows} as {shape}"),
+                command_text(
+                    t!(
+                        "palette.command.copy_rows_as",
+                        rows = rows,
+                        shape = shape_label
+                    )
+                    .to_string(),
+                    format!("Copy {rows_english} as {shape}"),
                     icon::COPY,
                     Command::CopyRows(kind),
                     RESULTS,
@@ -4599,7 +4925,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         }
         if grid.follows_a_key(col) && grid.cell(row, col).is_some() {
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.follow_foreign_key",
                     "Follow foreign key",
                     icon::FOLLOW_KEY,
                     Command::FollowForeignKey,
@@ -4609,8 +4936,9 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ));
         } else if let Some(opens) = grid.opens(row) {
             items.push(bound(
-                command(
-                    &format!("Open \u{201c}{opens}\u{201d}"),
+                command_text(
+                    t!("palette.command.open_value", value = opens).to_string(),
+                    format!("Open \u{201c}{opens}\u{201d}"),
                     icon::FOLLOW_KEY,
                     Command::FollowForeignKey,
                     CELL,
@@ -4620,7 +4948,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         }
         if grid.is_referenced(row, col) {
             items.push(bound(
-                command(
+                command_key(
+                    "palette.command.show_references",
                     "Show references…",
                     icon::REFERENCED_BY,
                     Command::ShowReferences,
@@ -4630,8 +4959,9 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ));
         }
         items.push(bound(
-            command(
-                &format!("Sort by \u{201c}{name}\u{201d}"),
+            command_text(
+                t!("palette.command.sort_by", column = name).to_string(),
+                format!("Sort by \u{201c}{name}\u{201d}"),
                 icon::SORTABLE,
                 Command::SortActiveColumn,
                 RESULTS,
@@ -4640,8 +4970,9 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         ));
         if grid.columns().len() - grid.hidden_columns() > 1 {
             items.push(bound(
-                command(
-                    &format!("Hide column \u{201c}{name}\u{201d}"),
+                command_text(
+                    t!("palette.command.hide_column", column = name).to_string(),
+                    format!("Hide column \u{201c}{name}\u{201d}"),
                     icon::CLOSE,
                     Command::HideColumn,
                     RESULTS,
@@ -4650,26 +4981,42 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             ));
         }
         let pin = match grid.is_pinned(col) {
-            true => format!("Unpin column \u{201c}{name}\u{201d}"),
-            false => format!("Pin column \u{201c}{name}\u{201d} to the left"),
+            true => command_text(
+                t!("palette.command.unpin_column", column = name).to_string(),
+                format!("Unpin column \u{201c}{name}\u{201d}"),
+                icon::CHEVRON_LEFT,
+                Command::TogglePinColumn,
+                RESULTS,
+            ),
+            false => command_text(
+                t!("palette.command.pin_column", column = name).to_string(),
+                format!("Pin column \u{201c}{name}\u{201d} to the left"),
+                icon::CHEVRON_LEFT,
+                Command::TogglePinColumn,
+                RESULTS,
+            ),
         };
-        items.push(bound(
-            command(&pin, icon::CHEVRON_LEFT, Command::TogglePinColumn, RESULTS),
-            "toggle_pin_column",
-        ));
+        items.push(bound(pin, "toggle_pin_column"));
     }
     // The status bar's Server and Client, as the one that is not in force.
     if let Some(client) = crate::views::view_sorts_on_client(profile, cx) {
-        let label = match client {
-            true => "Sort on the server",
-            false => "Sort on the client",
+        let item = match client {
+            true => command_key(
+                "palette.command.sort_server",
+                "Sort on the server",
+                icon::SORTABLE,
+                Command::SetViewSorting(!client),
+                RESULTS,
+            ),
+            false => command_key(
+                "palette.command.sort_client",
+                "Sort on the client",
+                icon::SORTABLE,
+                Command::SetViewSorting(!client),
+                RESULTS,
+            ),
         };
-        items.push(command(
-            label,
-            icon::SORTABLE,
-            Command::SetViewSorting(!client),
-            RESULTS,
-        ));
+        items.push(item);
     }
     // Not the active cell's: the columns come back whichever cell is ringed.
     if let Some(hidden) = shown_grid
@@ -4677,8 +5024,9 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         .filter(|hidden| *hidden > 0)
     {
         items.push(bound(
-            command(
-                &format!("Show all columns ({hidden} hidden)"),
+            command_text(
+                t!("palette.command.show_all_columns", hidden = hidden).to_string(),
+                format!("Show all columns ({hidden} hidden)"),
                 icon::VIEW,
                 Command::ShowAllColumns,
                 RESULTS,
@@ -4690,10 +5038,17 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // Only where the ring is on a cell that can actually take one.
     if workspace.has_editable_cell(cx) {
         items.push(bound(
-            command("Set cell to NULL", icon::RENAME, Command::SetNull, CELL),
+            command_key(
+                "palette.command.set_null",
+                "Set cell to NULL",
+                icon::RENAME,
+                Command::SetNull,
+                CELL,
+            ),
             "set_null",
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.set_empty",
             "Set cell to empty",
             icon::RENAME,
             Command::SetEmpty,
@@ -4702,7 +5057,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         // Offered on every editable cell rather than only where a default is
         // known. The palette is reached from anywhere and knows no column; the
         // cell menu is the surface that hides what would be refused.
-        items.push(command(
+        items.push(command_key(
+            "palette.command.set_default",
             "Set cell to default",
             icon::RENAME,
             Command::SetDefault,
@@ -4713,25 +5069,29 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // Only while there is something to write back, for the reason the footer's
     // pair of buttons is conditional too.
     if workspace.has_pending_edits(cx) {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.apply_edits",
             "Apply edits",
             icon::SAVE,
             Command::ApplyEdits,
             EDITS,
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.discard_edits",
             "Discard edits",
             icon::DELETE,
             Command::DiscardEdits,
             EDITS,
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.next_edit",
             "Next edit",
             icon::CHEVRON_RIGHT,
             Command::NextEdit,
             EDITS,
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.previous_edit",
             "Previous edit",
             icon::CHEVRON_LEFT,
             Command::PreviousEdit,
@@ -4741,7 +5101,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
 
     if workspace.current_group_members().len() > 1 {
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.next_connection",
                 "Next connection",
                 icon::DATABASE,
                 Command::NextProfile,
@@ -4750,7 +5111,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             "next_profile",
         ));
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.previous_connection",
                 "Previous connection",
                 icon::DATABASE,
                 Command::PreviousProfile,
@@ -4765,7 +5127,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // every connection on its row's actions, for whoever looks for the verb.
     let active = workspace.active.unwrap_or_default();
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.switch_connection",
             "Switch connection…",
             icon::DATABASE,
             Command::SwitchConnection,
@@ -4774,7 +5137,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         "switch_connection",
     ));
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.disconnect",
             "Disconnect",
             icon::DISCONNECT,
             Command::Disconnect,
@@ -4782,34 +5146,39 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         ),
         "disconnect",
     ));
-    items.push(command(
+    items.push(command_key(
+        "palette.command.edit_connection",
         "Edit connection…",
         icon::RENAME,
         Command::EditConnection(active),
         CONNECTION,
     ));
-    items.push(command(
+    items.push(command_key(
+        "palette.command.duplicate_connection",
         "Duplicate connection…",
         icon::COPY,
         Command::DuplicateConnection(active),
         CONNECTION,
     ));
     if !workspace.projects.is_empty() {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.move_connection",
             "Move connection to a project…",
             icon::ADD_TO_PROJECT,
             Command::ChooseProject(active),
             CONNECTION,
         ));
     }
-    items.push(command(
+    items.push(command_key(
+        "palette.command.remove_connection",
         "Remove connection…",
         icon::DELETE,
         Command::Confirm(Target::Connection(active)),
         CONNECTION,
     ));
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.cycle_access",
             "Cycle access level",
             mode_icon(profile.mode.next()),
             Command::CycleMode,
@@ -4823,13 +5192,15 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         "set_mode_full",
     ]) {
         items.push(bound(
-            command(
-                &format!("Access level: {}", mode.label()),
-                mode_icon(mode),
-                Command::SetMode(mode),
-                CONNECTION,
-            )
-            .hint(if mode == profile.mode { "current" } else { "" }),
+            mark_current(
+                command(
+                    &t!("palette.access_level", mode = mode.label()),
+                    mode_icon(mode),
+                    Command::SetMode(mode),
+                    CONNECTION,
+                ),
+                mode == profile.mode,
+            ),
             id,
         ));
     }
@@ -4856,13 +5227,15 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         ));
     }
     if !workspace.projects.is_empty() {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.rename_project",
             "Rename project…",
             icon::RENAME,
             Command::PickProject(ProjectVerb::Rename),
             PROJECT,
         ));
-        items.push(command(
+        items.push(command_key(
+            "palette.command.delete_project",
             "Delete project…",
             icon::DELETE,
             Command::PickProject(ProjectVerb::Delete),
@@ -4870,7 +5243,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         ));
     }
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.refresh_schema",
             "Refresh schema",
             icon::REFRESH,
             Command::RefreshConnection,
@@ -4880,7 +5254,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     ));
     // For a socket that hangs rather than fails, which nothing else can tell
     // from a slow server. A refresh keeps the session; this is the way out of it.
-    items.push(command(
+    items.push(command_key(
+        "palette.command.reconnect",
         "Reconnect",
         icon::DATABASE,
         Command::Reconnect,
@@ -4888,7 +5263,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     ));
     if profile.config.target().switches_database() {
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.select_database",
                 "Select database…",
                 icon::DATABASE,
                 Command::SelectDatabase,
@@ -4898,7 +5274,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         ));
     }
     if profile.config.target().picks_schema() {
-        items.push(command(
+        items.push(command_key(
+            "palette.command.select_schema",
             "Select schema…",
             icon::PROJECT,
             Command::SelectSchema,
@@ -4910,7 +5287,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     // One row rather than a Show/Hide pair: the palette is built from the
     // session, which does not know whether the column is folded.
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.toggle_sidebar",
             "Toggle sidebar",
             icon::SIDEBAR,
             Command::ToggleSidebar,
@@ -4919,7 +5297,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         "toggle_sidebar",
     ));
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.focus_sidebar",
             "Focus sidebar",
             icon::SIDEBAR,
             Command::FocusSidebar,
@@ -4929,7 +5308,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     ));
     if matches!(&profile.catalog, CatalogState::Loaded(catalog, _) if !catalog.schemas.is_empty()) {
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.expand_all_schemas",
                 "Expand all schemas",
                 icon::EXPAND_ALL,
                 Command::ExpandAllSchemas,
@@ -4938,7 +5318,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             "expand_all_schemas",
         ));
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.collapse_all_schemas",
                 "Collapse all schemas",
                 icon::COLLAPSE_ALL,
                 Command::CollapseAllSchemas,
@@ -4949,7 +5330,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     }
     if session.active_results().is_some() || session.active_object().is_some() {
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.focus_results",
                 "Focus results",
                 icon::ROW_PANEL,
                 Command::ToggleResultsFocus,
@@ -4959,7 +5341,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         ));
     }
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.toggle_row_panel",
             "Toggle row panel",
             icon::ROW_PANEL,
             Command::ToggleRowPanel,
@@ -4968,7 +5351,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
         "toggle_row_panel",
     ));
     items.push(bound(
-        command(
+        command_key(
+            "palette.command.toggle_row_edit",
             "Toggle row panel edit mode",
             icon::EDIT,
             Command::ToggleRowEdit,
@@ -4978,7 +5362,8 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
     ));
     if matches!(session.active, Tab::Query(_)) {
         items.push(bound(
-            command(
+            command_key(
+                "palette.command.reset_editor_zoom",
                 "Reset editor zoom",
                 icon::SEARCH,
                 Command::ResetEditorZoom,
@@ -5030,17 +5415,18 @@ fn beside_import(command: &Command) -> bool {
     )
 }
 
-fn kind_label(kind: ObjectKind) -> &'static str {
-    match kind {
-        ObjectKind::Relation(RelationKind::Table) => "table",
-        ObjectKind::Relation(RelationKind::PartitionedTable) => "partitioned table",
-        ObjectKind::Relation(RelationKind::View) => "view",
-        ObjectKind::Relation(RelationKind::MaterializedView) => "materialized view",
-        ObjectKind::Relation(RelationKind::ForeignTable) => "foreign table",
-        ObjectKind::Relation(RelationKind::Dictionary) => "dictionary",
-        ObjectKind::Routine(RoutineKind::Function) => "function",
-        ObjectKind::Routine(RoutineKind::Procedure) => "procedure",
-    }
+fn kind_label(kind: ObjectKind) -> String {
+    let key = match kind {
+        ObjectKind::Relation(RelationKind::Table) => "palette.kind.table",
+        ObjectKind::Relation(RelationKind::PartitionedTable) => "palette.kind.partitioned_table",
+        ObjectKind::Relation(RelationKind::View) => "palette.kind.view",
+        ObjectKind::Relation(RelationKind::MaterializedView) => "palette.kind.materialized_view",
+        ObjectKind::Relation(RelationKind::ForeignTable) => "palette.kind.foreign_table",
+        ObjectKind::Relation(RelationKind::Dictionary) => "palette.kind.dictionary",
+        ObjectKind::Routine(RoutineKind::Function) => "palette.kind.function",
+        ObjectKind::Routine(RoutineKind::Procedure) => "palette.kind.procedure",
+    };
+    t!(key).to_string()
 }
 
 #[cfg(test)]
@@ -5329,7 +5715,7 @@ mod tests {
         }
         let picked: Vec<&str> = items
             .iter()
-            .filter(|item| item.hint.as_ref() == "current")
+            .filter(|item| item.is_current())
             .map(|item| item.label.as_str())
             .collect();
         assert_eq!(picked, ["GitHub Light"]);
@@ -5345,14 +5731,32 @@ mod tests {
             &items[0].command,
             Command::SetFont(FontSlot::Editor, family) if family == "Lilex"
         ));
-        assert_eq!(hint_of(&items, "Menlo"), "current");
-        assert_eq!(hint_of(&items, "Lilex"), "");
+        assert!(
+            items
+                .iter()
+                .find(|item| item.label == "Menlo")
+                .unwrap()
+                .is_current()
+        );
+        assert!(
+            !items
+                .iter()
+                .find(|item| item.label == "Lilex")
+                .unwrap()
+                .is_current()
+        );
 
         let names = ["IBM Plex Sans", "Lilex"].map(String::from);
         let items = font_items_from(FontSlot::Chrome, "IBM Plex Sans", names.to_vec());
         assert_eq!(items[0].label, "Default (IBM Plex Sans)");
-        assert_eq!(hint_of(&items, "Default (IBM Plex Sans)"), "");
-        assert_eq!(hint_of(&items, "IBM Plex Sans"), "current");
+        assert!(!items[0].is_current());
+        assert!(
+            items
+                .iter()
+                .find(|item| item.label == "IBM Plex Sans")
+                .unwrap()
+                .is_current()
+        );
     }
 
     #[test]
@@ -5768,7 +6172,13 @@ mod tests {
             ]
         );
         assert_eq!(lead.as_deref(), Some("Scratch"));
-        assert_eq!(hint_of(&items, "Orders"), "current");
+        assert!(
+            items
+                .iter()
+                .find(|item| item.label == "Orders")
+                .unwrap()
+                .is_current()
+        );
         assert_eq!(hint_of(&items, "Billing"), "2 connections");
         assert_eq!(hint_of(&items, "Analytics"), "1 connection");
         assert_eq!(hint_of(&items, "Empty"), "empty");
@@ -5779,7 +6189,7 @@ mod tests {
         let (listed, projects) = connections();
         let tree = listed_connections(&listed, &projects, None);
         assert!(disconnect_row(None).is_none());
-        assert!(tree.iter().all(|item| item.hint != "current"));
+        assert!(tree.iter().all(|item| !item.is_current()));
 
         let items = with_manage(
             disconnect_row(Some("Orders"))
@@ -5950,17 +6360,17 @@ mod tests {
     fn a_connection_moves_to_no_project_or_any_project_its_own_marked() {
         let (_, projects) = connections();
         let items = move_items(2, "ledger", &projects);
-        let rows: Vec<(&str, &str)> = items
+        let rows: Vec<(&str, bool)> = items
             .iter()
-            .map(|item| (item.label.as_str(), item.hint.as_ref()))
+            .map(|item| (item.label.as_str(), item.is_current()))
             .collect();
         assert_eq!(
             rows,
             [
-                ("No project", ""),
-                ("Billing", "current"),
-                ("Empty", ""),
-                ("Analytics", "")
+                ("No project", false),
+                ("Billing", true),
+                ("Empty", false),
+                ("Analytics", false)
             ]
         );
         assert!(matches!(
@@ -6445,5 +6855,75 @@ mod tests {
                 assert!(!text.is_empty(), "{key} empty in {locale}");
             }
         }
+    }
+
+    /// Every key the palette now names, read off the locale file itself so a
+    /// key added there without a translation is caught here rather than drawn
+    /// as its own name in front of someone.
+    #[test]
+    fn every_palette_key_has_both_languages() {
+        let yaml = include_str!("../locales/app.yml");
+        let mut checked = 0;
+        for line in yaml.lines() {
+            let Some(rest) = line.strip_prefix("palette.") else {
+                continue;
+            };
+            let Some((name, _)) = rest.split_once(':') else {
+                continue;
+            };
+            let key = format!("palette.{name}");
+            for locale in ["en", "zh-CN"] {
+                let text = t!(key.as_str(), locale = locale).to_string();
+                assert_ne!(text, key, "{key} missing in {locale}");
+                assert!(!text.is_empty(), "{key} empty in {locale}");
+            }
+            checked += 1;
+        }
+        assert!(checked > 100, "only {checked} palette keys found");
+    }
+
+    #[test]
+    fn the_palette_names_its_commands_in_chinese() {
+        assert_eq!(
+            t!("palette.command.run_query", locale = "zh-CN"),
+            "运行查询"
+        );
+        assert_eq!(
+            t!("palette.command.new_connection", locale = "zh-CN"),
+            "新建连接…"
+        );
+        assert_eq!(t!("palette.picker.theme", locale = "zh-CN"), "选择主题…");
+        assert_eq!(t!("palette.title.databases", locale = "zh-CN"), "数据库");
+        assert_eq!(t!("palette.hint.current", locale = "zh-CN"), "当前");
+        assert_eq!(t!("palette.kind.table", locale = "zh-CN"), "表");
+        assert_eq!(
+            t!(
+                "palette.command.insert_in",
+                locale = "zh-CN",
+                table = "events"
+            ),
+            "在 events 中插入…"
+        );
+        // The English side is the string it always was, so the UI does not
+        // change under an English setting.
+        assert_eq!(t!("palette.command.run_query", locale = "en"), "Run query");
+        assert_eq!(
+            t!("palette.command.new_connection", locale = "en"),
+            "New connection…"
+        );
+    }
+
+    #[test]
+    fn a_recent_written_in_english_finds_its_chinese_row() {
+        let items = vec![
+            Item::new("运行查询", icon::RUN, Command::RunQuery)
+                .also(vec!["Run query".to_string()])
+                .scope(Scope::Commands)
+                .group(Group::Named(QUERY)),
+        ];
+        assert_eq!(
+            arranged(&items, Some(Scope::Commands), "", &["Run query"]),
+            ["# Recent", "运行查询"]
+        );
     }
 }

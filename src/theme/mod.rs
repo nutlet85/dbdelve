@@ -296,12 +296,6 @@ impl Appearance {
         }
     }
 
-    pub fn theme_label(self) -> &'static str {
-        match self {
-            Self::Dark => "Dark theme",
-            Self::Light => "Light theme",
-        }
-    }
 }
 
 impl gpui::Global for Theme {}

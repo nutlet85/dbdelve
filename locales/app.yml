@@ -840,6 +840,212 @@ palette.group.projects:    { en: "Projects", zh-CN: "项目" }
 palette.group.themes:      { en: "Themes", zh-CN: "主题" }
 palette.group.import:      { en: "Import", zh-CN: "导入" }
 
+# —— 命令面板：行内提示、命令、选择器与动作 ——
+palette.hint.current:        { en: "current", zh-CN: "当前" }
+palette.hint.active:         { en: "active", zh-CN: "使用中" }
+palette.hint.imported:       { en: "imported", zh-CN: "已导入" }
+palette.hint.system:         { en: "system", zh-CN: "系统" }
+palette.hint.scratch:        { en: "scratch", zh-CN: "临时" }
+palette.hint.query:          { en: "query", zh-CN: "查询" }
+palette.hint.open:           { en: "open", zh-CN: "已打开" }
+palette.command.scratch_query: { en: "Scratch query", zh-CN: "临时查询" }
+palette.hint.empty:          { en: "empty", zh-CN: "空" }
+palette.hint.one_connection: { en: "1 connection", zh-CN: "1 个连接" }
+palette.hint.connections:    { en: "%{count} connections", zh-CN: "%{count} 个连接" }
+palette.hint.failed:         { en: "failed", zh-CN: "失败" }
+palette.hint.cancelled:      { en: "cancelled", zh-CN: "已取消" }
+palette.hint.affected:       { en: "%{count} affected", zh-CN: "影响 %{count} 行" }
+palette.hint.capped:         { en: "capped", zh-CN: "已截断" }
+palette.hint.just_now:       { en: "just now", zh-CN: "刚刚" }
+palette.hint.minutes_ago:    { en: "%{count}m ago", zh-CN: "%{count} 分钟前" }
+palette.hint.hours_ago:      { en: "%{count}h ago", zh-CN: "%{count} 小时前" }
+palette.hint.yesterday:      { en: "yesterday", zh-CN: "昨天" }
+palette.hint.days_ago:       { en: "%{count}d ago", zh-CN: "%{count} 天前" }
+palette.hint.could_not_check: { en: "Could not check: %{message}", zh-CN: "无法检查：%{message}" }
+palette.rows:                { en: "%{rows} %{plural}", zh-CN: "%{rows} 行" }
+palette.row_word:            { en: "row", zh-CN: "行" }
+palette.rows_word:           { en: "rows", zh-CN: "行" }
+palette.shape.text:          { en: "text", zh-CN: "文本" }
+palette.shape.csv:           { en: "CSV", zh-CN: "CSV" }
+palette.shape.csv_header:    { en: "CSV with header", zh-CN: "带表头 CSV" }
+palette.shape.json:          { en: "JSON", zh-CN: "JSON" }
+palette.shape.insert_sql:    { en: "INSERT SQL", zh-CN: "INSERT SQL" }
+palette.duration.ms:         { en: "%{value} ms", zh-CN: "%{value} 毫秒" }
+palette.duration.seconds:    { en: "%{value} s", zh-CN: "%{value} 秒" }
+palette.duration.minutes:    { en: "%{minutes}m %{seconds}s", zh-CN: "%{minutes} 分 %{seconds} 秒" }
+palette.duration.hours:      { en: "%{hours}h %{minutes}m", zh-CN: "%{hours} 小时 %{minutes} 分" }
+palette.access_level:        { en: "Access level: %{mode}", zh-CN: "访问级别：%{mode}" }
+palette.new_project:         { en: "new project", zh-CN: "新项目" }
+
+palette.kind.table:              { en: "table", zh-CN: "表" }
+palette.kind.partitioned_table:  { en: "partitioned table", zh-CN: "分区表" }
+palette.kind.view:               { en: "view", zh-CN: "视图" }
+palette.kind.materialized_view:  { en: "materialized view", zh-CN: "物化视图" }
+palette.kind.foreign_table:      { en: "foreign table", zh-CN: "外部表" }
+palette.kind.dictionary:         { en: "dictionary", zh-CN: "字典" }
+palette.kind.function:           { en: "function", zh-CN: "函数" }
+palette.kind.procedure:          { en: "procedure", zh-CN: "存储过程" }
+
+palette.command.new_query:            { en: "New query", zh-CN: "新建查询" }
+palette.command.open_sql_file:        { en: "Open SQL file…", zh-CN: "打开 SQL 文件…" }
+palette.command.run_query:            { en: "Run query", zh-CN: "运行查询" }
+palette.command.format_query:         { en: "Format query", zh-CN: "格式化查询" }
+palette.command.copy_plan:            { en: "Copy plan", zh-CN: "复制计划" }
+palette.command.rename_query:         { en: "Rename query…", zh-CN: "重命名查询…" }
+palette.command.save_query:           { en: "Save query…", zh-CN: "保存查询…" }
+palette.command.cancel_query:         { en: "Cancel query", zh-CN: "取消查询" }
+palette.command.delete_saved_query:   { en: "Delete saved query…", zh-CN: "删除已保存的查询…" }
+palette.command.query_history:        { en: "Query history…", zh-CN: "查询历史…" }
+palette.command.insert_in:            { en: "Insert in %{table}…", zh-CN: "在 %{table} 中插入…" }
+palette.command.delete_row:           { en: "Delete row…", zh-CN: "删除行…" }
+palette.command.refresh_structure:    { en: "Refresh structure", zh-CN: "刷新结构" }
+palette.command.show_structure:       { en: "Show structure", zh-CN: "显示结构" }
+palette.command.refresh_rows:         { en: "Refresh rows", zh-CN: "刷新行" }
+palette.command.next_page:            { en: "Next page", zh-CN: "下一页" }
+palette.command.previous_page:        { en: "Previous page", zh-CN: "上一页" }
+palette.command.count_rows:           { en: "Count rows", zh-CN: "统计行数" }
+palette.command.filter_rows:          { en: "Filter rows…", zh-CN: "筛选行…" }
+palette.command.add_filter:           { en: "Add filter", zh-CN: "添加筛选" }
+palette.command.join_next:            { en: "Join the next filter with %{join}", zh-CN: "下一个筛选条件与 %{join} 连接" }
+palette.command.clear_filter:         { en: "Clear filter", zh-CN: "清除筛选" }
+palette.command.insert:               { en: "Insert…", zh-CN: "插入…" }
+palette.command.import_rows_into:     { en: "Import Rows into %{table}…", zh-CN: "向 %{table} 导入行…" }
+palette.command.import_rows_clipboard: { en: "Import Rows into %{table} from Clipboard…", zh-CN: "从剪贴板向 %{table} 导入行…" }
+palette.command.close_tab:            { en: "Close tab", zh-CN: "关闭标签页" }
+palette.command.set_row_limit:        { en: "Set row limit…", zh-CN: "设置行数上限…" }
+palette.command.move_tab_left:        { en: "Move tab left", zh-CN: "向左移动标签页" }
+palette.command.move_tab_right:       { en: "Move tab right", zh-CN: "向右移动标签页" }
+palette.command.cancel_export:        { en: "Cancel export", zh-CN: "取消导出" }
+palette.command.go_to_column:         { en: "Go to column…", zh-CN: "跳转到列…" }
+palette.command.export_csv:           { en: "Export results as CSV…", zh-CN: "将结果导出为 CSV…" }
+palette.command.export_json:          { en: "Export results as JSON…", zh-CN: "将结果导出为 JSON…" }
+palette.command.export_sql:           { en: "Export results as SQL…", zh-CN: "将结果导出为 SQL…" }
+palette.command.copy_tsv:             { en: "Copy results as TSV", zh-CN: "以 TSV 复制结果" }
+palette.command.copy_results_as:      { en: "Copy results as %{format}", zh-CN: "以 %{format} 复制结果" }
+palette.command.next_result:          { en: "Next result", zh-CN: "下一个结果" }
+palette.command.previous_result:      { en: "Previous result", zh-CN: "上一个结果" }
+palette.command.show_messages:        { en: "Show messages", zh-CN: "显示消息" }
+palette.command.show_result:          { en: "Show result", zh-CN: "显示结果" }
+palette.command.copy_row:             { en: "Copy row", zh-CN: "复制行" }
+palette.command.copy_rows_as:         { en: "Copy %{rows} as %{shape}", zh-CN: "以 %{shape} 复制%{rows}" }
+palette.command.follow_foreign_key:   { en: "Follow foreign key", zh-CN: "跟随外键" }
+palette.command.open_value:           { en: "Open “%{value}”", zh-CN: "打开“%{value}”" }
+palette.command.show_references:      { en: "Show references…", zh-CN: "显示引用…" }
+palette.command.sort_by:              { en: "Sort by “%{column}”", zh-CN: "按“%{column}”排序" }
+palette.command.hide_column:          { en: "Hide column “%{column}”", zh-CN: "隐藏列“%{column}”" }
+palette.command.pin_column:           { en: "Pin column “%{column}” to the left", zh-CN: "将列“%{column}”固定在左侧" }
+palette.command.unpin_column:         { en: "Unpin column “%{column}”", zh-CN: "取消固定列“%{column}”" }
+palette.command.sort_server:          { en: "Sort on the server", zh-CN: "在服务器端排序" }
+palette.command.sort_client:          { en: "Sort on the client", zh-CN: "在客户端排序" }
+palette.command.show_all_columns:     { en: "Show all columns (%{hidden} hidden)", zh-CN: "显示所有列（隐藏 %{hidden} 列）" }
+palette.command.set_null:             { en: "Set cell to NULL", zh-CN: "将单元格设为 NULL" }
+palette.command.set_empty:            { en: "Set cell to empty", zh-CN: "将单元格设为空" }
+palette.command.set_default:          { en: "Set cell to default", zh-CN: "将单元格设为默认值" }
+palette.command.apply_edits:          { en: "Apply edits", zh-CN: "应用修改" }
+palette.command.discard_edits:        { en: "Discard edits", zh-CN: "放弃修改" }
+palette.command.next_edit:            { en: "Next edit", zh-CN: "下一处修改" }
+palette.command.previous_edit:        { en: "Previous edit", zh-CN: "上一处修改" }
+palette.command.next_connection:      { en: "Next connection", zh-CN: "下一个连接" }
+palette.command.previous_connection:  { en: "Previous connection", zh-CN: "上一个连接" }
+palette.command.switch_connection:    { en: "Switch connection…", zh-CN: "切换连接…" }
+palette.command.disconnect:           { en: "Disconnect", zh-CN: "断开连接" }
+palette.command.edit_connection:      { en: "Edit connection…", zh-CN: "编辑连接…" }
+palette.command.duplicate_connection: { en: "Duplicate connection…", zh-CN: "复制连接…" }
+palette.command.move_connection:      { en: "Move connection to a project…", zh-CN: "将连接移动到项目…" }
+palette.command.remove_connection:    { en: "Remove connection…", zh-CN: "移除连接…" }
+palette.command.cycle_access:         { en: "Cycle access level", zh-CN: "循环切换访问级别" }
+palette.command.rename_project:       { en: "Rename project…", zh-CN: "重命名项目…" }
+palette.command.delete_project:       { en: "Delete project…", zh-CN: "删除项目…" }
+palette.command.refresh_schema:       { en: "Refresh schema", zh-CN: "刷新 Schema" }
+palette.command.reconnect:            { en: "Reconnect", zh-CN: "重新连接" }
+palette.command.select_database:      { en: "Select database…", zh-CN: "选择数据库…" }
+palette.command.select_schema:        { en: "Select schema…", zh-CN: "选择 Schema…" }
+palette.command.toggle_sidebar:       { en: "Toggle sidebar", zh-CN: "切换边栏" }
+palette.command.focus_sidebar:        { en: "Focus sidebar", zh-CN: "聚焦边栏" }
+palette.command.expand_all_schemas:   { en: "Expand all schemas", zh-CN: "展开所有 Schema" }
+palette.command.collapse_all_schemas: { en: "Collapse all schemas", zh-CN: "折叠所有 Schema" }
+palette.command.focus_results:        { en: "Focus results", zh-CN: "聚焦结果" }
+palette.command.toggle_row_panel:     { en: "Toggle row panel", zh-CN: "切换行详情面板" }
+palette.command.toggle_row_edit:      { en: "Toggle row panel edit mode", zh-CN: "切换行详情编辑模式" }
+palette.command.reset_editor_zoom:    { en: "Reset editor zoom", zh-CN: "重置编辑器缩放" }
+palette.command.new_connection:       { en: "New connection…", zh-CN: "新建连接…" }
+palette.command.open_data_file:       { en: "Open data file (CSV, Excel, Parquet, JSON)…", zh-CN: "打开数据文件（CSV、Excel、Parquet、JSON）…" }
+palette.command.new_project:          { en: "New project…", zh-CN: "新建项目…" }
+palette.command.import_dbeaver:       { en: "Import connections from DBeaver…", zh-CN: "从 DBeaver 导入连接…" }
+palette.command.import_tableplus:     { en: "Import connections from TablePlus…", zh-CN: "从 TablePlus 导入连接…" }
+palette.command.select_theme:         { en: "Select theme…", zh-CN: "选择主题…" }
+palette.command.chrome_font:          { en: "Chrome font…", zh-CN: "界面字体…" }
+palette.command.editor_font:          { en: "Editor font…", zh-CN: "编辑器字体…" }
+palette.command.grid_font:            { en: "Grid font…", zh-CN: "表格字体…" }
+palette.command.settings:             { en: "Settings", zh-CN: "设置" }
+palette.command.copy_diagnostics:     { en: "Copy diagnostics", zh-CN: "复制诊断信息" }
+palette.command.open_logs_folder:     { en: "Open logs folder", zh-CN: "打开日志文件夹" }
+palette.command.structure_section:    { en: "Structure: %{section}", zh-CN: "结构：%{section}" }
+
+palette.action.switch_to:          { en: "Switch to %{name}", zh-CN: "切换到 %{name}" }
+palette.action.edit:               { en: "Edit %{name}…", zh-CN: "编辑 %{name}…" }
+palette.action.duplicate:          { en: "Duplicate %{name}…", zh-CN: "复制 %{name}…" }
+palette.action.move:               { en: "Move %{name} to a project…", zh-CN: "将 %{name} 移动到项目…" }
+palette.action.remove_from:        { en: "Remove %{name} from %{project}", zh-CN: "从 %{project} 移除 %{name}" }
+palette.action.remove:             { en: "Remove %{name}…", zh-CN: "移除 %{name}…" }
+palette.action.new_connection_in:  { en: "New connection in %{project}…", zh-CN: "在 %{project} 中新建连接…" }
+palette.action.rename:             { en: "Rename %{project}…", zh-CN: "重命名 %{project}…" }
+palette.action.delete:             { en: "Delete %{project}…", zh-CN: "删除 %{project}…" }
+palette.action.disconnect_from:    { en: "Disconnect from %{name}", zh-CN: "断开与 %{name} 的连接" }
+palette.action.rename_to:          { en: "Rename %{old} to %{new}", zh-CN: "将 %{old} 重命名为 %{new}" }
+palette.default_font:              { en: "Default (%{font})", zh-CN: "默认（%{font}）" }
+palette.import_from:               { en: "Import from %{source}…", zh-CN: "从 %{source} 导入…" }
+palette.action.create_project:     { en: "Create project %{name}", zh-CN: "创建项目 %{name}" }
+palette.confirm.remove_named:      { en: "Remove %{name}", zh-CN: "移除 %{name}" }
+palette.confirm.delete_named:      { en: "Delete %{name}", zh-CN: "删除 %{name}" }
+palette.hint.saved_queries_go:     { en: "its saved queries go too", zh-CN: "其已保存的查询也会一并删除" }
+palette.hint.connections_kept:     { en: "its connections are kept", zh-CN: "其连接会保留" }
+
+palette.picker.font:            { en: "Pick a font…", zh-CN: "选择字体…" }
+palette.picker.theme:           { en: "Pick a theme…", zh-CN: "选择主题…" }
+palette.picker.light_theme:     { en: "Pick a light theme…", zh-CN: "选择浅色主题…" }
+palette.picker.dark_theme:      { en: "Pick a dark theme…", zh-CN: "选择深色主题…" }
+palette.picker.import_theme:    { en: "Import a theme…", zh-CN: "导入主题…" }
+palette.picker.database:        { en: "Switch database…", zh-CN: "切换数据库…" }
+palette.picker.schema:          { en: "Switch schema…", zh-CN: "切换 Schema…" }
+palette.picker.column:          { en: "Go to a column…", zh-CN: "跳转到列…" }
+palette.picker.row_limit:       { en: "Set the row limit…", zh-CN: "设置行数上限…" }
+palette.picker.engine:          { en: "Pick an engine…", zh-CN: "选择引擎…" }
+palette.picker.import_project:  { en: "Choose the project they join…", zh-CN: "选择它们加入的项目…" }
+palette.picker.reference:       { en: "Open a referencing table…", zh-CN: "打开引用它的表…" }
+palette.picker.action:          { en: "Pick an action…", zh-CN: "选择一个操作…" }
+palette.picker.move_project:    { en: "Move to a project…", zh-CN: "移动到项目…" }
+palette.picker.name_project:    { en: "Name the new project…", zh-CN: "命名新项目…" }
+palette.picker.rename_project:  { en: "Rename the project…", zh-CN: "重命名项目…" }
+palette.picker.rename_a_project: { en: "Rename a project…", zh-CN: "重命名一个项目…" }
+palette.picker.delete_a_project: { en: "Delete a project…", zh-CN: "删除一个项目…" }
+palette.picker.delete_query:    { en: "Delete a saved query…", zh-CN: "删除已保存的查询…" }
+palette.picker.remove_connection: { en: "Remove this connection?", zh-CN: "移除此连接？" }
+palette.picker.delete_project:  { en: "Delete this project?", zh-CN: "删除此项目？" }
+
+palette.title.chrome_font:      { en: "Chrome font", zh-CN: "界面字体" }
+palette.title.editor_font:      { en: "Editor font", zh-CN: "编辑器字体" }
+palette.title.grid_font:        { en: "Grid font", zh-CN: "表格字体" }
+palette.title.theme:            { en: "Theme", zh-CN: "主题" }
+palette.title.themes:           { en: "Themes", zh-CN: "主题" }
+palette.title.light_theme:      { en: "Light theme", zh-CN: "浅色主题" }
+palette.title.dark_theme:       { en: "Dark theme", zh-CN: "深色主题" }
+palette.title.import_theme:     { en: "Import theme", zh-CN: "导入主题" }
+palette.title.databases:        { en: "Databases", zh-CN: "数据库" }
+palette.title.schemas:          { en: "Schemas", zh-CN: "Schema" }
+palette.title.columns:          { en: "Columns", zh-CN: "列" }
+palette.title.row_limit:        { en: "Row limit", zh-CN: "行数上限" }
+palette.title.engines:          { en: "Engines", zh-CN: "引擎" }
+palette.title.project:          { en: "Project", zh-CN: "项目" }
+palette.title.referenced_by:    { en: "Referenced by", zh-CN: "被引用" }
+palette.title.delete_query:     { en: "Delete query", zh-CN: "删除查询" }
+palette.title.connection:       { en: "Connection", zh-CN: "连接" }
+palette.title.move_to_project:  { en: "Move to project", zh-CN: "移动到项目" }
+palette.title.new_project:      { en: "New project", zh-CN: "新建项目" }
+palette.title.rename_project:   { en: "Rename project", zh-CN: "重命名项目" }
+palette.title.delete_project:   { en: "Delete project", zh-CN: "删除项目" }
+palette.title.remove_connection: { en: "Remove connection", zh-CN: "移除连接" }
+
 palette.footer.navigate:   { en: "Navigate", zh-CN: "导航" }
 palette.footer.actions:    { en: "Actions", zh-CN: "操作" }
 palette.footer.scope:      { en: "Scope", zh-CN: "范围" }

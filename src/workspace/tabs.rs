@@ -637,7 +637,11 @@ impl Workspace {
         // chrome should not narrate a setting -- so the switch itself says
         // where it landed.
         if self.profile().is_some() {
-            let label = side.map_or("Theme", theme::Appearance::theme_label);
+            let label = match side {
+                Some(theme::Appearance::Light) => t!("palette.title.light_theme").to_string(),
+                Some(theme::Appearance::Dark) => t!("palette.title.dark_theme").to_string(),
+                None => t!("palette.title.theme").to_string(),
+            };
             self.note(format!("{label}: {}", theme.name), cx);
         }
         self.remember_profiles(cx);

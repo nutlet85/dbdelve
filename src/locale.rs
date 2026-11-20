@@ -5,13 +5,16 @@
 //! strings (input context menus, calendars, pagination).
 //!
 //! What is translated today: the menu layer, the settings panel, the command
-//! palette's chrome (its scopes, the field's placeholder, group headers, footer
-//! hints, empty states and History's pills), the dialogs that write DDL with
-//! the sentences `db::alter` refuses them in, the connection form, the
-//! unsaved query tabs' titles, and the query toolbar's target label. What the
-//! server said is never translated -- it is marked with `error.server` and
-//! shown in its own words, because the server's sentence is the record a bug
-//! report needs.
+//! palette (its chrome, every built-in command, each picker's title and
+//! placeholder, its connection and project actions, and its row hints), the
+//! dialogs that write DDL with the sentences `db::alter` refuses them in, the
+//! connection form, the unsaved query tabs' titles, and the query toolbar's
+//! target label. What the server said is never translated -- it is marked with
+//! `error.server` and shown in its own words, because the server's sentence is
+//! the record a bug report needs. Names the user or the server owns -- tables,
+//! columns, schemas, databases, saved queries, connections, projects, engines,
+//! fonts and themes -- stay as they are, and a Chinese list keeps the English
+//! command name as a second search term.
 
 /// The languages this build ships entries for, with their own-language names
 /// for the settings row. Kept in display order.
