@@ -1556,13 +1556,13 @@ mod tests {
 /// Export SQL is left out, not greyed, on an engine whose rows are not SQL
 /// values, as its button was.
 #[derive(Clone)]
-pub(super) struct ExportMenu {
-    pub(super) workspace: WeakEntity<Workspace>,
-    pub(super) sql: bool,
+pub(crate) struct ExportMenu {
+    pub(crate) workspace: WeakEntity<Workspace>,
+    pub(crate) sql: bool,
 }
 
 impl ExportMenu {
-    pub(super) fn build(
+    pub(crate) fn build(
         &self,
         menu: PopupMenu,
         window: &mut Window,
@@ -1612,7 +1612,7 @@ impl ExportMenu {
             .fold(menu, |menu, item| menu.item(item))
     }
 
-    pub(super) fn file_exports(&self) -> Vec<(String, FileAs)> {
+    pub(crate) fn file_exports(&self) -> Vec<(String, FileAs)> {
         let mut exports = vec![
             (t!("export.csv").to_string(), FileAs::Rows(Format::Csv)),
             (t!("export.json").to_string(), FileAs::Rows(Format::Json)),

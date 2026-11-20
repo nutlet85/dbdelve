@@ -386,6 +386,7 @@ impl Workspace {
                 .and_then(|profile| profile.session.query_tab_mut(id))
         {
             query.showing_messages = false;
+            query.showing_summary = false;
         }
 
         // A selection holding more than one statement runs each of them in
@@ -996,12 +997,18 @@ impl Workspace {
             None => false,
         };
         query.showing_messages = false;
+        query.showing_summary = false;
         // The form was built from the rows it was opened over, which can be
         // another table's, and a review's batch is refreshed by whichever
         // result is on screen when it runs.
         if switched && let Some(profile) = self.profile_mut() {
             profile.session.insert_form.take_if(|form| form.tab == tab);
             profile.session.drop_apply_review_of(tab);
+        }
+        // The matches were found in the rows that were on screen; another
+        // result's rows are another search, and the bar stays open over them.
+        if self.find.is_some() {
+            self.refresh_find(0, cx);
         }
         cx.notify();
     }
@@ -1012,12 +1019,16 @@ impl Workspace {
         let Tab::Query(id) = tab else {
             return;
         };
+        // The messages stand in for the rows and their toolbar, and the bar's
+        // field would unmount with the keyboard in it.
+        self.drop_find(cx);
         let Some(profile) = self.profile_mut() else {
             return;
         };
         let Some(query) = profile.session.query_tab_mut(id) else {
             return;
         };
+        query.showing_summary = false;
         if query.messages().is_empty() || std::mem::replace(&mut query.showing_messages, true) {
             return;
         }
@@ -1268,8 +1279,14 @@ impl Workspace {
         self.execute_own(statement, tab, Some(action.mode), cx);
     }
 
-    /// Flip the query tab's results pane between its rows and its plan.
-    pub(crate) fn show_plan(&mut self, showing: bool, cx: &mut Context<Self>) {
+    /// Show the run's summary in place of its rows: what each statement
+    /// returned, how long it took, and how it ended.
+    pub(crate) fn show_summary(&mut self, showing: bool, cx: &mut Context<Self>) {
+        // The summary has no rows to mark, and the bar's field would unmount
+        // with the keyboard in it.
+        if showing {
+            self.drop_find(cx);
+        }
         let Some(profile) = self.profile_mut() else {
             return;
         };
@@ -1279,13 +1296,47 @@ impl Workspace {
         let Some(tab) = profile.session.query_tab_mut(id) else {
             return;
         };
-        // Nothing to turn to. The toggle is not drawn in that case, so this is
-        // the palette's row and a stale keystroke rather than a button.
-        if !tab.flips_to_plan() {
+        // A summary of nothing is a page of empty rows; the chip is not drawn
+        // before one run either.
+        if showing && !tab.has_run() {
+            return;
+        }
+        tab.showing_summary = showing;
+        if showing {
+            tab.show_slot();
+            tab.showing_plan = false;
+            tab.showing_messages = false;
+        }
+        cx.notify();
+    }
+
+    /// Flip the query tab's results pane between its rows and its plan.
+    pub(crate) fn show_plan(&mut self, showing: bool, cx: &mut Context<Self>) {
+        // The plan has no rows to mark, and the find bar's field would unmount
+        // with the keyboard in it.
+        if showing {
+            self.drop_find(cx);
+        }
+        let Some(profile) = self.profile_mut() else {
+            return;
+        };
+        let Tab::Query(id) = profile.session.active else {
+            return;
+        };
+        let Some(tab) = profile.session.query_tab_mut(id) else {
+            return;
+        };
+        // Nothing to turn to. The toggle is not drawn for a plan in that case,
+        // so this is the palette's row and a stale keystroke rather than a
+        // button -- except for Data, which is also the way back from the
+        // summary.
+        if showing && !tab.flips_to_plan() {
             return;
         }
         tab.showing_plan = showing;
-        // Either half is asked for by name, so neither leaves Messages over it.
+        // Either half is asked for by name, so neither leaves Messages or the
+        // summary over it.
+        tab.showing_summary = false;
         let switched = match showing {
             true => tab.show_slot(),
             false => {
@@ -2255,6 +2306,7 @@ impl Workspace {
             && let Some(tab) = profile.session.query_tab_mut(query)
         {
             tab.showing_plan = false;
+            tab.showing_summary = false;
             // A typed `EXPLAIN`'s plan is a view of the rows about to be
             // replaced, with no Data of its own to flip back to it from.
             tab.plan.take_if(|plan| plan.typed);

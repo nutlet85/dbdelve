@@ -284,17 +284,21 @@ pub(crate) fn reconnect_button(id: &'static str, t: Theme) -> Button {
 /// titlebar hangs a `dropdown_menu` off it, and that trait is bounded on
 /// `Selectable`, which `Div` does not implement.
 pub(crate) fn mode_pill(t: Theme, mode: Mode) -> Button {
-    let (color, path) = match mode {
-        Mode::ReadOnly => (ConnectionColor::Green, icon::READ_ONLY),
-        Mode::ReadWrite => (ConnectionColor::Yellow, icon::READ_WRITE),
-        Mode::Full => (ConnectionColor::Red, icon::FULL_ACCESS),
+    // The tint climbs with what the mode allows, in the app's own semantics
+    // rather than a fourth palette: success reads, a neutral wash writes, and
+    // the danger hue is the one that can change structure. The label stays in
+    // body ink; only the wash and the icon carry the warning.
+    let (tint, ink, path) = match mode {
+        Mode::ReadOnly => (t.success.alpha(0.16), t.success, icon::READ_ONLY),
+        Mode::ReadWrite => (t.element_hover, t.text_muted, icon::READ_WRITE),
+        Mode::Full => (t.danger.alpha(0.16), t.danger, icon::FULL_ACCESS),
     };
     // The look is set on a plain `Div` inside rather than on the `Button`, so
     // the button's own label sizing cannot drift it from the switcher's.
     control("connection-mode", Tone::Quiet, Control::Compact)
         .px(px(layout::SPACE_SM))
         .rounded(px(layout::RADIUS_CONTROL))
-        .bg(color.chip(t))
+        .bg(tint)
         .child(
             div()
                 .flex()
@@ -303,7 +307,11 @@ pub(crate) fn mode_pill(t: Theme, mode: Mode) -> Button {
                 .text_size(px(layout::chrome(layout::TEXT_SM)))
                 .text_color(t.text)
                 .font_weight(FontWeight::MEDIUM)
-                .child(row_icon_tinted(t, path, Some(color)))
+                .child(
+                    icon(path)
+                        .size(px(layout::chrome(layout::ICON_SIZE)))
+                        .text_color(ink),
+                )
                 .child(mode.label())
                 .child(row_icon(t, icon::CHEVRON_DOWN)),
         )
@@ -1378,8 +1386,60 @@ pub(crate) fn human_bytes(bytes: u64) -> String {
     }
 }
 
+/// A value indented as the JSON document it is, or `None` where it is not
+/// one.
+///
+/// A document arrives as a string — Postgres' `jsonb` is rendered by the
+/// driver, SQL Server has no JSON type, and a document in MySQL lives in
+/// whatever `text` column was declared for it — so no type name answers this
+/// question reliably, and the value itself answers it for every engine.
+///
+/// Objects and arrays only: a bare number, string or `true` is also valid
+/// JSON, and reformatting one produces the same characters back.
+pub(crate) fn pretty_json(value: &str) -> Option<String> {
+    let trimmed = value.trim_start();
+    if !trimmed.starts_with(['{', '[']) {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(trimmed)
+        .ok()
+        .and_then(|parsed| serde_json::to_string_pretty(&parsed).ok())
+}
+
+/// [`pretty_json`] where the caller keeps a value either way: a document is
+/// indented, everything else is the text that came in.
+pub(crate) fn pretty_value(value: &str) -> String {
+    pretty_json(value).unwrap_or_else(|| value.to_string())
+}
+
 #[cfg(test)]
 mod tests {
+
+    /// A value the cell detail shows as it is: only a document gets laid out,
+    /// and everything else comes back exactly as fetched.
+    #[test]
+    fn a_document_is_indented_and_everything_else_is_left_alone() {
+        let document = pretty_json(r#"{"aoi":{"acres":69.7},"tags":[1,2]}"#).unwrap();
+        assert!(document.starts_with("{\n"), "{document}");
+        assert!(document.contains("\n  \"tags\""), "{document}");
+
+        // All valid JSON, and all already spelled the only way they can be.
+        // Reformatting a scalar is the characters back again, so the parser is
+        // never worth reaching for one.
+        for scalar in ["22.38", "true", "null", "\"quoted\""] {
+            assert_eq!(pretty_json(scalar), None);
+        }
+        // Shaped like a document without being one -- a truncated value, or
+        // prose that opens with a brace. Not a document, so `None`, and the
+        // caller keeps the original text.
+        for other in ["{not json at all", "[1, 2", "an ordinary sentence", ""] {
+            assert_eq!(pretty_json(other), None);
+            assert_eq!(pretty_value(other), other);
+        }
+        assert_eq!(pretty_value("plain"), "plain");
+        assert!(pretty_value("[1,2]").contains('\n'));
+        assert_eq!(pretty_value("{\"a\":1}"), "{\n  \"a\": 1\n}");
+    }
 
     /// Every word the status bar and the pages it sits under put on screen, so
     /// a key that lost its Chinese falls back to its own name here rather than
@@ -1448,9 +1508,44 @@ mod tests {
             ("short.remedy_raise_limit", "提高行数上限并重新运行"),
             ("short.doing_copying", "复制"),
             ("short.doing_exporting", "导出"),
+            ("find.open", "在结果中查找"),
+            ("find.placeholder", "在结果中查找…"),
+            ("find.count", "%{at} / %{total}"),
+            ("find.no_matches", "没有匹配"),
+            ("find.next", "下一个"),
+            ("find.previous", "上一个"),
+            ("find.close", "关闭查找"),
+            ("tooltip.command_palette", "命令面板"),
+            ("menu.view.command_palette", "命令面板…"),
             ("button.run", "运行"),
+            ("palette.theme.colors", "背景 · 正文 · 强调色 · 语法色"),
+            ("import.group.csv", "CSV 选项"),
+            ("import.quote", "引号"),
+            ("import.skip_lines", "跳过前 N 行"),
+            ("import.encoding", "编码"),
+            ("import.empty_string", "空字符串"),
+            ("import.all_or_nothing", "全部成功或全部回滚"),
+            ("import.import_rows", "导入 %{rows}"),
             ("editor.hint_empty_run", "运行语句"),
             ("editor.hint_empty_palette", "打开命令面板"),
+            ("grid.view_value", "查看值…"),
+            ("grid.filter_on_column", "按 %{column} 筛选"),
+            ("cell_detail.title", "单元格值"),
+            ("cell_detail.copied", "已复制到剪贴板"),
+            ("cell_detail.size", "%{chars} 字符 · %{bytes} 字节"),
+            ("palette.view.data", "显示数据"),
+            ("palette.view.plan", "显示计划"),
+            ("palette.view.summary", "显示摘要"),
+            ("view.summary", "摘要"),
+            ("summary.empty", "还没有执行。"),
+            ("summary.statements", "%{count} 条语句"),
+            ("summary.limit", "行数上限 %{rows}"),
+            ("summary.elapsed", "合计 %{time}"),
+            ("summary.ok", "成功"),
+            ("summary.failed", "失败"),
+            ("summary.running", "运行中"),
+            ("summary.cancelled", "已取消"),
+            ("summary.stopped_at_limit", "已达行数上限"),
         ] {
             assert_eq!(t!(key, locale = "zh-CN"), chinese, "{key}");
         }

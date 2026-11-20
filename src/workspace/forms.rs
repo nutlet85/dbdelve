@@ -1144,6 +1144,8 @@ impl Workspace {
                 if editing { 3 + checkbox } else { 2 }
             }
             Some("import-choice") => 3,
+            // Cell value's Copy is its one control.
+            Some("cell-detail") => 1,
             Some("structure-editor") => 3,
             Some("pending-export") => {
                 let all = self
@@ -1302,6 +1304,7 @@ impl Workspace {
             // The button is disabled while the batch runs.
             ("apply-review", 0) if !running => self.run_apply_review(cx),
             ("apply-review", 1) => _ = self.close_apply_review(cx),
+            ("cell-detail", _) => _ = self.close_cell_detail(cx),
             _ => {}
         }
     }
@@ -1450,6 +1453,181 @@ impl Workspace {
                 )
                 .into_any_element(),
         )
+    }
+
+    /// The whole of one cell, in a dialog: a document indented, anything else
+    /// exactly as fetched, and a value taller than the dialog scrolls rather
+    /// than being cut to its column.
+    pub(crate) fn render_cell_detail(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let detail = self.cell_detail.as_ref()?;
+        let profile = self.profile()?;
+        // The tab it was opened on, and only while that tab is in front: the
+        // dialog cannot outlive what it describes.
+        if profile.id != detail.profile || profile.session.active != detail.tab {
+            return None;
+        }
+        let t = popup_theme(cx);
+        let (name, value, keyword) = {
+            let table = detail.grid.read(cx);
+            let grid = table.delegate();
+            let name = grid.columns().get(detail.col)?.name.clone();
+            let (row, col) = (detail.row, detail.col);
+            let pending = grid.pending_value(row, col);
+            let (value, keyword) = match pending {
+                Some(NewValue::Value(value)) => (Some(value.to_string()), None),
+                Some(NewValue::Null) => (None, Some(result_grid::NULL_LABEL)),
+                Some(NewValue::Default) => (None, Some(result_grid::DEFAULT_LABEL)),
+                // An absent field has nothing to show and is not a NULL.
+                None if grid.missing(row, col) => (None, None),
+                None => match grid.cell(row, col) {
+                    Some(value) => (Some(value.to_string()), None),
+                    None => (None, Some(result_grid::NULL_LABEL)),
+                },
+            };
+            (name, value, keyword)
+        };
+        let shown = value.as_deref().map(ui::pretty_value);
+        let chars = shown.as_deref().map_or(0, |value| value.chars().count());
+        let bytes = shown.as_deref().map_or(0, |value| value.len());
+        let body = match (&keyword, &shown) {
+            (Some(keyword), _) => keyword.to_string(),
+            (None, Some(value)) => value.clone(),
+            (None, None) => String::new(),
+        };
+        let size = t!(
+            "cell_detail.size",
+            chars = group_thousands(chars as u64),
+            bytes = group_thousands(bytes as u64)
+        )
+        .to_string();
+        let copy = shown.map(|text| {
+            button(
+                "copy-cell-value",
+                t!("grid.copy"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .on_click(cx.listener(move |workspace, _, _, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                workspace.cell_detail_copied(cx);
+            }))
+        });
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .occlude()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    dialog(t)
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(layout::SPACE_SM))
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(t!("cell_detail.title").to_string()),
+                                )
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .whitespace_nowrap()
+                                        .text_size(px(layout::chrome(layout::TEXT_SM)))
+                                        .text_color(t.text_muted)
+                                        .child(name),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id("cell-detail-value")
+                                .max_h(px(layout::DIALOG_TEXT_MAX_HEIGHT))
+                                .overflow_y_scroll()
+                                .rounded(px(layout::RADIUS_CONTROL))
+                                .border_1()
+                                .border_color(t.border)
+                                .bg(t.element_hover)
+                                .p(px(layout::SPACE_MD))
+                                .font_family(fonts(cx).editor.clone())
+                                .text_size(px(layout::chrome(layout::TEXT_SM)))
+                                .whitespace_normal()
+                                .when(keyword.is_some(), |body| {
+                                    body.italic().text_color(t.text_faint)
+                                })
+                                .child(body),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(layout::SPACE_SM))
+                                .child(
+                                    div()
+                                        .text_size(px(layout::chrome(layout::TEXT_XS)))
+                                        .text_color(t.text_faint)
+                                        .child(size),
+                                )
+                                .child(div().flex_1())
+                                .children(match (detail.copied, copy) {
+                                    (true, _) => Some(copied_to_clipboard(t)),
+                                    (false, Some(copy)) => Some(
+                                        self.choice("cell-detail", 0, copy, t).into_any_element(),
+                                    ),
+                                    (false, None) => None,
+                                }),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// Copy's receipt: the dialog says the value is on the clipboard, and a
+    /// moment later puts itself away -- no second keystroke to dismiss a
+    /// dialog that has already done its job.
+    pub(crate) fn cell_detail_copied(&mut self, cx: &mut Context<Self>) {
+        let Some(detail) = self.cell_detail.as_mut() else {
+            return;
+        };
+        detail.copied = true;
+        let cell = (detail.tab, detail.row, detail.col, detail.grid.clone());
+        cx.notify();
+        cx.spawn(async move |workspace, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(900))
+                .await;
+            let _ = workspace.update(cx, |workspace, cx| {
+                // Only the dialog this copy was made from: another cell opened
+                // in the meantime is not this timer's to close.
+                let same = workspace.cell_detail.as_ref().is_some_and(|detail| {
+                    detail.tab == cell.0
+                        && detail.row == cell.1
+                        && detail.col == cell.2
+                        && detail.grid == cell.3
+                });
+                if same {
+                    workspace.close_cell_detail(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Put the cell-detail dialog away. The keyboard goes back to what held it
+    /// when the dialog went up (`dialog_layer`'s `focus_before_dialog`), which
+    /// is the grid the cell was opened from.
+    pub(crate) fn close_cell_detail(&mut self, cx: &mut Context<Self>) -> bool {
+        let closed = self.cell_detail.take().is_some();
+        if closed {
+            cx.notify();
+        }
+        closed
     }
 
     pub(crate) fn labelled_field(
@@ -3674,6 +3852,22 @@ fn note(t: Theme, text: &'static str) -> AnyElement {
         .text_size(px(layout::chrome(layout::TEXT_SM)))
         .text_color(t.text_muted)
         .child(text)
+        .into_any_element()
+}
+
+/// What the cell-detail dialog shows in Copy's place once it has been pressed:
+/// the clipboard changed, and the dialog is about to go, so this is the only
+/// acknowledgement the copy gets.
+fn copied_to_clipboard(t: Theme) -> AnyElement {
+    div()
+        .debug_selector(|| "cell-detail-copied".into())
+        .flex()
+        .items_center()
+        .gap(px(layout::SPACE_XS))
+        .text_size(px(layout::chrome(layout::TEXT_SM)))
+        .text_color(t.success)
+        .child(icon(icon::CHECK).size(px(layout::chrome(layout::ICON_SIZE))))
+        .child(t!("cell_detail.copied").to_string())
         .into_any_element()
 }
 

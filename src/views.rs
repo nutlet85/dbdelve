@@ -38,16 +38,17 @@ use rust_i18n::t;
 use crate::{
     InsertForm, TabKey, Workspace,
     actions::{
-        AcceptCompletion, AddFilter, CancelQuery, CopyCell, CopySelection, CustomRowLimit,
-        ExplainQuery, FormatQuery, ImportRows, ImportRowsFromClipboard, LimitTarget, NewQuery,
-        NewRow, NextPage, PreviousPage, RemoveFilter, RunQuery, SaveQuery, SelectDatabase,
-        SetDefaultRowLimit, SetFilterColumn, SetFilterOperator, SetFilterRaw, SetQueryLimit,
-        SetRowLimit, ToggleComment, ToggleFilterJoin, ToggleNextJoin, ToggleRowPanel,
+        AcceptCompletion, AddFilter, CancelQuery, CloseFind, CopyCell, CopySelection,
+        CustomRowLimit, ExplainQuery, FindInGrid, FindNext, FindPrevious, FormatQuery, ImportRows,
+        ImportRowsFromClipboard, LimitTarget, NewQuery, NewRow, NextPage, PreviousPage,
+        RemoveFilter, RunQuery, SaveQuery, SelectDatabase, SetDefaultRowLimit, SetFilterColumn,
+        SetFilterOperator, SetFilterRaw, SetQueryLimit, SetRowLimit, ToggleComment,
+        ToggleFilterJoin, ToggleNextJoin, ToggleRowPanel,
     },
     db,
-    db::{Engine, ExplainMode, RoutineKind, Target},
+    db::{Engine, ExplainMode, RoutineKind},
     explain::{self, LabelPart},
-    explorer::ROW_LIMITS,
+    explorer::{self, ObjectKind, ROW_LIMITS},
     filter::{Conjunction, FilterRow, Operator},
     icons::{icon, saved_query_icon},
     palette::Command,
@@ -64,11 +65,11 @@ use crate::{
     theme::{Theme, fonts, layout, theme},
     ui::{
         Code, Control, Tone, accent_control, button, button_label, choice_button, chord_hint,
-        code_highlights, keycaps_on_accent,
-        compact_count, control, group_thousands, icon_button, key_hint, keycap_text, kind_color,
-        object_icon, reconnect_button, row_icon, section_label,
+        code_highlights, compact_count, control, group_thousands, human_bytes, icon_button,
+        key_hint, keycap_text, keycaps_on_accent, object_icon, reconnect_button, row_icon,
+        section_label,
     },
-    workspace::error_in_buffer,
+    workspace::{ExportMenu, FindState, error_in_buffer},
 };
 
 /// What the row panel needs that is not part of any one tab: whether it is
@@ -164,14 +165,14 @@ pub fn render_main_content(
     strip: &TabStrip,
     custom_limit: Option<&(LimitTarget, Entity<InputState>)>,
     keybindings: &HashMap<String, String>,
+    find: Option<&FindState>,
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let body = match profile.session.active_object() {
         Some(tab) => render_object(
             tab,
-            &profile.id,
-            profile.config.target(),
+            profile,
             matches!(profile.state, ProfileState::Failed(_)),
             row_panel,
             profile
@@ -181,6 +182,7 @@ pub fn render_main_content(
                 .filter(|form| form.tab == profile.session.active),
             (tab.takes_imports(profile.config.target()) && profile.mode >= Mode::ReadWrite)
                 .then(|| chord_hint("import_rows_from_clipboard", keybindings)),
+            find,
             cx,
         ),
         None => render_query_surface(
@@ -190,6 +192,7 @@ pub fn render_main_content(
             row_panel,
             plan_copied,
             custom_limit,
+            find,
             window,
             cx,
         ),
@@ -405,6 +408,7 @@ fn render_query_surface(
     row_panel: &RowPanel,
     plan_copied: bool,
     custom_limit: Option<&(LimitTarget, Entity<InputState>)>,
+    find: Option<&FindState>,
     window: &mut Window,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
@@ -445,12 +449,17 @@ fn render_query_surface(
                     .into_any_element(),
             }
         }
+        // The summary is the run's own shape, so it stands in for the rows
+        // rather than beside them, as the plan does.
+        None if tab.summary_shown() => render_summary(tab, cx),
         None => render_results(
+            profile,
             profile.config.engine(),
             matches!(profile.state, ProfileState::Failed(_)),
             shown_state,
             shown_grid,
             Some(tab),
+            None,
             tab.row_panel_folded,
             tab.row_panel_editing,
             &tab.row_panel_split,
@@ -462,6 +471,7 @@ fn render_query_surface(
                 .filter(|form| form.tab == Tab::Query(tab.id)),
             None,
             &scope,
+            find,
             cx,
         ),
     };
@@ -752,6 +762,164 @@ fn render_plan(
         .into_any_element()
 }
 
+/// What each statement of a run returned and cost, for a queue read after the
+/// fact: the rows tab is one result's shape, and the plan is one statement's.
+///
+/// Rows rather than the grid for the same reason the plan uses them: nothing
+/// here is sortable or copyable, it is a handful of numbers about a handful of
+/// statements.
+fn render_summary(tab: &QueryTab, cx: &mut Context<Workspace>) -> AnyElement {
+    let t = *theme(cx);
+    let code = fonts(cx).editor.clone();
+    let lines =
+        crate::session::summary_lines(tab.queue.as_ref(), (&tab.query, &tab.results), |grid| {
+            grid.read(cx).delegate().result().stopped
+        });
+    if lines.is_empty() {
+        return div()
+            .size_full()
+            .p(px(layout::SPACE_LG))
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(px(layout::chrome(layout::TEXT_SM)))
+            .text_color(t.text_muted)
+            .child(t!("summary.empty").to_string())
+            .into_any_element();
+    }
+    let elapsed: std::time::Duration = lines.iter().filter_map(|line| line.elapsed).sum();
+    let chip = |text: String| {
+        div()
+            .flex_shrink_0()
+            .text_size(px(layout::chrome(layout::TEXT_XS)))
+            .text_color(t.text_muted)
+            .child(text)
+    };
+    let rows = lines.iter().map(|line| {
+        let (status, tone) = match line.status {
+            crate::session::SummaryStatus::Ok => (t!("summary.ok").to_string(), t.success),
+            crate::session::SummaryStatus::Failed => (t!("summary.failed").to_string(), t.danger),
+            crate::session::SummaryStatus::Running => {
+                (t!("summary.running").to_string(), t.text_muted)
+            }
+            crate::session::SummaryStatus::Cancelled => {
+                (t!("summary.cancelled").to_string(), t.text_muted)
+            }
+            crate::session::SummaryStatus::AtLimit => {
+                (t!("summary.stopped_at_limit").to_string(), t.text_muted)
+            }
+        };
+        let answered = matches!(
+            line.status,
+            crate::session::SummaryStatus::Ok
+                | crate::session::SummaryStatus::Cancelled
+                | crate::session::SummaryStatus::AtLimit
+        );
+        div()
+            .flex()
+            .items_center()
+            .gap(px(layout::SPACE_MD))
+            .px(px(layout::SPACE_SM))
+            .py(px(layout::SPACE_XS))
+            .rounded(px(layout::RADIUS_CONTROL))
+            .when(
+                line.status == crate::session::SummaryStatus::Failed,
+                |row| row.bg(t.element_hover),
+            )
+            .child(
+                div()
+                    .w(px(40.))
+                    .flex_shrink_0()
+                    .text_color(t.text_faint)
+                    .child(format!("#{}", line.number)),
+            )
+            .child(
+                div()
+                    .w(px(120.))
+                    .flex_shrink_0()
+                    .text_color(tone)
+                    .child(status),
+            )
+            .children(answered.then(|| {
+                div()
+                    .flex()
+                    .gap(px(layout::SPACE_MD))
+                    .text_color(t.text_muted)
+                    .child(
+                        t!(
+                            "status.rows",
+                            total = group_thousands(line.rows as u64),
+                            plural = if line.rows == 1 { "row" } else { "rows" }
+                        )
+                        .to_string(),
+                    )
+                    .child(human_bytes(line.bytes as u64))
+            }))
+            .children(line.elapsed.map(|elapsed| {
+                div()
+                    .text_color(t.text_faint)
+                    .child(format!("{elapsed:.1?}"))
+            }))
+    });
+    div()
+        .id("summary")
+        .debug_selector(|| "summary".into())
+        .size_full()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .font_family(code)
+        .text_size(px(layout::chrome(layout::TEXT_SM)))
+        .child(
+            div()
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .gap(px(layout::SPACE_LG))
+                .px(px(layout::SPACE_LG))
+                .h(px(layout::chrome(layout::TAB_HEIGHT)))
+                .border_b_1()
+                .border_color(t.border)
+                .child(
+                    icon(icon::HISTORY)
+                        .size(px(layout::chrome(layout::ICON_SIZE)))
+                        .text_color(t.text_faint),
+                )
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(t!("view.summary").to_string()),
+                )
+                .child(chip(
+                    t!(
+                        "summary.statements",
+                        count = group_thousands(lines.len() as u64)
+                    )
+                    .to_string(),
+                ))
+                .children(tab.row_limit.map(|rows| {
+                    chip(t!("summary.limit", rows = group_thousands(rows as u64)).to_string())
+                }))
+                .child(chip(
+                    t!("summary.elapsed", time = format!("{elapsed:.1?}")).to_string(),
+                )),
+        )
+        .child(
+            div()
+                .id("summary-rows")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .p(px(layout::SPACE_SM))
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .children(rows),
+        )
+        .into_any_element()
+}
+
 /// A plan line, bounded. The server will happily print every output column of a
 /// wide projection onto one line, and a row that wide pushes the numbers beside
 /// it off the pane.
@@ -849,16 +1017,18 @@ fn round_count(value: f64) -> String {
 #[allow(clippy::too_many_arguments)]
 fn render_object(
     tab: &ObjectTab,
-    profile_id: &str,
-    target: Target,
+    profile: &Profile,
     disconnected: bool,
     row_panel: &RowPanel,
     form: Option<&InsertForm>,
     import_invite: Option<String>,
+    find: Option<&FindState>,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let t = *theme(cx);
+    let target = profile.config.target();
     let engine = target.engine;
+    let profile_id = &profile.id;
     // Scopes this tab's scroll state to its own id -- see the same line in
     // `render_query_surface`.
     let scope = Tab::Object(tab.id).scroll_scope(profile_id);
@@ -867,6 +1037,21 @@ fn render_object(
     } = &tab.body
     {
         // No New row here: the form belongs to the rows, in the other tab.
+        let insert = engine.syntax() == db::Syntax::Sql
+            && matches!(structure, StructureState::Loaded(loaded) if !loaded.columns.is_empty());
+        let copies = match tab.kind {
+            ObjectKind::Relation(kind) => relation_copy_actions(
+                &tab.schema,
+                &tab.name,
+                kind,
+                matches!(profile.state, ProfileState::Connected(_)),
+                insert,
+                cx,
+            ),
+            // A structure page is only ever a relation's, and a routine has no
+            // definition to copy in this form.
+            ObjectKind::Routine(_) => Vec::new(),
+        };
         return div()
             .size_full()
             .flex()
@@ -875,6 +1060,7 @@ fn render_object(
                 control_row()
                     .border_b_1()
                     .border_color(t.border)
+                    .children(copies)
                     .child(div().flex_1())
                     .child(relation_controls(true, false, cx)),
             )
@@ -918,11 +1104,13 @@ fn render_object(
             t,
         ))
         .child(div().flex_1().min_h_0().child(render_results(
+            profile,
             engine,
             disconnected,
             query,
             results,
             None,
+            Some(tab),
             *row_panel_folded,
             *row_panel_editing,
             row_panel_split,
@@ -930,6 +1118,7 @@ fn render_object(
             form,
             import_invite,
             &scope,
+            find,
             cx,
         )))
         .into_any_element()
@@ -1423,6 +1612,231 @@ fn clock(elapsed: std::time::Duration) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
+/// What acts on the rows, in the strip above them.
+///
+/// These were buttons at the foot of the window, in a bar otherwise made of
+/// readouts -- an export menu beside a row count. The bar keeps the readouts;
+/// what does something about the rows now sits over them, beside the statement
+/// whose result they are.
+fn result_toolbar(t: Theme) -> gpui::Div {
+    control_row()
+        .border_b_1()
+        .border_color(t.border)
+        .text_size(px(layout::chrome(layout::TEXT_SM)))
+}
+
+/// The buttons above a result: what acts on these rows, and on the relation
+/// they came from when the surface is a table's own page.
+fn result_actions(
+    profile: &Profile,
+    results: &Entity<TableState<ResultGrid>>,
+    object: Option<&ObjectTab>,
+    cx: &mut Context<Workspace>,
+) -> Vec<AnyElement> {
+    let t = *theme(cx);
+    let target = profile.config.target();
+    let engine = profile.config.engine();
+    let (pending, has_results) = {
+        let grid = results.read(cx).delegate();
+        (grid.pending_count(), !grid.result().columns.is_empty())
+    };
+    let workspace = cx.entity().downgrade();
+    let mut actions: Vec<AnyElement> = Vec::new();
+
+    // A restored buffer's rows are waiting on a run nothing else will ask
+    // for: a relation reloads its own rows when its tab comes forward.
+    let stale = profile.session.active_query_tab().is_some_and(|tab| {
+        results.read(cx).delegate().captured().is_some()
+            && tab
+                .last_query
+                .as_deref()
+                .is_some_and(|sql| crate::sql::rerunnable(engine, sql))
+    });
+    if stale {
+        let workspace = workspace.clone();
+        actions.push(
+            button(
+                "refresh-snapshot",
+                t!("status.refresh"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .on_click(move |_, _, cx| {
+                _ = workspace.update(cx, |workspace, cx| {
+                    workspace.ask_refresh_stale(cx);
+                });
+            })
+            .into_any_element(),
+        );
+    }
+
+    // Its menu dispatches into the grid, the context `cmd-v` is bound in.
+    let import_focus = object
+        .filter(|_| pending == 0)
+        .filter(|tab| tab.takes_imports(target))
+        .map(|_| results.focus_handle(cx));
+    if let Some(focus) = import_focus {
+        actions.push(
+            button(
+                "import-rows",
+                t!("status.import"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .debug_selector(|| "import-rows".into())
+            .child(
+                icon(icon::CHEVRON_DOWN)
+                    .size(px(layout::chrome(layout::ICON_SIZE)))
+                    .text_color(t.text_muted),
+            )
+            .dropdown_menu(move |menu, _, _| {
+                menu.action_context(focus.clone())
+                    .menu(
+                        t!("status.import_clipboard"),
+                        Box::new(ImportRowsFromClipboard),
+                    )
+                    .menu(t!("status.import_file"), Box::new(ImportRows))
+            })
+            .into_any_element(),
+        );
+    }
+
+    // Not beside pending edits: these write the rows as fetched, not the
+    // values on screen.
+    if has_results && pending == 0 {
+        let export = ExportMenu {
+            workspace: workspace.clone(),
+            sql: engine.syntax() == db::Syntax::Sql,
+        };
+        actions.push(
+            button(
+                "export-results",
+                t!("status.export"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .debug_selector(|| "export-results".into())
+            .child(
+                icon(icon::CHEVRON_DOWN)
+                    .size(px(layout::chrome(layout::ICON_SIZE)))
+                    .text_color(t.text_muted),
+            )
+            .dropdown_menu(move |menu, window, cx| export.build(menu, window, cx))
+            .into_any_element(),
+        );
+    }
+
+    let Some(tab) = object else {
+        return actions;
+    };
+    let connected = matches!(profile.state, ProfileState::Connected(_));
+    let ObjectBody::Relation {
+        count,
+        filter,
+        structure,
+        ..
+    } = &tab.body
+    else {
+        return actions;
+    };
+    // The way to an exact number, which is never run unasked. Its tooltip is
+    // the statement it runs.
+    if profile.connection().is_some() && !count.answers(filter) {
+        let id = tab.id;
+        let workspace = workspace.clone();
+        let sql = explorer::count_sql(engine, &tab.schema, &tab.name, filter);
+        actions.push(
+            button(
+                "count-rows",
+                t!("status.count"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .debug_selector(|| "count-rows".into())
+            .tooltip(sql)
+            .on_click(move |_, _, cx| {
+                _ = workspace.update(cx, |workspace, cx| {
+                    workspace.count_rows(id, cx);
+                });
+            })
+            .into_any_element(),
+        );
+    }
+    let insert = engine.syntax() == db::Syntax::Sql
+        && matches!(structure, StructureState::Loaded(loaded) if !loaded.columns.is_empty());
+    if let ObjectKind::Relation(kind) = tab.kind {
+        actions.extend(relation_copy_actions(
+            &tab.schema,
+            &tab.name,
+            kind,
+            connected,
+            insert,
+            cx,
+        ));
+    }
+    actions
+}
+
+/// A relation's own definition, and a statement to fill it with: the copies
+/// that belong to whichever of its pages is in front.
+fn relation_copy_actions(
+    schema: &str,
+    name: &str,
+    kind: db::RelationKind,
+    connected: bool,
+    insert: bool,
+    cx: &mut Context<Workspace>,
+) -> Vec<AnyElement> {
+    let t = *theme(cx);
+    let workspace = cx.entity().downgrade();
+    let mut actions: Vec<AnyElement> = Vec::new();
+    if connected {
+        let (schema, relation) = (schema.to_string(), name.to_string());
+        let copy = workspace.clone();
+        actions.push(
+            button(
+                "copy-create",
+                t!("status.copy_create"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .debug_selector(|| "copy-create".into())
+            .on_click(move |_, _, cx| {
+                let (schema, relation) = (schema.clone(), relation.clone());
+                _ = copy.update(cx, |workspace, cx| {
+                    workspace.copy_ddl(schema, relation, kind, cx);
+                });
+            })
+            .into_any_element(),
+        );
+    }
+    if insert {
+        let copy = workspace;
+        actions.push(
+            button(
+                "copy-insert",
+                t!("status.copy_insert"),
+                Tone::Secondary,
+                Control::Compact,
+                t,
+            )
+            .debug_selector(|| "copy-insert".into())
+            .on_click(move |_, _, cx| {
+                _ = copy.update(cx, |workspace, cx| {
+                    workspace.copy_insert_template(cx);
+                });
+            })
+            .into_any_element(),
+        );
+    }
+    actions
+}
+
 /// The results plane: the brightest tone, because the data is the point.
 ///
 /// A short status is centred and set in the app face -- it is a sentence
@@ -1436,6 +1850,7 @@ fn clock(elapsed: std::time::Duration) -> String {
 /// which has no buffer.
 #[allow(clippy::too_many_arguments)]
 fn render_results(
+    profile: &Profile,
     engine: Engine,
     // A failure on a connection that is gone is answered by reconnecting,
     // not by editing the statement.
@@ -1443,6 +1858,9 @@ fn render_results(
     query: &QueryState,
     results: &Entity<TableState<ResultGrid>>,
     query_tab: Option<&QueryTab>,
+    // The relation a table's own page is showing, whose actions belong beside
+    // its rows; `None` over a query's result.
+    object: Option<&ObjectTab>,
     folded: bool,
     editing: bool,
     split: &Entity<ResizableState>,
@@ -1452,6 +1870,7 @@ fn render_results(
     // brought in: one that takes imports, in a mode that writes them.
     import_invite: Option<String>,
     scope: &str,
+    find: Option<&FindState>,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let t = *theme(cx);
@@ -1694,6 +2113,8 @@ fn render_results(
                 // focused element is the table root, so `enter` is
                 // caught here on its way out of the Table context.
                 .on_action(cx.listener(Workspace::edit_cell))
+                .on_action(cx.listener(Workspace::view_cell))
+                .on_action(cx.listener(Workspace::find_in_grid))
                 .on_action(cx.listener(Workspace::copy_cell))
                 .on_action(cx.listener(Workspace::copy_selection))
                 // Captured, so the ring steps before the library's own
@@ -1711,6 +2132,7 @@ fn render_results(
                     }
                 })
                 .on_action(cx.listener(Workspace::hide_column))
+                .on_action(cx.listener(Workspace::filter_on_column))
                 .on_action(cx.listener(Workspace::toggle_pin_column))
                 .on_action(cx.listener(Workspace::show_all_columns))
                 .on_action(cx.listener(Workspace::copy_row))
@@ -1829,13 +2251,6 @@ fn render_results(
     };
 
     let pane = div().size_full().min_h_0().bg(t.data_glass());
-    match query_tab.and_then(|tab| result_switcher(tab, cx)) {
-        None => pane.child(content),
-        Some(switcher) => pane
-            .flex()
-            .flex_col()
-            .child(switcher)
-            .child(div().flex_1().min_h_0().child(content)),
     // Behaviours about the rows sit over the rows, with the actions that use
     // them: the status bar below is left to readouts. The sorting switch
     // leads the strip, where a segmented control is looked for.
@@ -1847,8 +2262,115 @@ fn render_results(
     if let Some(hidden) = render_hidden_columns(profile, cx) {
         toolbar = toolbar.child(hidden);
     }
+    match find {
+        Some(find) => {
+            toolbar = toolbar.child(div().flex_1()).child(render_find(find, cx));
+        }
+        None => {
+            // With the other actions rather than alone at the far edge: one
+            // button against one button across the width of the window reads
+            // as two unrelated strips.
+            toolbar = toolbar.child(
+                icon_button(
+                    "find-in-grid",
+                    icon::SEARCH,
+                    Tone::Quiet,
+                    Control::Compact,
+                    t,
+                )
+                .tooltip(t!("find.open"))
+                .on_click(cx.listener(|workspace, _, window, cx| {
+                    workspace.find_in_grid(&FindInGrid, window, cx);
+                })),
+            );
+        }
     }
-    .into_any_element()
+    toolbar = toolbar
+        .on_action(cx.listener(Workspace::find_next))
+        .on_action(cx.listener(Workspace::find_previous))
+        .on_action(cx.listener(Workspace::close_find));
+    pane.flex()
+        .flex_col()
+        .children(query_tab.and_then(|tab| result_switcher(tab, cx)))
+        .child(toolbar)
+        .child(div().flex_1().min_h_0().child(content))
+        .into_any_element()
+}
+
+/// The find bar over the rows: the field, where the ring is among the
+/// matches, and the two ways to move it.
+fn render_find(find: &FindState, cx: &mut Context<Workspace>) -> AnyElement {
+    let t = *theme(cx);
+    let empty = find.input.read(cx).value().is_empty();
+    let count = match (find.total, empty) {
+        (0, false) => t!("find.no_matches").to_string(),
+        (0, true) => String::new(),
+        (total, _) => t!("find.count", at = find.at + 1, total = total).to_string(),
+    };
+    div()
+        .flex()
+        .items_center()
+        .gap(px(layout::SPACE_XS))
+        // The field's own bindings are deeper than the surface's; the find
+        // actions are bound against this context and the input under it, so
+        // `enter` moves the ring rather than reaching the input.
+        .key_context("FindInput")
+        // The field handles `escape` itself, deeper than any binding on the
+        // bar could sit, so it is caught on the way down instead: closing the
+        // bar is what Escape means here.
+        .capture_action(cx.listener(|workspace, _: &input::Escape, window, cx| {
+            workspace.close_find(&CloseFind, window, cx);
+            cx.stop_propagation();
+        }))
+        .child(
+            div()
+                .w(px(200.))
+                .flex_shrink_0()
+                .child(Input::new(&find.input).small()),
+        )
+        .child(
+            div()
+                .min_w(px(72.))
+                .whitespace_nowrap()
+                .text_size(px(layout::chrome(layout::TEXT_XS)))
+                .text_color(t.text_faint)
+                .debug_selector(|| "find-count".into())
+                .child(count),
+        )
+        .child(
+            icon_button(
+                "find-previous",
+                icon::CHEVRON_UP,
+                Tone::Quiet,
+                Control::Compact,
+                t,
+            )
+            .tooltip(t!("find.previous"))
+            .on_click(cx.listener(|workspace, _, window, cx| {
+                workspace.find_previous(&FindPrevious, window, cx);
+            })),
+        )
+        .child(
+            icon_button(
+                "find-next",
+                icon::CHEVRON_DOWN,
+                Tone::Quiet,
+                Control::Compact,
+                t,
+            )
+            .tooltip(t!("find.next"))
+            .on_click(cx.listener(|workspace, _, window, cx| {
+                workspace.find_next(&FindNext, window, cx);
+            })),
+        )
+        .child(
+            icon_button("find-close", icon::CLOSE, Tone::Quiet, Control::Compact, t)
+                .tooltip(t!("find.close"))
+                .on_click(cx.listener(|workspace, _, window, cx| {
+                    workspace.close_find(&CloseFind, window, cx);
+                })),
+        )
+        .into_any_element()
 }
 
 /// One chip per statement of a queue, from the moment it starts: those that
@@ -2657,34 +3179,28 @@ fn preview_tab(
     cx: &mut Context<Workspace>,
 ) -> impl IntoElement {
     let t = *theme(cx);
-    div()
-        .id(SharedString::from(label.to_string()))
-        .flex()
-        .items_center()
-        .gap(px(layout::SPACE_XS))
-        .h(px(layout::chrome(24.)))
-        .px(px(layout::SPACE_SM))
-        .rounded(px(layout::RADIUS_CONTROL))
-        .text_size(px(layout::chrome(layout::TEXT_SM)))
-        .map(|tab| {
-            if selected {
-                tab.bg(t.element_active).text_color(t.text)
-            } else {
-                tab.text_color(t.text_muted)
-                    .hover(|style| style.bg(t.element_hover))
-            }
-        })
-        .child(
-            icon(path).size(px(layout::chrome(12.))).text_color(
-                kind_color(path)
-                    .map(crate::theme::ConnectionColor::swatch)
-                    .unwrap_or(if selected { t.text } else { t.text_faint }),
-            ),
-        )
-        .child(label)
-        .on_click(cx.listener(move |workspace, _: &ClickEvent, window, cx| {
-            workspace.run_command(command.clone(), window, cx);
-        }))
+    let selector = label.clone();
+    // A button rather than a chip of divs: it owns a hitbox over its padding,
+    // takes Tab, and answers Space and Enter, which a label's own hitbox does
+    // not.
+    button(
+        SharedString::from(label.to_string()),
+        label,
+        Tone::Quiet,
+        Control::Compact,
+        t,
+    )
+    .debug_selector(move || format!("view-{selector}"))
+    .px(px(layout::SPACE_SM))
+    .rounded(px(layout::RADIUS_CONTROL))
+    // A chip at rest is a label and nothing else, and a label's own hitbox
+    // does not span the padding: the toolbar's own tone under it gives the
+    // whole chip something for the pointer to land on.
+    .when(!selected, |tab| tab.bg(t.panel_glass()))
+    .when(selected, |tab| tab.bg(t.element_active))
+    .on_click(cx.listener(move |workspace, _: &ClickEvent, window, cx| {
+        workspace.run_command(command.clone(), window, cx);
+    }))
 }
 
 /// A row limit, and the menu that changes it: none at all, the sizes on offer,
@@ -3762,11 +4278,12 @@ fn render_query_toolbar(
             )
     });
 
-    // Drawn only once there is a plan to turn to. Before that the pair would be
-    // a control with one working half, which is the same as no control at all.
+    // Drawn once there is something to turn to. Before a run the trio would be
+    // a control with one working third, which is the same as no control at
+    // all; the plan's own chip waits for a plan.
     let plan_toggle = session
         .active_query_tab()
-        .filter(|tab| tab.flips_to_plan())
+        .filter(|tab| tab.has_run())
         .map(|tab| {
             div()
                 .flex_shrink_0()
@@ -3775,17 +4292,26 @@ fn render_query_toolbar(
                 .child(preview_tab(
                     t!("view.data"),
                     icon::TABLE,
-                    tab.plan_shown().is_none() && !tab.messages_shown(),
+                    tab.plan_shown().is_none() && !tab.summary_shown() && !tab.messages_shown(),
                     Command::ShowPlan(false),
                     cx,
                 ))
                 .child(preview_tab(
-                    t!("view.plan"),
-                    icon::PLAN,
-                    tab.plan_shown().is_some(),
-                    Command::ShowPlan(true),
+                    t!("view.summary"),
+                    icon::HISTORY,
+                    tab.summary_shown(),
+                    Command::ShowSummary(true),
                     cx,
                 ))
+                .children(tab.flips_to_plan().then(|| {
+                    preview_tab(
+                        t!("view.plan"),
+                        icon::PLAN,
+                        tab.plan_shown().is_some(),
+                        Command::ShowPlan(true),
+                        cx,
+                    )
+                }))
         });
 
     // Only over rows read from one table with its key: what the grid

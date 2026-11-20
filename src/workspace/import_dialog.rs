@@ -288,6 +288,29 @@ struct Editing<'a> {
     running: bool,
 }
 
+/// A field of the options column, in the dialog's own card. The library
+/// input's default background reads as a black hole on a popup card, so the
+/// box is drawn here and the input runs without chrome of its own.
+fn option_field(input: &Entity<input::InputState>, disabled: bool, t: Theme) -> gpui::Div {
+    div()
+        .w_full()
+        .h(px(Control::Compact.height()))
+        .px(px(layout::SPACE_SM))
+        .flex()
+        .items_center()
+        .rounded(px(layout::RADIUS_CONTROL))
+        .border_1()
+        .border_color(t.border)
+        .bg(t.bg)
+        .child(
+            Input::new(input)
+                .appearance(false)
+                .p_0()
+                .h_full()
+                .disabled(disabled),
+        )
+}
+
 impl Workspace {
     pub(crate) fn render_import_rows(
         &self,
@@ -426,22 +449,26 @@ impl Workspace {
             editing,
             "import-format",
             &[
-                (Format::Csv, "CSV"),
-                (Format::Tsv, "TSV"),
-                (Format::Json, "JSON"),
+                (Format::Csv, "CSV".to_string()),
+                (Format::Tsv, "TSV".to_string()),
+                (Format::Json, "JSON".to_string()),
             ],
             options.format,
             |options, format| options.format = format,
             cx,
         );
-        groups.push(group(t, "Format", vec![format.into_any_element()]));
+        groups.push(group(
+            t,
+            t!("import.group.format").to_string(),
+            vec![format.into_any_element()],
+        ));
 
         // Skip first N lines among them: a JSON file has no preamble to skip.
         if options.format != Format::Json {
             let header = checkbox(
                 editing,
                 "import-header",
-                "First row is a header",
+                t!("import.header_row").to_string(),
                 options.header,
                 |options, on| options.header = on,
                 cx,
@@ -449,7 +476,7 @@ impl Workspace {
             let custom = matches!(options.delimiter, Delimiter::Custom(_));
             let delimiter = self
                 .labelled_field(
-                    "Delimiter",
+                    t!("import.delimiter").to_string(),
                     div()
                         .flex()
                         .gap(px(layout::SPACE_XS))
@@ -460,18 +487,18 @@ impl Workspace {
                                 .child(delimiter_dropdown(editing, cx)),
                         )
                         .children(custom.then(|| {
-                            div().w(px(DELIMITER_INPUT_WIDTH)).child(
-                                Input::new(&dialog.inputs.delimiter)
-                                    .w_full()
-                                    .disabled(editing.running),
-                            )
+                            div().w(px(DELIMITER_INPUT_WIDTH)).child(option_field(
+                                &dialog.inputs.delimiter,
+                                editing.running,
+                                t,
+                            ))
                         })),
                     cx,
                 )
                 .into_any_element();
             let quote = self
                 .labelled_field(
-                    "Quote",
+                    t!("import.quote").to_string(),
                     option_dropdown(
                         editing,
                         "import-quote",
@@ -486,16 +513,14 @@ impl Workspace {
                 .into_any_element();
             let skip = self
                 .labelled_field(
-                    "Skip first N lines",
-                    Input::new(&dialog.inputs.skip_lines)
-                        .w_full()
-                        .disabled(editing.running),
+                    t!("import.skip_lines").to_string(),
+                    option_field(&dialog.inputs.skip_lines, editing.running, t),
                     cx,
                 )
                 .into_any_element();
             let encoding = self
                 .labelled_field(
-                    "Encoding",
+                    t!("import.encoding").to_string(),
                     option_dropdown(
                         editing,
                         "import-encoding",
@@ -523,7 +548,7 @@ impl Workspace {
                 .into_any_element();
             groups.push(group(
                 t,
-                "CSV options",
+                t!("import.group.csv").to_string(),
                 vec![header, delimiter, quote, skip, encoding],
             ));
         }
@@ -532,28 +557,29 @@ impl Workspace {
             editing,
             "import-empty",
             &[
-                (EmptyField::Null, "NULL"),
-                (EmptyField::EmptyString, "Empty string"),
+                (EmptyField::Null, "NULL".to_string()),
+                (
+                    EmptyField::EmptyString,
+                    t!("import.empty_string").to_string(),
+                ),
             ],
             options.empty,
             |options, empty| options.empty = empty,
             cx,
         );
         let mut values = vec![
-            self.labelled_field("Empty field means", empty, cx)
+            self.labelled_field(t!("import.empty_field").to_string(), empty, cx)
                 .into_any_element(),
             self.labelled_field(
-                "Also treat as NULL",
-                Input::new(&dialog.inputs.null_word)
-                    .w_full()
-                    .disabled(editing.running),
+                t!("import.null_word").to_string(),
+                option_field(&dialog.inputs.null_word, editing.running, t),
                 cx,
             )
             .into_any_element(),
             checkbox(
                 editing,
                 "import-trim",
-                "Trim whitespace",
+                t!("import.trim").to_string(),
                 options.trim,
                 |options, on| options.trim = on,
                 cx,
@@ -570,25 +596,24 @@ impl Workspace {
                 .flex()
                 .flex_col()
                 .gap(px(layout::SPACE_XS))
-                .child(
-                    Input::new(&dialog.inputs.booleans)
-                        .w_full()
-                        .disabled(editing.running),
-                )
+                .child(option_field(&dialog.inputs.booleans, editing.running, t))
                 .children(refused.map(|why| div().text_color(t.danger).child(why)));
             values.push(
-                self.labelled_field("True / false spellings", spellings, cx)
+                self.labelled_field(t!("import.booleans").to_string(), spellings, cx)
                     .into_any_element(),
             );
         }
-        groups.push(group(t, "Values", values));
+        groups.push(group(t, t!("import.group.values").to_string(), values));
 
         if editing.skips_duplicates {
             let mut duplicate = vec![
                 segments(
                     editing,
                     "import-duplicate",
-                    &[(OnDuplicate::Stop, "Stop"), (OnDuplicate::Skip, "Skip")],
+                    &[
+                        (OnDuplicate::Stop, t!("import.stop").to_string()),
+                        (OnDuplicate::Skip, t!("import.skip").to_string()),
+                    ],
                     options.on_duplicate,
                     |options, on_duplicate| options.on_duplicate = on_duplicate,
                     cx,
@@ -596,12 +621,13 @@ impl Workspace {
                 .into_any_element(),
             ];
             if options.on_duplicate == OnDuplicate::Skip {
-                duplicate.push(help(
-                    t,
-                    "Skips a row that conflicts with an existing row on any unique key, not only the primary key.",
-                ));
+                duplicate.push(help(t, t!("import.help_duplicate")));
             }
-            groups.push(group(t, "On duplicate key", duplicate));
+            groups.push(group(
+                t,
+                t!("import.group.duplicate").to_string(),
+                duplicate,
+            ));
         }
 
         let transaction = match editing.engine.all_or_nothing() {
@@ -610,8 +636,14 @@ impl Workspace {
                     editing,
                     "import-transaction",
                     &[
-                        (Transaction::AllOrNothing, "All or nothing"),
-                        (Transaction::CommitAsItGoes, "Commit as it goes"),
+                        (
+                            Transaction::AllOrNothing,
+                            t!("import.all_or_nothing").to_string(),
+                        ),
+                        (
+                            Transaction::CommitAsItGoes,
+                            t!("import.commit_as_it_goes").to_string(),
+                        ),
                     ],
                     options.transaction,
                     |options, transaction| options.transaction = transaction,
@@ -621,21 +653,23 @@ impl Workspace {
                 help(
                     t,
                     match options.transaction {
-                        Transaction::AllOrNothing => {
-                            "Every chunk runs in one transaction: a failure or Cancel leaves the table as it was."
-                        }
-                        Transaction::CommitAsItGoes => {
-                            "Each chunk commits on its own: if a later chunk fails, the rows already committed stay."
-                        }
+                        Transaction::AllOrNothing => t!("import.help_all_or_nothing"),
+                        Transaction::CommitAsItGoes => t!("import.help_commit_as_it_goes"),
                     },
                 ),
             ],
             Err(why) => vec![
-                div().child("Commit as it goes").into_any_element(),
+                div()
+                    .child(t!("import.commit_as_it_goes").to_string())
+                    .into_any_element(),
                 help(t, why),
             ],
         };
-        groups.push(group(t, "Transaction", transaction));
+        groups.push(group(
+            t,
+            t!("import.group.transaction").to_string(),
+            transaction,
+        ));
         groups
     }
 }
@@ -664,20 +698,21 @@ fn frozen(column: impl IntoElement, running: bool) -> gpui::Div {
         })
 }
 
-fn group(t: Theme, label: &str, controls: Vec<AnyElement>) -> AnyElement {
+fn group(t: Theme, label: impl Into<String>, controls: Vec<AnyElement>) -> AnyElement {
+    let label = label.into();
     div()
         .flex()
         .flex_col()
         .gap(px(layout::SPACE_SM))
-        .child(section_label(t, label))
+        .child(section_label(t, &label))
         .children(controls)
         .into_any_element()
 }
 
-fn help(t: Theme, text: &'static str) -> AnyElement {
+fn help(t: Theme, text: impl Into<SharedString>) -> AnyElement {
     div()
         .text_color(t.text_faint)
-        .child(text)
+        .child(text.into())
         .into_any_element()
 }
 
@@ -686,7 +721,7 @@ fn help(t: Theme, text: &'static str) -> AnyElement {
 fn segments<T: Copy + PartialEq + 'static>(
     editing: &Editing,
     id: &'static str,
-    choices: &[(T, &'static str)],
+    choices: &[(T, String)],
     selected: T,
     write: fn(&mut Options, T),
     cx: &mut Context<Workspace>,
@@ -696,9 +731,10 @@ fn segments<T: Copy + PartialEq + 'static>(
         .flex()
         .flex_wrap()
         .gap(px(layout::SPACE_XS))
-        .children(choices.iter().enumerate().map(|(index, &(value, label))| {
+        .children(choices.iter().enumerate().map(|(index, (value, label))| {
+            let value = *value;
             let profile = editing.profile.clone();
-            segmented_choice((id, index), label, value == selected, t).when(
+            segmented_choice((id, index), label.clone(), value == selected, t).when(
                 value != selected,
                 |segment| {
                     segment.on_click(cx.listener(move |workspace, _: &ClickEvent, _, cx| {
@@ -720,7 +756,7 @@ fn segments<T: Copy + PartialEq + 'static>(
 fn checkbox(
     editing: &Editing,
     id: &'static str,
-    label: &'static str,
+    label: String,
     checked: bool,
     write: fn(&mut Options, bool),
     cx: &mut Context<Workspace>,
@@ -911,14 +947,14 @@ fn import_mapping(
             .flex()
             .flex_col()
             .gap(px(layout::SPACE_XS))
-            .child(section_label(t, "Unmapped table columns"))
+            .child(section_label(t, t!("import.unmapped").as_ref()))
             .children(left.into_iter().map(|(i, what)| {
                 let status = match what {
-                    Unmapped::UsesDefault => "uses default",
-                    Unmapped::Null => "NULL",
-                    Unmapped::Generated => "generated",
-                    Unmapped::LeftOut => "left out",
-                    Unmapped::Required => "NOT NULL, no default",
+                    Unmapped::UsesDefault => t!("import.uses_default").to_string(),
+                    Unmapped::Null => "NULL".to_string(),
+                    Unmapped::Generated => t!("import.generated").to_string(),
+                    Unmapped::LeftOut => t!("import.left_out").to_string(),
+                    Unmapped::Required => t!("import.required").to_string(),
                 };
                 let required = what == Unmapped::Required;
                 let profile = editing.profile.clone();
@@ -943,7 +979,7 @@ fn import_mapping(
                     .children(required.then(|| {
                         button(
                             ("map-a-column", i),
-                            "Map a column",
+                            t!("import.map_column").to_string(),
                             Tone::Quiet,
                             Control::Inline,
                             t,
@@ -1246,7 +1282,7 @@ fn import_preview(editing: &Editing, cx: &mut Context<Workspace>) -> AnyElement 
                     .child(
                         button(
                             "copy-import-sql",
-                            "Copy SQL",
+                            t!("import.copy_sql").to_string(),
                             Tone::Quiet,
                             Control::Compact,
                             t,
@@ -1329,7 +1365,7 @@ fn import_header(dialog: &ImportDialog, cx: &mut Context<Workspace>) -> impl Int
         .child(
             button(
                 "import-change-file",
-                "Change file…",
+                t!("import.change_file").to_string(),
                 Tone::Quiet,
                 Control::Standard,
                 t,
@@ -1489,14 +1525,14 @@ fn import_footer(profile: &str, dialog: &ImportDialog, cx: &mut Context<Workspac
         // disabled fill dims nothing of a pinned label.
         true => button(
             "start-import",
-            format!("Import {}", row_readout(rows, rows)),
+            t!("import.import_rows", rows = row_readout(rows, rows)).to_string(),
             Tone::Quiet,
             Control::Standard,
             t,
         ),
         false => ui::accent_button(
             "start-import",
-            format!("Import {}", row_readout(rows, rows)),
+            t!("import.import_rows", rows = row_readout(rows, rows)).to_string(),
             Control::Standard,
             t,
             cx,
@@ -1525,11 +1561,11 @@ fn import_footer(profile: &str, dialog: &ImportDialog, cx: &mut Context<Workspac
                         .items_center()
                         .gap(px(layout::SPACE_SM))
                         .children(summary)
-                        .children(
-                            dialog
-                                .checking
-                                .then(|| div().text_color(t.text_faint).child("Checking…")),
-                        ),
+                        .children(dialog.checking.then(|| {
+                            div()
+                                .text_color(t.text_faint)
+                                .child(t!("import.checking").to_string())
+                        })),
                 )
                 .children(dialog.error.as_ref().map(|error| {
                     div()

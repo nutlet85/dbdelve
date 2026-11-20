@@ -63,21 +63,22 @@ use gpui_component::{
 use rust_i18n::t;
 
 use actions::{
-    AddFilter, ApplyEdits, CancelQuery, ClearFilter, CloseTab, CollapseAllSchemas, CommandPalette,
-    CopyCell, CopyDiagnostics, CopyPlan, CopyResults, CopyRow, CopyRows, CopySelection,
-    CustomRowLimit, CycleMode, DeleteRow, DiscardEdits, Disconnect, EditCell, ExpandAllSchemas,
-    ExplainQuery, FollowForeignKey, FormatQuery, FuzzyOpen, GoToColumn, HideColumn,
-    ImportConnections, ImportRows, ImportRowsFromClipboard, LimitTarget,
-    MenuImportRowsFromClipboard, Minimize, MoveTabLeft, MoveTabRight, NewConnection, NewProject,
-    NewQuery, NewRow, NextEdit, NextPage, NextProfile, NextResult, NextTab, OpenLogsFolder,
-    OpenReference, OpenSettings, PreviousEdit, PreviousPage, PreviousProfile, PreviousResult,
-    PreviousTab, Quit, RefreshConnection, RefreshRelation, RemoveFilter, RequestWriteMode,
-    ResetConfirmations, ResetEditorZoom, RunQuery, SaveQuery, SearchEverything, SelectDatabase,
-    SelectTheme, SetDefault, SetDefaultRowLimit, SetEmpty, SetFilterColumn, SetFilterOperator,
-    SetFilterRaw, SetMode, SetNull, SetQueryLimit, SetRowLimit, ShowAllColumns, ShowEditor,
-    ShowMessages, ShowReferences, SortActiveColumn, SortColumn, SubmitConnection, SwitchConnection,
-    ToggleComment, ToggleFilterJoin, ToggleNextJoin, TogglePinColumn, ToggleRowEdit,
-    ToggleRowPanel, ToggleSidebar, ToggleStructure, ZoomEditorIn, ZoomEditorOut,
+    AddFilter, ApplyEdits, CancelQuery, ClearFilter, CloseFind, CloseTab, CollapseAllSchemas,
+    CommandPalette, CopyCell, CopyDiagnostics, CopyPlan, CopyResults, CopyRow, CopyRows,
+    CopySelection, CustomRowLimit, CycleMode, DeleteRow, DiscardEdits, Disconnect, EditCell,
+    ExpandAllSchemas, ExplainQuery, FilterOnColumn, FindInGrid, FindNext, FindPrevious,
+    FollowForeignKey, FormatQuery, FuzzyOpen, GoToColumn, HideColumn, ImportConnections,
+    ImportRows, ImportRowsFromClipboard, LimitTarget, MenuImportRowsFromClipboard, Minimize,
+    MoveTabLeft, MoveTabRight, NewConnection, NewProject, NewQuery, NewRow, NextEdit, NextPage,
+    NextProfile, NextResult, NextTab, OpenLogsFolder, OpenReference, OpenSettings, PreviousEdit,
+    PreviousPage, PreviousProfile, PreviousResult, PreviousTab, Quit, RefreshConnection,
+    RefreshRelation, RemoveFilter, RequestWriteMode, ResetConfirmations, ResetEditorZoom, RunQuery,
+    SaveQuery, SearchEverything, SelectDatabase, SelectTheme, SetDefault, SetDefaultRowLimit,
+    SetEmpty, SetFilterColumn, SetFilterOperator, SetFilterRaw, SetMode, SetNull, SetQueryLimit,
+    SetRowLimit, ShowAllColumns, ShowEditor, ShowMessages, ShowReferences, SortActiveColumn,
+    SortColumn, SubmitConnection, SwitchConnection, ToggleComment, ToggleFilterJoin,
+    ToggleNextJoin, TogglePinColumn, ToggleRowEdit, ToggleRowPanel, ToggleSidebar, ToggleStructure,
+    ViewCell, ZoomEditorIn, ZoomEditorOut,
 };
 use completion::SchemaCompletions;
 use connection_form::{ConnectionForm, default_profile_name};
@@ -418,6 +419,8 @@ pub(crate) fn app_menus(imports_rows: bool) -> Vec<Menu> {
             name: t!("menu.view").into(),
             disabled: false,
             items: vec![
+                MenuItem::action(t!("menu.view.command_palette"), CommandPalette),
+                MenuItem::separator(),
                 MenuItem::action(t!("menu.view.toggle_sidebar"), ToggleSidebar),
                 MenuItem::action(t!("menu.view.toggle_row_panel"), ToggleRowPanel),
                 MenuItem::action(t!("menu.view.toggle_row_panel_edit"), ToggleRowEdit),
@@ -453,7 +456,7 @@ pub(crate) fn app_menus(imports_rows: bool) -> Vec<Menu> {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{MenuImportRowsFromClipboard, connection_config_from, keybindings};
+    use super::{MenuImportRowsFromClipboard, app_menus, connection_config_from, keybindings};
     use rust_i18n::t;
 
     // The fallback locale is `en` and nothing in the test process sets another,
@@ -481,6 +484,20 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    #[test]
+    fn the_view_menu_opens_the_command_palette() {
+        let menus = app_menus(false);
+        let view = menus
+            .iter()
+            .find(|menu| menu.name.as_ref() == "View")
+            .expect("a View menu");
+        let opens = view.items.iter().any(|item| match item {
+            gpui::MenuItem::Action { action, .. } => action.partial_eq(&super::CommandPalette),
+            _ => false,
+        });
+        assert!(opens, "the View menu carries the palette's action");
     }
 
     #[test]

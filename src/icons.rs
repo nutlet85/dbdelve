@@ -141,6 +141,7 @@ pub fn saved_query_icon(syntax: Syntax) -> &'static str {
 /// rather than a file.
 pub mod icon {
     pub const CHEVRON_DOWN: &str = "icons/chevron-down.svg";
+    pub const CHEVRON_UP: &str = "icons/chevron-up.svg";
     /// Windows' caption buttons, which dbdelve draws itself there, and the
     /// same on a Linux window the compositor left undecorated.
     pub const MINIMIZE: &str = "icons/minus.svg";

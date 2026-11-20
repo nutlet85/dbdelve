@@ -28,22 +28,23 @@ use rust_i18n::t;
 
 use crate::{
     actions::{
-        AcceptCompletion, AddFilter, ApplyEdits, CancelQuery, ClearFilter, CloseTab,
+        AcceptCompletion, AddFilter, ApplyEdits, CancelQuery, ClearFilter, CloseFind, CloseTab,
         CollapseAllSchemas, CommandPalette, ConfirmDialog, CopyCell, CopyDiagnostics, CopyPlan,
         CopyResults, CopyRow, CopyRows, CopySelection, CycleMode, DeleteRow, DiscardEdits,
-        Disconnect, EditCell, ExpandAllSchemas, ExplainQuery, FocusSidebar, FollowForeignKey,
-        FormatQuery, FuzzyOpen, GoToColumn, HideColumn, ImportConnections, ImportRows,
-        ImportRowsFromClipboard, Minimize, MoveTabLeft, MoveTabRight, NewConnection, NewProject,
-        NewQuery, NewRow, NextDialogButton, NextEdit, NextPage, NextProfile, NextResult, NextTab,
-        OpenLogsFolder, OpenSettings, OpenSidebarItem, PaletteHistoryFilter, PaletteHistorySort,
-        PaletteNext, PaletteNextScope, PalettePrevious, PalettePreviousScope, PaletteRowActions,
-        PaletteScopeLeft, PaletteScopeRight, PreviousDialogButton, PreviousEdit, PreviousPage,
-        PreviousProfile, PreviousResult, PreviousTab, Quit, RefreshConnection, RefreshRelation,
-        ResetConfirmations, ResetEditorZoom, RunQuery, SaveQuery, SearchEverything, SelectDatabase,
-        SelectTheme, SetDefault, SetEmpty, SetMode, SetNull, ShowAllColumns, ShowEditor,
-        ShowMessages, ShowReferences, SortActiveColumn, SubmitConnection, SwitchConnection,
-        TickDialogBox, ToggleComment, ToggleNextJoin, TogglePinColumn, ToggleResultsFocus,
-        ToggleRowEdit, ToggleRowPanel, ToggleSidebar, ToggleStructure, ZoomEditorIn, ZoomEditorOut,
+        Disconnect, EditCell, ExpandAllSchemas, ExplainQuery, FindInGrid, FindNext, FindPrevious,
+        FocusSidebar, FollowForeignKey, FormatQuery, FuzzyOpen, GoToColumn, HideColumn,
+        ImportConnections, ImportRows, ImportRowsFromClipboard, Minimize, MoveTabLeft,
+        MoveTabRight, NewConnection, NewProject, NewQuery, NewRow, NextDialogButton, NextEdit,
+        NextPage, NextProfile, NextResult, NextTab, OpenLogsFolder, OpenSettings, OpenSidebarItem,
+        PaletteHistoryFilter, PaletteHistorySort, PaletteNext, PaletteNextScope, PalettePrevious,
+        PalettePreviousScope, PaletteRowActions, PaletteScopeLeft, PaletteScopeRight,
+        PreviousDialogButton, PreviousEdit, PreviousPage, PreviousProfile, PreviousResult,
+        PreviousTab, Quit, RefreshConnection, RefreshRelation, ResetConfirmations, ResetEditorZoom,
+        RunQuery, SaveQuery, SearchEverything, SelectDatabase, SelectTheme, SetDefault, SetEmpty,
+        SetMode, SetNull, ShowAllColumns, ShowEditor, ShowMessages, ShowReferences,
+        SortActiveColumn, SubmitConnection, SwitchConnection, TickDialogBox, ToggleComment,
+        ToggleNextJoin, TogglePinColumn, ToggleResultsFocus, ToggleRowEdit, ToggleRowPanel,
+        ToggleSidebar, ToggleStructure, ZoomEditorIn, ZoomEditorOut,
     },
     db::ExplainMode,
     export::RowsAs,
@@ -203,6 +204,16 @@ registry! {
     ("zoom_editor_out", "Zoom Out", None, ["secondary--"], ZoomEditorOut),
     ("reset_editor_zoom", "Reset Zoom", None, ["secondary-0"], ResetEditorZoom),
     ("edit_cell", "Edit Cell", Some("DataTable"), ["enter"], EditCell),
+    ("find_in_grid", "Find in Grid", Some("DataTable"), ["secondary-f"], FindInGrid),
+    // The field's own `enter` and `shift-enter` are bound at the input; these
+    // name the input in their context too so they sit at the same depth, and
+    // dbdelve's keymap is registered after the library's, so these take the
+    // keystroke. `escape` is captured on the bar itself instead (see
+    // `render_find`) rather than bound here, where it would collide with the
+    // global Dismiss.
+    ("find_next", "Find Next", Some("FindInput > Input"), ["enter"], FindNext),
+    ("find_previous", "Find Previous", Some("FindInput > Input"), ["shift-enter"], FindPrevious),
+    ("close_find", "Close Find", Some("FindInput > Input"), [], CloseFind),
     ("copy", "Copy", Some("DataTable"), ["secondary-c"], CopySelection),
     // Copy's chord before Copy copied rows, kept so a chord put on it still
     // copies the active cell alone.

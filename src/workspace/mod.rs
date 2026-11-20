@@ -9,7 +9,7 @@ mod commands;
 mod e2e;
 mod editing;
 mod exports;
-use exports::ExportMenu;
+pub(crate) use exports::ExportMenu;
 mod definition_editor;
 mod files;
 mod filters;
@@ -341,6 +341,10 @@ pub(crate) struct Workspace {
     /// The list a reference arrow opens, and which lookup it is waiting on.
     pub(crate) reference_popup: Option<ReferencePopup>,
     pub(crate) reference_checks: u64,
+    /// The cell whose whole value is up in a dialog, if one is.
+    pub(crate) cell_detail: Option<CellDetail>,
+    /// The rows' find bar, while it is open.
+    pub(crate) find: Option<FindState>,
     pub(crate) row_panel: views::RowPanel,
     /// Whether the plan pane's copy button was just used, so it can show a
     /// tick the way `row_panel.copied` does. One flag rather than a keyed
@@ -566,6 +570,8 @@ impl Workspace {
             sidebar_last_size: std::cell::Cell::new(px(layout::SIDEBAR_DEFAULT_WIDTH)),
             reference_popup: None,
             reference_checks: 0,
+            cell_detail: None,
+            find: None,
             row_panel: views::RowPanel {
                 on_screen: Default::default(),
                 copied: None,
@@ -2129,7 +2135,7 @@ impl Render for Workspace {
                     None,
                     self.render_update_pill(cx).into_iter().collect(),
                     Vec::new(),
-                    vec![ui::version_badge(t)],
+                    vec![command_palette_button(t), ui::version_badge(t)],
                 ))
                 .child(self.beside_settings(self.render_welcome(window, cx).into_any_element(), cx))
                 .children(self.dialog_layer(
@@ -2181,16 +2187,6 @@ impl Render for Workspace {
             .map(|captured| relative_age(store::captured_at().saturating_sub(captured)));
         let stale_buffer =
             snapshot_age.is_some() && matches!(profile.session.active, Tab::Query(_));
-        // Only with the statement to show: a snapshot older than `last_query`
-        // would have the prompt's Refresh run whatever the cursor is on. And
-        // only a read, since a write restored from the last session would
-        // write again.
-        let refreshable_snapshot = stale_buffer
-            && profile.session.active_query_tab().is_some_and(|tab| {
-                tab.last_query
-                    .as_deref()
-                    .is_some_and(|sql| sql::rerunnable(profile.config.engine(), sql))
-            });
         // A query tab's own slot rather than the result in front: a queue run
         // in turn can be showing a statement that finished while the next one
         // runs. Run at once, the slot only holds the run open, and each
@@ -2221,7 +2217,6 @@ impl Render for Workspace {
                 } => Some((tab, count, filter, query, *limit, *offset)),
                 _ => None,
             });
-        let engine = profile.config.engine();
         let relation_rows = relation.and_then(|(tab, count, filter, query, limit, offset)| {
             let estimate = match &profile.catalog {
                 CatalogState::Loaded(catalog, _) => {
@@ -2243,63 +2238,44 @@ impl Render for Workspace {
                 whole,
             )
         });
-        // The way to an exact number, which is never run unasked. Its tooltip
-        // is the statement it runs.
+        // The way to an exact number is a button over the rows now; what is
+        // left here is the count already running, beside the other readouts.
         let count_control = relation
             .filter(|_| profile.connection().is_some())
-            .and_then(|(tab, count, filter, ..)| {
+            .and_then(|(tab, count, ..)| {
                 let id = tab.id;
                 let workspace = cx.entity().downgrade();
-                match count {
-                    RowCount::Counting { cancelling, .. } => Some(
-                        div()
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .gap(px(layout::SPACE_SM))
-                            .child(div().whitespace_nowrap().text_color(t.text_faint).child(
-                                match cancelling {
-                                    true => t!("status.cancelling_count").to_string(),
-                                    false => t!("status.counting_rows").to_string(),
-                                },
-                            ))
-                            .children((!cancelling).then(|| {
-                                button(
-                                    "cancel-count",
-                                    t!("button.cancel"),
-                                    Tone::Secondary,
-                                    Control::Compact,
-                                    t,
-                                )
-                                .on_click(move |_, _, cx| {
-                                    _ = workspace.update(cx, |workspace, cx| {
-                                        workspace.cancel_count(id, cx);
-                                    });
-                                })
-                            }))
-                            .into_any_element(),
-                    ),
-                    _ if count.answers(filter) => None,
-                    _ => {
-                        let sql = explorer::count_sql(engine, &tab.schema, &tab.name, filter);
-                        Some(
+                let RowCount::Counting { cancelling, .. } = count else {
+                    return None;
+                };
+                Some(
+                    div()
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(layout::SPACE_SM))
+                        .child(div().whitespace_nowrap().text_color(t.text_faint).child(
+                            match cancelling {
+                                true => t!("status.cancelling_count").to_string(),
+                                false => t!("status.counting_rows").to_string(),
+                            },
+                        ))
+                        .children((!cancelling).then(|| {
                             button(
-                                "count-rows",
-                                t!("status.count"),
+                                "cancel-count",
+                                t!("button.cancel"),
                                 Tone::Secondary,
                                 Control::Compact,
                                 t,
                             )
-                            .tooltip(sql)
                             .on_click(move |_, _, cx| {
                                 _ = workspace.update(cx, |workspace, cx| {
-                                    workspace.count_rows(id, cx);
+                                    workspace.cancel_count(id, cx);
                                 });
                             })
-                            .into_any_element(),
-                        )
-                    }
-                }
+                        }))
+                        .into_any_element(),
+                )
             });
         // Read off the writer's counter, on the half-second tick its start set
         // going: the rows go to the file, never through anything that redraws.
@@ -2447,43 +2423,10 @@ impl Render for Workspace {
         let update_pill = self.render_update_pill(cx);
         let pending_count = self.pending_edit_count(cx);
         let has_pending = pending_count > 0;
-        let has_results = self.has_results(cx);
-        let show_result_actions = has_results && !has_pending;
-        // Its menu dispatches into the grid, the context `cmd-v` is bound in.
-        let import_menu = profile
-            .session
-            .active_object()
-            .filter(|tab| !has_pending && tab.takes_imports(profile.config.target()))
-            .and_then(|tab| match &tab.body {
-                ObjectBody::Relation { results, .. } => Some(results.focus_handle(cx)),
-                _ => None,
-            });
-        // A structure tab's in place of the rows' copy and export: the
-        // relation's own definition, and a statement to fill it with.
-        let structure_copies = profile.session.active_object().and_then(|tab| {
-            let ObjectBody::Structure { structure, .. } = &tab.body
-            else {
-                return None;
-            };
-            let ObjectKind::Relation(kind) = tab.kind else {
-                return None;
-            };
-            let connected = matches!(profile.state, ProfileState::Connected(_));
-            let insert = engine.syntax() == db::Syntax::Sql
-                && matches!(structure, StructureState::Loaded(loaded) if !loaded.columns.is_empty());
-            Some((
-                connected.then(|| (tab.schema.clone(), tab.name.clone(), kind)),
-                insert,
-            ))
-        });
         let apply_workspace = cx.entity().downgrade();
         let discard_workspace = apply_workspace.clone();
         let previous_workspace = apply_workspace.clone();
         let next_workspace = apply_workspace.clone();
-        let copy_menu_workspace = apply_workspace.clone();
-        let refresh_workspace = apply_workspace.clone();
-        let ddl_workspace = apply_workspace.clone();
-        let insert_workspace = apply_workspace.clone();
 
         // Chrome for content, not a fixture of the window: with no tab open
         // every field below is empty, and an empty bar is a background and a
@@ -2495,9 +2438,6 @@ impl Render for Workspace {
             || notice.is_some()
             || paging.is_some()
             || query_status.is_some()
-            || refreshable_snapshot
-            || has_results
-            || structure_copies.is_some()
             || has_pending;
 
         let results_status = bar_has_content.then(|| {
@@ -2564,109 +2504,6 @@ impl Render for Workspace {
                                     false => t.text_faint,
                                 })
                                 .child(query_status)
-                        }))
-                        // Through the stale-rows prompt rather than straight
-                        // to a run, so the statement is read before it is
-                        // sent.
-                        .children(refreshable_snapshot.then(|| {
-                            button(
-                                "refresh-snapshot",
-                                t!("status.refresh"),
-                                Tone::Secondary,
-                                Control::Compact,
-                                t,
-                            )
-                            .on_click(move |_, _, cx| {
-                                _ = refresh_workspace.update(cx, |workspace, cx| {
-                                    workspace.ask_refresh_stale(cx);
-                                });
-                            })
-                        }))
-                        .children(import_menu.map(|grid| {
-                            button(
-                                "import-rows",
-                                t!("status.import"),
-                                Tone::Secondary,
-                                Control::Compact,
-                                t,
-                            )
-                            .debug_selector(|| "import-rows".into())
-                            .child(
-                                icon(icon::CHEVRON_DOWN)
-                                    .size(px(layout::chrome(layout::ICON_SIZE)))
-                                    .text_color(t.text_muted),
-                            )
-                            .dropdown_menu(move |menu, _, _| {
-                                menu.action_context(grid.clone())
-                                    .menu(
-                                        t!("status.import_clipboard"),
-                                        Box::new(ImportRowsFromClipboard),
-                                    )
-                                    .menu(t!("status.import_file"), Box::new(ImportRows))
-                            })
-                        }))
-                        // Not beside pending edits: these write the rows as
-                        // fetched, not the values on screen, and the review
-                        // controls need the room.
-                        .children(show_result_actions.then(|| {
-                            let export = ExportMenu {
-                                workspace: copy_menu_workspace.clone(),
-                                sql: engine.syntax() == db::Syntax::Sql,
-                            };
-                            button(
-                                "export-results",
-                                t!("status.export"),
-                                Tone::Secondary,
-                                Control::Compact,
-                                t,
-                            )
-                            .debug_selector(|| "export-results".into())
-                            .child(
-                                icon(icon::CHEVRON_DOWN)
-                                    .size(px(layout::chrome(layout::ICON_SIZE)))
-                                    .text_color(t.text_muted),
-                            )
-                            .dropdown_menu(move |menu, window, cx| export.build(menu, window, cx))
-                        }))
-                        .children(structure_copies.map(|(ddl, insert)| {
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(layout::SPACE_SM))
-                                .children(ddl.map(|(schema, relation, kind)| {
-                                    button(
-                                        "copy-create",
-                                        t!("status.copy_create"),
-                                        Tone::Secondary,
-                                        Control::Compact,
-                                        t,
-                                    )
-                                    .on_click(
-                                        move |_, _, cx| {
-                                            let (schema, relation) =
-                                                (schema.clone(), relation.clone());
-                                            _ = ddl_workspace.update(cx, |workspace, cx| {
-                                                workspace.copy_ddl(schema, relation, kind, cx);
-                                            });
-                                        },
-                                    )
-                                }))
-                                .children(insert.then(|| {
-                                    button(
-                                        "copy-insert",
-                                        t!("status.copy_insert"),
-                                        Tone::Secondary,
-                                        Control::Compact,
-                                        t,
-                                    )
-                                    .on_click(
-                                        move |_, _, cx| {
-                                            _ = insert_workspace.update(cx, |workspace, cx| {
-                                                workspace.copy_insert_template(cx);
-                                            });
-                                        },
-                                    )
-                                }))
                         }))
                         // A tinted cell scrolled out of view is an edit
                         // nobody knows is about to be written.
@@ -2774,6 +2611,7 @@ impl Render for Workspace {
                 &self.tab_strip,
                 self.custom_limit.as_ref(),
                 &self.settings.custom_keybindings,
+                self.find.as_ref(),
                 window,
                 cx,
             )))
@@ -3005,6 +2843,7 @@ impl Render for Workspace {
                 .chain(self.render_breadcrumb(cx))
                 .collect(),
                 vec![
+                    command_palette_button(t),
                     icon_button(
                         "open-settings",
                         icon::SETTINGS,
@@ -3042,6 +2881,7 @@ impl Render for Workspace {
                         ("queue-failure", self.render_queue_failure(cx)),
                         ("stale-edit", self.render_stale_edit(cx)),
                         ("import-choice", self.render_import_choice(cx)),
+                        ("cell-detail", self.render_cell_detail(cx)),
                     ],
                     window,
                     cx,
@@ -3072,6 +2912,32 @@ pub(crate) struct ReferenceSource {
     referenced_by: Vec<crate::db::Reference>,
 }
 
+/// The grid's find bar: the field, and where the ring is among the matches
+/// found so far. The matches themselves are recomputed when the text changes
+/// or the ring moves rather than on every frame: scanning every cell of a large
+/// result on each draw would make the grid heavy to look at.
+pub(crate) struct FindState {
+    pub(crate) input: Entity<InputState>,
+    /// Which of them is selected, from zero.
+    pub(crate) at: usize,
+    pub(crate) total: usize,
+}
+
+/// The cell whose whole value a dialog is showing, and the grid it is read
+/// from: the grid rather than the tab, so a queue's result keeps the rows the
+/// menu was opened on even after the switcher moves.
+pub(crate) struct CellDetail {
+    /// The connection it belongs to; tabs count from zero per profile.
+    pub(crate) profile: String,
+    pub(crate) tab: Tab,
+    pub(crate) grid: Entity<gpui_component::table::TableState<ResultGrid>>,
+    pub(crate) row: usize,
+    pub(crate) col: usize,
+    /// Whether Copy has just been pressed: the dialog says so, and puts
+    /// itself away a moment later.
+    pub(crate) copied: bool,
+}
+
 /// What a reference arrow opened: where it hangs, and the relations that turned
 /// out to hold rows for the key, or whose check failed with the error it gave.
 /// `None` while the lookup is still out.
@@ -3096,6 +2962,24 @@ pub(crate) const FONT_SIZE_STEP: f32 = 1.0;
 /// has to say whose sentence it is.
 pub(crate) fn server_said(message: &str) -> String {
     format!("{} {message}", t!("error.server"))
+}
+
+/// The titlebar's command-palette button, on every surface that has a
+/// titlebar: the way to the palette without knowing its chord.
+fn command_palette_button(t: Theme) -> AnyElement {
+    icon_button(
+        "command-palette",
+        icon::SEARCH,
+        Tone::Quiet,
+        Control::Compact,
+        t,
+    )
+    .debug_selector(|| "command-palette".into())
+    .tooltip(t!("tooltip.command_palette").to_string())
+    .on_click(|_, window, cx| {
+        window.dispatch_action(Box::new(CommandPalette), cx);
+    })
+    .into_any_element()
 }
 
 /// Blocking work -- anything that talks to a connection, the network, the

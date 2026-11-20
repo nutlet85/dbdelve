@@ -51,6 +51,9 @@ menu.query.cancel:
 menu.view:
   en: View
   zh-CN: 视图
+menu.view.command_palette:
+  en: Command Palette…
+  zh-CN: 命令面板…
 menu.view.toggle_sidebar:
   en: Toggle Sidebar
   zh-CN: 切换边栏
@@ -442,6 +445,10 @@ key.zoom_editor_in:            { en: "Zoom In", zh-CN: "放大" }
 key.zoom_editor_out:           { en: "Zoom Out", zh-CN: "缩小" }
 key.reset_editor_zoom:         { en: "Reset Zoom", zh-CN: "重置缩放" }
 key.edit_cell:                 { en: "Edit Cell", zh-CN: "编辑单元格" }
+key.find_in_grid:              { en: "Find in Grid", zh-CN: "在结果中查找" }
+key.find_next:                 { en: "Find Next", zh-CN: "查找下一个" }
+key.find_previous:             { en: "Find Previous", zh-CN: "查找上一个" }
+key.close_find:                { en: "Close Find", zh-CN: "关闭查找" }
 key.copy:                      { en: "Copy", zh-CN: "复制" }
 key.copy_cell:                 { en: "Copy Cell", zh-CN: "复制单元格" }
 key.set_null:                  { en: "Set Cell to NULL", zh-CN: "将单元格设为 NULL" }
@@ -637,6 +644,7 @@ tooltip.run:                   { en: "Run", zh-CN: "运行" }
 tooltip.explain:               { en: "Explain", zh-CN: "解释" }
 tooltip.format_query:          { en: "Format query", zh-CN: "格式化查询" }
 tooltip.toggle_comment:        { en: "Toggle line comment", zh-CN: "切换行注释" }
+tooltip.command_palette:       { en: "Command Palette", zh-CN: "命令面板" }
 
 # —— 按钮与杂项 ——
 button.add_filter:             { en: "Add filter", zh-CN: "添加筛选" }
@@ -769,6 +777,33 @@ short.remedy_refresh:       { en: "Refresh it", zh-CN: "刷新" }
 short.remedy_raise_limit:   { en: "Raise it and run the statement again", zh-CN: "提高行数上限并重新运行" }
 short.doing_copying:        { en: "copying", zh-CN: "复制" }
 short.doing_exporting:      { en: "exporting", zh-CN: "导出" }
+
+# —— 结果工具栏、网格内查找与单元格详情 ——
+find.open:                  { en: "Find in Grid", zh-CN: "在结果中查找" }
+find.placeholder:           { en: "Find in rows…", zh-CN: "在结果中查找…" }
+find.count:                 { en: "%{at} of %{total}", zh-CN: "%{at} / %{total}" }
+find.no_matches:            { en: "No matches", zh-CN: "没有匹配" }
+find.next:                  { en: "Next match", zh-CN: "下一个" }
+find.previous:              { en: "Previous match", zh-CN: "上一个" }
+find.close:                 { en: "Close find", zh-CN: "关闭查找" }
+grid.view_value:            { en: "View value…", zh-CN: "查看值…" }
+grid.filter_on_column:      { en: "Filter on %{column}", zh-CN: "按 %{column} 筛选" }
+cell_detail.title:          { en: "Cell value", zh-CN: "单元格值" }
+cell_detail.copied:        { en: "Copied to clipboard", zh-CN: "已复制到剪贴板" }
+cell_detail.size:           { en: "%{chars} characters · %{bytes} bytes", zh-CN: "%{chars} 字符 · %{bytes} 字节" }
+palette.view.data:          { en: "Show data", zh-CN: "显示数据" }
+palette.view.plan:          { en: "Show plan", zh-CN: "显示计划" }
+palette.view.summary:       { en: "Show summary", zh-CN: "显示摘要" }
+view.summary:               { en: "Summary", zh-CN: "摘要" }
+summary.empty:              { en: "Nothing has run yet.", zh-CN: "还没有执行。" }
+summary.statements:         { en: "%{count} statements", zh-CN: "%{count} 条语句" }
+summary.limit:              { en: "row limit %{rows}", zh-CN: "行数上限 %{rows}" }
+summary.elapsed:            { en: "total %{time}", zh-CN: "合计 %{time}" }
+summary.ok:                 { en: "ok", zh-CN: "成功" }
+summary.failed:             { en: "failed", zh-CN: "失败" }
+summary.running:            { en: "running", zh-CN: "运行中" }
+summary.cancelled:          { en: "cancelled", zh-CN: "已取消" }
+summary.stopped_at_limit:   { en: "stopped at limit", zh-CN: "已达行数上限" }
 
 # —— 命令面板：范围、placeholder、分组、底部提示、空状态 ——
 palette.scope.all:          { en: "All", zh-CN: "全部" }

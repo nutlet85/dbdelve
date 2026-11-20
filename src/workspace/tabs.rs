@@ -876,6 +876,9 @@ impl Workspace {
         if self.close_apply_review(cx) {
             return;
         }
+        if self.close_cell_detail(cx) {
+            return;
+        }
         // Only from inside the panel: it sits beside the workspace rather than
         // over it, and an `escape` in the editor is for the editor's
         // completions, or for the new-row form beside the grid. The search is
@@ -1061,6 +1064,20 @@ impl Workspace {
 
     /// Carry out a close that has been decided on.
     pub(crate) fn close_now(&mut self, tab: Tab, window: &mut Window, cx: &mut Context<Self>) {
+        // A dialog or a find bar describes the tab going away.
+        if self
+            .cell_detail
+            .as_ref()
+            .is_some_and(|detail| detail.tab == tab)
+        {
+            self.cell_detail = None;
+        }
+        if self
+            .profile()
+            .is_some_and(|profile| profile.session.active == tab)
+        {
+            self.drop_find(cx);
+        }
         match tab {
             Tab::Object(id) => self.close_object(id, window, cx),
             Tab::Query(id) => self.close_buffer(id, window, cx),

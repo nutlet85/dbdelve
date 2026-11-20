@@ -1827,6 +1827,10 @@ pub(crate) struct QueryTab {
     /// value of it, so selecting Messages leaves the result to come back to,
     /// and so a run with no queue at all can still offer it.
     pub(crate) showing_messages: bool,
+    /// Whether the results pane is showing the run's summary rather than a
+    /// result. Kept beside `showing_plan` rather than folded into it: the two
+    /// are views of the same run, and one is on at a time.
+    pub(crate) showing_summary: bool,
     /// The multi-statement run this tab is part way through, or `None` for an
     /// ordinary single-statement run. `query` and `results` stay what they
     /// always were -- the slot being run or shown right now -- and the
@@ -2394,6 +2398,18 @@ impl QueryTab {
             .flatten()
     }
 
+    /// Whether the pane is showing the run's summary, which comes after both
+    /// the plan and the messages: whichever was asked for last is what is up.
+    pub(crate) fn summary_shown(&self) -> bool {
+        self.showing_summary && self.plan_shown().is_none() && !self.messages_shown()
+    }
+
+    /// Whether anything has run on this tab. A summary of nothing is a page of
+    /// empty rows, so the view is not offered before this is true.
+    pub(crate) fn has_run(&self) -> bool {
+        !matches!(self.shown().0, QueryState::Idle)
+    }
+
     /// Bring the slot's result to the front, for a plan of it to be read.
     /// Whether that moved the switcher off another result.
     pub(crate) fn show_slot(&mut self) -> bool {
@@ -2477,6 +2493,7 @@ impl QueryTab {
             row_limit,
             showing_plan: false,
             showing_messages: false,
+            showing_summary: false,
             row_panel_folded: false,
             row_panel_editing: false,
             row_panel_filter: Default::default(),
@@ -2999,6 +3016,95 @@ impl QueryState {
             _ => &[],
         }
     }
+}
+
+/// What became of one statement a run sent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SummaryStatus {
+    Ok,
+    Failed,
+    Running,
+    Cancelled,
+    AtLimit,
+}
+
+/// One row of the results summary: a statement's numbers and what became of
+/// it. Worked out without a window so the text is checkable on its own.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SummaryLine {
+    /// From one, the order the statements ran in.
+    pub(crate) number: usize,
+    pub(crate) status: SummaryStatus,
+    pub(crate) rows: usize,
+    pub(crate) bytes: usize,
+    /// Absent for a statement that never answered.
+    pub(crate) elapsed: Option<std::time::Duration>,
+}
+
+/// The summary's rows: every statement of the run that has a state to report,
+/// in the order it ran, with the one in flight last.
+///
+/// `stopped` says how the grid behind a statement ended: the state carries
+/// the row count and the time, and whether a cancel or the row limit cut the
+/// rows short is the result's own word.
+pub(crate) fn summary_lines<G: PartialEq>(
+    queue: Option<&Queue<G>>,
+    (query, results): (&QueryState, &G),
+    stopped: impl Fn(&G) -> Option<crate::db::Stopped>,
+) -> Vec<SummaryLine> {
+    let mut lines = Vec::new();
+    let mut push = |state: &QueryState, grid: &G| {
+        let (status, rows, bytes, elapsed) = match state {
+            // A statement of the queue that has not been sent yet has nothing
+            // to say about itself.
+            QueryState::Idle => return,
+            QueryState::Running { started, .. } => {
+                (SummaryStatus::Running, 0, 0, Some(started.elapsed()))
+            }
+            QueryState::Failed(_) => (SummaryStatus::Failed, 0, 0, None),
+            QueryState::Complete {
+                rows,
+                bytes,
+                elapsed,
+                ..
+            } => {
+                let status = match stopped(grid) {
+                    Some(crate::db::Stopped::Cancelled) => SummaryStatus::Cancelled,
+                    Some(crate::db::Stopped::AtLimit) => SummaryStatus::AtLimit,
+                    None => SummaryStatus::Ok,
+                };
+                (status, *rows, *bytes, Some(*elapsed))
+            }
+            QueryState::Explained { elapsed, .. } => (SummaryStatus::Ok, 0, 0, Some(*elapsed)),
+        };
+        lines.push(SummaryLine {
+            number: lines.len() + 1,
+            status,
+            rows,
+            bytes,
+            elapsed,
+        });
+    };
+    match queue {
+        Some(queue) => {
+            for finished in &queue.done {
+                // The slot's live state for the result whose grid is the slot,
+                // which a run on it is writing; the entry's own for the rest.
+                let state = match finished.grid == *results {
+                    true => query,
+                    false => &finished.state,
+                };
+                push(state, &finished.grid);
+            }
+            // The slot, when it is not already one of those: the statement in
+            // flight, or a result the tab read into it.
+            if !queue.done.iter().any(|finished| finished.grid == *results) {
+                push(query, results);
+            }
+        }
+        None => push(query, results),
+    }
+    lines
 }
 
 /// Write every one of a profile's buffers back to whichever file it came from.
@@ -3969,6 +4075,87 @@ mod tests {
             Some(Refresh::Statement(_))
         ));
         assert!(apply_refresh(Some(&finished_queue(2)), &12, None).is_none());
+    }
+
+    #[test]
+    fn a_run_reads_out_one_line_per_statement_with_what_became_of_it() {
+        let complete = |rows, bytes, millis| QueryState::Complete {
+            rows,
+            bytes,
+            elapsed: std::time::Duration::from_millis(millis),
+            rows_affected: None,
+            messages: Vec::new(),
+        };
+        let queue = Queue {
+            sql: String::new(),
+            remaining: Vec::new(),
+            done: vec![
+                Finished {
+                    sql: "SELECT 1".into(),
+                    start: 0,
+                    state: complete(2, 40, 7),
+                    grid: 10,
+                },
+                Finished {
+                    sql: "SELECT 2".into(),
+                    start: 9,
+                    state: complete(3, 90, 11),
+                    grid: 11,
+                },
+            ],
+            showing: 0,
+            awaiting: false,
+            spare: Vec::new(),
+        };
+        // The slot is the second statement's grid, so its entry reads the
+        // slot's live state and the run adds no third line.
+        let lines = summary_lines(
+            Some(&queue),
+            (&complete(3, 90, 11), &11),
+            |grid| match grid {
+                11 => Some(crate::db::Stopped::AtLimit),
+                _ => None,
+            },
+        );
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            lines[0],
+            SummaryLine {
+                number: 1,
+                status: SummaryStatus::Ok,
+                rows: 2,
+                bytes: 40,
+                elapsed: Some(std::time::Duration::from_millis(7)),
+            }
+        );
+        assert_eq!(
+            lines[1],
+            SummaryLine {
+                number: 2,
+                status: SummaryStatus::AtLimit,
+                rows: 3,
+                bytes: 90,
+                elapsed: Some(std::time::Duration::from_millis(11)),
+            }
+        );
+
+        // An ordinary single-statement run is its own slot.
+        let failed = QueryState::Failed(DbError {
+            message: "denied".into(),
+            position: None,
+        });
+        assert_eq!(
+            summary_lines(None, (&failed, &9), |_| None),
+            [SummaryLine {
+                number: 1,
+                status: SummaryStatus::Failed,
+                rows: 0,
+                bytes: 0,
+                elapsed: None,
+            }]
+        );
+        // Nothing run yet says nothing.
+        assert!(summary_lines(None, (&QueryState::Idle, &9), |_| None).is_empty());
     }
 
     #[test]

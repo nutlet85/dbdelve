@@ -857,7 +857,11 @@ impl Workspace {
         };
         let takes_imports = tab.takes_imports(self.target());
         results.update(cx, |table, _| {
-            table.delegate_mut().mark_takes_imports(takes_imports)
+            let grid = table.delegate_mut();
+            grid.mark_takes_imports(takes_imports);
+            // These rows are the relation's own, so the bars above them are a
+            // filter the server runs -- whatever the structure says yet.
+            grid.mark_relation_rows();
         });
         let StructureState::Loaded(structure) = structure else {
             return;
@@ -1694,6 +1698,15 @@ impl Workspace {
     }
 
     pub(crate) fn activate_tab(&mut self, tab: Tab, window: &mut Window, cx: &mut Context<Self>) {
+        // The cell detail describes one grid; another tab has another. The
+        // find bar's matches do too.
+        if self
+            .profile()
+            .is_some_and(|profile| profile.session.active != tab)
+        {
+            self.cell_detail = None;
+            self.drop_find(cx);
+        }
         if let Some(profile) = self.profile_mut() {
             profile.session.active = tab;
             profile.session.clear_prompts();

@@ -3,9 +3,10 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 
 use gpui::{
-    App, AppContext, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
+    App, AppContext, ClickEvent, ClipboardItem, Context, Div, Entity, FocusHandle, Focusable,
+    HighlightStyle, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText, Window, div,
+    prelude::FluentBuilder, px,
 };
 use gpui_component::{
     InteractiveElementExt,
@@ -387,6 +388,15 @@ pub struct ResultGrid {
     /// Whether the rows are a table's that Import Rows writes into, marked the
     /// way the structure's keys are, so the cell menu offers a paste.
     takes_imports: bool,
+    /// Whether these rows are a relation's own preview rather than a
+    /// statement's result. Only a relation has a filter the server runs from
+    /// the bars above the grid, so only there does a header offer to narrow
+    /// by its column.
+    relation_rows: bool,
+    /// What the grid's find bar is looking for, so the cells it matches can
+    /// show where. Set by the workspace as the field changes and cleared when
+    /// the bar closes; the match list itself is not kept here.
+    find: Option<SharedString>,
     /// The table's own focus handle, recorded by the right click that opens the
     /// row menu. The menu dispatches its action into whatever holds focus, and
     /// `context_menu` is handed the delegate alone -- the table is mid-update
@@ -571,6 +581,8 @@ impl ResultGrid {
             mode,
             engine: db::Engine::default(),
             takes_imports: false,
+            relation_rows: false,
+            find: None,
             focus: None,
         };
         grid.regroup();
@@ -1352,6 +1364,61 @@ impl ResultGrid {
         self.takes_imports
     }
 
+    /// Record that these rows are a relation's own preview, whose filter bars
+    /// the server runs. A query's result has no relation behind it and no
+    /// filter model at all, so it is never marked.
+    pub fn mark_relation_rows(&mut self) {
+        self.relation_rows = true;
+    }
+
+    /// Whether a header may offer to filter by its column: only where the
+    /// filter bars have a statement to narrow.
+    pub fn filters_on_server(&self) -> bool {
+        self.relation_rows
+    }
+
+    /// What the find bar is looking for, for `render_td` to mark.
+    pub fn set_find(&mut self, needle: Option<SharedString>) {
+        self.find = needle;
+    }
+
+    /// Every cell whose whole value holds `needle`, ignoring case, in the order
+    /// the grid reads: row by row, and a row's columns left to right as drawn.
+    /// A hidden column is not on screen to be found, so it is not one.
+    ///
+    /// Matched against the whole value rather than the clipped string the
+    /// column paints: what the user is looking for is the row, and a document
+    /// whose match sits past the column's 300 characters is still that row.
+    pub fn find_matches(&self, needle: &str) -> Vec<(usize, usize)> {
+        if needle.is_empty() {
+            return Vec::new();
+        }
+        // An ASCII needle is compared in bytes, one window at a time: every
+        // byte of a match is ASCII, so a window cannot start inside a
+        // multibyte character, and a result of thousands of rows is scanned
+        // without folding a copy of every cell.
+        let folded = (!needle.is_ascii()).then(|| needle.to_lowercase());
+        let mut matches = Vec::new();
+        for row in 0..self.result.rows.len() {
+            for &col in &self.view {
+                let Some(value) = self.cell(row, col) else {
+                    continue;
+                };
+                let found = match &folded {
+                    None => value
+                        .as_bytes()
+                        .windows(needle.len())
+                        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes())),
+                    Some(needle) => value.to_lowercase().contains(needle),
+                };
+                if found {
+                    matches.push((row, col));
+                }
+            }
+        }
+        matches
+    }
+
     pub fn mark_primary_key(&mut self, columns: &[String]) {
         self.primary_key = self.columns_named(columns);
         self.regroup();
@@ -1477,7 +1544,7 @@ impl ResultGrid {
 
     /// Whether the row has no such field at all: a document store's absent
     /// field, which paints as nothing rather than as a NULL it does not hold.
-    fn missing(&self, row_ix: usize, col_ix: usize) -> bool {
+    pub(crate) fn missing(&self, row_ix: usize, col_ix: usize) -> bool {
         self.result
             .cell_types
             .get(row_ix)
@@ -1505,7 +1572,7 @@ impl ResultGrid {
                     Some(NewValue::Null | NewValue::Default) => None,
                     None => self.cell(row_ix, col_ix),
                 };
-                let json = cell.and_then(indented_json);
+                let json = cell.and_then(crate::ui::pretty_json);
                 Field {
                     name: column.name.clone().into(),
                     // The cell's own type where it has one: the column's is `mixed`
@@ -2429,8 +2496,12 @@ pub(crate) fn step_pending(
     scroll_to_drawn_col(table, col, cx);
 }
 
-/// A header's menu: hide, pin or unpin that column, and bring back the
-/// hidden ones.
+/// A header's menu: filter by that column, hide, pin or unpin it, and bring
+/// back the hidden ones.
+///
+/// The menu names the table as its action target: `FilterOnColumn` is heard by
+/// the surface the table is drawn in, and a menu holds the keyboard while it
+/// is open.
 fn column_menu(
     menu: PopupMenu,
     table: &Entity<TableState<ResultGrid>>,
@@ -2439,6 +2510,11 @@ fn column_menu(
 ) -> PopupMenu {
     let grid = table.read(cx).delegate();
     let (drawn, hidden, pinned) = (grid.view.len(), grid.hidden_columns(), grid.is_pinned(col));
+    let name = grid.columns()[col].name.clone();
+    // Only where the bars above the rows are a filter the server runs: a
+    // query's result has no relation behind it to narrow.
+    let filters = grid.filters_on_server() && crate::filter::filters_on(grid.engine, &name);
+    let menu = menu.action_context(table.focus_handle(cx));
     let relay = |change: fn(&mut ResultGrid, usize)| {
         let table = table.clone();
         move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
@@ -2449,7 +2525,15 @@ fn column_menu(
             });
         }
     };
-    menu.when(drawn > 1, |menu| {
+    menu.when(filters, |menu| {
+        menu.menu(
+            t!("grid.filter_on_column", column = name.clone()),
+            Box::new(crate::actions::FilterOnColumn {
+                column: name.clone(),
+            }),
+        )
+    })
+    .when(drawn > 1, |menu| {
         menu.item(
             PopupMenuItem::new(t!("grid.hide_column")).on_click(relay(ResultGrid::hide_column)),
         )
@@ -2506,6 +2590,21 @@ pub(crate) fn fit_to_face(
     if std::mem::take(&mut grid.resized) {
         table.refresh(cx);
     }
+}
+
+/// Put the ring on one cell and bring it into view: what moving to a find's
+/// next match does. The row is selected with it, as a click on the cell does,
+/// so the inspector beside the grid follows what the bar found.
+pub(crate) fn select_cell(
+    table: &mut TableState<ResultGrid>,
+    row: usize,
+    col: usize,
+    cx: &mut Context<TableState<ResultGrid>>,
+) {
+    table.delegate_mut().set_active(row, col);
+    table.set_selected_row(row, cx);
+    table.scroll_to_row(row, cx);
+    scroll_to_drawn_col(table, col, cx);
 }
 
 /// Bring a drawn column into view. A pinned one always is, and the library,
@@ -2731,33 +2830,6 @@ fn clip(value: &str) -> String {
     flattened
 }
 
-/// A JSON object or array laid out over indented lines, `None` where the value
-/// is not one.
-///
-/// Parsed rather than taken from the column's type. SQLite has no JSON type to
-/// report — a document there lives in whatever `text` column was declared for
-/// it — so the type name answers this question for two engines out of three,
-/// and the value itself answers it for all of them.
-///
-/// The caller keeps the original text on `None`.
-///
-/// Objects and arrays only. A bare number, string or `true` is also valid JSON,
-/// and reformatting one produces the same characters back.
-///
-/// ponytail: runs on every repaint of the inspector rather than caching. The
-/// leading-byte check keeps a UUID or a timestamp to one comparison, but a value
-/// shaped like a document pays for the parse and the pretty-print both. Cache
-/// per cell if a wide row of large documents ever makes the panel feel slow.
-fn indented_json(value: &str) -> Option<String> {
-    let trimmed = value.trim_start();
-    if !trimmed.starts_with(['{', '[']) {
-        return None;
-    }
-    serde_json::from_str::<serde_json::Value>(trimmed)
-        .ok()
-        .and_then(|parsed| serde_json::to_string_pretty(&parsed).ok())
-}
-
 /// Cut to a character count, never a byte count: slicing bytes panics in the
 /// middle of a codepoint, and the values here are arbitrary user data.
 fn clip_to(value: &str, limit: usize) -> String {
@@ -2765,6 +2837,38 @@ fn clip_to(value: &str, limit: usize) -> String {
         Some((end, _)) => format!("{}…", &value[..end]),
         None => value.to_string(),
     }
+}
+
+/// Where `needle` occurs in `text`, ignoring case, as byte ranges over `text`.
+///
+/// Folded character by character rather than lowercased whole, so every match
+/// can be mapped back onto the string as it is drawn -- a lowercase that
+/// expands, as `İ` does, still highlights the whole original character.
+fn find_ranges(text: &str, needle: &str) -> Vec<std::ops::Range<usize>> {
+    let folded: Vec<char> = needle.chars().flat_map(char::to_lowercase).collect();
+    if folded.is_empty() {
+        return Vec::new();
+    }
+    let mut lowered = Vec::new();
+    let mut origin: Vec<std::ops::Range<usize>> = Vec::new();
+    for (at, c) in text.char_indices() {
+        let end = at + c.len_utf8();
+        for lower in c.to_lowercase() {
+            lowered.push(lower);
+            origin.push(at..end);
+        }
+    }
+    let mut ranges = Vec::new();
+    let mut at = 0;
+    while at + folded.len() <= lowered.len() {
+        if lowered[at..at + folded.len()] == folded[..] {
+            ranges.push(origin[at].start..origin[at + folded.len() - 1].end);
+            at += folded.len();
+        } else {
+            at += 1;
+        }
+    }
+    ranges
 }
 
 /// `items` in `order`, where `order` holds each index exactly once.
@@ -2869,6 +2973,7 @@ impl TableDelegate for ResultGrid {
                     .flex_1()
                     .min_w_0()
                     .flex()
+                    .debug_selector(move || format!("column-header-{col}"))
                     .child(self.data_th(col, window, cx))
                     .context_menu(move |menu, _, cx| column_menu(menu, &table, col, cx))
                     .into_any_element()
@@ -3017,6 +3122,10 @@ impl TableDelegate for ResultGrid {
                 menu.menu(label, Box::new(crate::FollowForeignKey))
                     .separator()
             })
+            .menu(
+                t!("grid.view_value"),
+                Box::new(crate::ViewCell { row, col }),
+            )
             .menu(t!("grid.copy"), Box::new(crate::CopySelection))
             // "Copy" is the cell itself until rows are picked.
             .when(self.copies_rows(), |menu| {
@@ -3401,6 +3510,15 @@ impl ResultGrid {
             Some(pending) => pending.shown.clone(),
             None => self.shown(row_ix, col_ix),
         };
+        // The find bar's match marked in the value as it is drawn. A pending
+        // edit's staged text is what is on screen, so it is what is searched
+        // and marked here.
+        let filled = cell.is_some();
+        let value: SharedString = cell.unwrap_or(keyword);
+        let found: Vec<std::ops::Range<usize>> = match (&self.find, filled) {
+            (Some(needle), true) => find_ranges(&value, needle),
+            _ => Vec::new(),
+        };
 
         let follows_a_key = self.follows_a_key(col_ix)
             // A NULL references nothing, so there is nothing to follow it to.
@@ -3412,13 +3530,13 @@ impl ResultGrid {
         base.overflow_hidden()
             .whitespace_nowrap()
             .text_ellipsis()
-            .text_color(match (cell.is_some(), numeric) {
+            .text_color(match (filled, numeric) {
                 (false, _) => faint,
                 (true, true) => number,
                 (true, false) => text,
             })
             // Italic so a NULL cannot be mistaken for the four-letter string.
-            .when(cell.is_none(), |cell| cell.italic())
+            .when(!filled, |cell| cell.italic())
             .when(pending.is_some(), |cell| cell.bg(edited_bg))
             // The value is the child that gives way, beside an arrow or not.
             // Bare text in a row does not shrink and a flex container does not
@@ -3433,7 +3551,20 @@ impl ResultGrid {
                     .whitespace_nowrap()
                     .text_ellipsis()
                     .when(numeric, |value| value.text_right())
-                    .child(cell.unwrap_or(keyword)),
+                    .child(match found.is_empty() {
+                        true => value.into_any_element(),
+                        false => StyledText::new(value)
+                            .with_highlights(found.into_iter().map(|range| {
+                                (
+                                    range,
+                                    HighlightStyle {
+                                        background_color: Some(palette.accent.alpha(0.22).into()),
+                                        ..HighlightStyle::default()
+                                    },
+                                )
+                            }))
+                            .into_any_element(),
+                    }),
             )
             // A NULL is referenced by nothing, so it has no arrow either.
             .children(
@@ -3756,6 +3887,65 @@ mod tests {
         assert_eq!(grid.sort, vec![(0, false)]);
         assert_eq!(grid.cell(0, 0), Some("2"));
         assert!(grid.sortable);
+    }
+
+    #[test]
+    fn find_reads_every_visible_column_and_ignores_case() {
+        let grid = ResultGrid::new(
+            QueryResult {
+                columns: vec![column("id"), column("note"), column("hidden")],
+                rows: rows(vec![
+                    vec![Some("1".into()), Some("Finch".into()), Some("finch".into())],
+                    vec![
+                        Some("2".into()),
+                        Some("sparrow".into()),
+                        Some("finch".into()),
+                    ],
+                    vec![Some("3".into()), Some("FINCH".into()), None],
+                ]),
+                ..QueryResult::default()
+            },
+            Mode::ReadWrite,
+        );
+        // Row-major, and a column left to right as drawn.
+        assert_eq!(
+            grid.find_matches("finch"),
+            vec![(0, 1), (0, 2), (1, 2), (2, 1)]
+        );
+        assert_eq!(
+            grid.find_matches("FIN"),
+            vec![(0, 1), (0, 2), (1, 2), (2, 1)]
+        );
+        assert!(grid.find_matches("").is_empty());
+        assert!(grid.find_matches("wren").is_empty());
+
+        let mut hidden = grid;
+        hidden.hide_column(2);
+        assert_eq!(hidden.find_matches("finch"), vec![(0, 1), (2, 1)]);
+
+        // A needle that is not ASCII is folded whole, which is the path that
+        // catches a case change outside the ASCII range.
+        let umlaut = ResultGrid::new(
+            QueryResult {
+                columns: vec![column("a")],
+                rows: rows(vec![vec![Some("Über".into())], vec![Some("uber".into())]]),
+                ..QueryResult::default()
+            },
+            Mode::ReadWrite,
+        );
+        assert_eq!(umlaut.find_matches("über"), vec![(0, 0)]);
+        assert_eq!(umlaut.find_matches("uber"), vec![(1, 0)]);
+    }
+
+    #[test]
+    fn a_find_marks_every_occurrence_of_what_it_found() {
+        assert_eq!(find_ranges("Finch and finch", "fin"), vec![0..3, 10..13]);
+        // Non-overlapping, left to right.
+        assert_eq!(find_ranges("aaaa", "aa"), vec![0..2, 2..4]);
+        assert!(find_ranges("plain", "").is_empty());
+        assert!(find_ranges("plain", "z").is_empty());
+        // A character whose lowercase is longer is still marked whole.
+        assert_eq!(find_ranges("İx", "i̇"), vec![0..2]);
     }
 
     /// A grid over one column of untyped cells, which is enough to order rows by.
@@ -6162,26 +6352,6 @@ mod tests {
         assert!(fields[1].data_type.is_none());
         // A selection can outlive the rows it was made against.
         assert!(grid.fields(4).is_empty());
-    }
-
-    #[test]
-    fn the_inspector_breaks_a_json_document_up_and_leaves_everything_else_alone() {
-        let document = indented_json(r#"{"aoi":{"acres":69.7},"tags":[1,2]}"#).unwrap();
-        assert!(document.starts_with("{\n"), "{document}");
-        assert!(document.contains("\n  \"tags\""), "{document}");
-
-        // All valid JSON, and all already spelled the only way they can be.
-        // Reformatting a scalar is the characters back again, so the parser is
-        // never worth reaching for one.
-        for scalar in ["22.38", "true", "null", "\"quoted\""] {
-            assert_eq!(indented_json(scalar), None);
-        }
-        // Shaped like a document without being one -- a truncated value, or
-        // prose that opens with a brace. Not a document, so `None`, and `fields`
-        // keeps the original text.
-        for other in ["{not json at all", "[1, 2", "an ordinary sentence", ""] {
-            assert_eq!(indented_json(other), None);
-        }
     }
 
     #[test]

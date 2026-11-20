@@ -1367,6 +1367,7 @@ impl Workspace {
             tab.plan = None;
             tab.showing_plan = false;
             tab.showing_messages = false;
+            tab.showing_summary = false;
         }
         profile.session.clear_prompts();
         profile.session.apply_review = None;
@@ -2663,6 +2664,9 @@ impl Workspace {
         }
         self.active = Some(index);
         self.form = None;
+        // A dialog over the profile that was in front has nothing to describe
+        // here.
+        self.cell_detail = None;
         // Written here rather than at quit, so the profile in front survives a
         // crash as well as a close.
         self.remember_profiles(cx);

@@ -191,6 +191,176 @@ impl Workspace {
         self.relay_columns(cx, |grid| grid.show_all_columns());
     }
 
+    /// A cell menu's "View value…": the cell whole, in a dialog, where a
+    /// document the column had no room for can be read and scrolled.
+    ///
+    /// The grid is kept rather than looked up again, so the dialog goes on
+    /// naming the rows the menu was opened on if a queue's switcher moves.
+    pub(crate) fn view_cell(&mut self, action: &ViewCell, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(profile) = self.profile() else {
+            return;
+        };
+        let (profile_id, tab) = (profile.id.clone(), profile.session.active);
+        let Some(grid) = profile.session.active_results().cloned() else {
+            return;
+        };
+        let fits = {
+            let table = grid.read(cx);
+            let grid = table.delegate();
+            action.row < grid.result().rows.len() && action.col < grid.columns().len()
+        };
+        if !fits {
+            return;
+        }
+        self.cell_detail = Some(CellDetail {
+            profile: profile_id,
+            tab,
+            grid,
+            row: action.row,
+            col: action.col,
+            copied: false,
+        });
+        cx.notify();
+    }
+
+    /// `secondary-f` over the rows: a field above them that finds a value in
+    /// any visible column, ignoring case, and puts the ring on the first match
+    /// as it is typed.
+    pub(crate) fn find_in_grid(
+        &mut self,
+        _: &FindInGrid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(find) = self.find.as_ref() {
+            find.input.focus_handle(cx).focus(window, cx);
+            return;
+        }
+        if self
+            .profile()
+            .is_none_or(|profile| profile.session.active_results().is_none())
+        {
+            return;
+        }
+        let input = cx
+            .new(|cx| InputState::new(window, cx).placeholder(t!("find.placeholder").to_string()));
+        cx.subscribe_in(&input, window, |workspace, _, event: &InputEvent, _, cx| {
+            if matches!(event, InputEvent::Change) {
+                workspace.refresh_find(0, cx);
+            }
+        })
+        .detach();
+        self.find = Some(FindState {
+            input: input.clone(),
+            at: 0,
+            total: 0,
+        });
+        input.focus_handle(cx).focus(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn find_next(&mut self, _: &FindNext, _: &mut Window, cx: &mut Context<Self>) {
+        self.step_find(1, cx);
+    }
+
+    pub(crate) fn find_previous(
+        &mut self,
+        _: &FindPrevious,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.step_find(-1, cx);
+    }
+
+    pub(crate) fn close_find(
+        &mut self,
+        _: &CloseFind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let results = self.active_grid().cloned();
+        if self.drop_find(cx)
+            && let Some(results) = results
+        {
+            // The bar was opened from the grid and closing it hands the
+            // keyboard back the way a dialog does.
+            results.focus_handle(cx).focus(window, cx);
+        }
+    }
+
+    /// The grid on screen for the tab in front: a query tab's shown result,
+    /// which a queue can switch, or an object tab's rows.
+    fn active_grid(&self) -> Option<&Entity<gpui_component::table::TableState<ResultGrid>>> {
+        let profile = self.profile()?;
+        match profile.session.active_query_tab() {
+            Some(tab) => Some(tab.shown().1),
+            None => profile.session.active_results(),
+        }
+    }
+
+    /// Put the find bar away and unmark the cells it marked. Answers whether
+    /// there was a bar.
+    pub(crate) fn drop_find(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.find.take().is_none() {
+            return false;
+        }
+        if let Some(results) = self.active_grid().cloned() {
+            results.update(cx, |table, cx| {
+                table.delegate_mut().set_find(None);
+                cx.notify();
+            });
+        }
+        cx.notify();
+        true
+    }
+
+    fn step_find(&mut self, step: isize, cx: &mut Context<Self>) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        if find.total == 0 {
+            return;
+        }
+        let at = (find.at as isize + step).rem_euclid(find.total as isize) as usize;
+        self.refresh_find(at, cx);
+    }
+
+    /// Find what the field says in the grid in front, mark every cell that
+    /// holds it, and put the ring on the match at `at` (wrapped). Nothing is
+    /// kept between calls: the rows may have been replaced by a run, or moved
+    /// by a sort, since the last keystroke.
+    pub(crate) fn refresh_find(&mut self, at: usize, cx: &mut Context<Self>) {
+        let Some(results) = self.active_grid().cloned() else {
+            return;
+        };
+        let Some(needle) = self
+            .find
+            .as_ref()
+            .map(|find| find.input.read(cx).value().to_string())
+        else {
+            return;
+        };
+        let matches = results.read(cx).delegate().find_matches(&needle);
+        let at = match matches.is_empty() {
+            true => 0,
+            false => at % matches.len(),
+        };
+        if let Some(find) = self.find.as_mut() {
+            find.at = at;
+            find.total = matches.len();
+        }
+        let target = matches.get(at).copied();
+        let highlight = (!needle.is_empty()).then(|| gpui::SharedString::from(needle));
+        results.update(cx, |table, cx| {
+            table.delegate_mut().set_find(highlight);
+            if let Some((row, col)) = target {
+                result_grid::select_cell(table, row, col, cx);
+            }
+            cx.notify();
+        });
+        cx.notify();
+    }
+
     /// A click on the active cell's header, sort refusals and all.
     pub(crate) fn sort_active_column(
         &mut self,
@@ -723,6 +893,7 @@ impl Workspace {
             Command::ExplainQuery(mode) => self.explain_query(&ExplainQuery { mode }, window, cx),
             Command::FormatQuery => self.format_query(&FormatQuery, window, cx),
             Command::ShowPlan(showing) => self.show_plan(showing, cx),
+            Command::ShowSummary(showing) => self.show_summary(showing, cx),
             Command::SaveQuery => self.save_query(&SaveQuery, window, cx),
             Command::RenameQuery => self.rename_query(window, cx),
             Command::PickQueryToDelete => self.open_palette(PaletteMode::DeleteQuery, window, cx),

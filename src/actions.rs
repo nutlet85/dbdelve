@@ -18,6 +18,26 @@ pub(crate) struct SortColumn {
     pub(crate) column: usize,
 }
 
+/// A cell's "View value…": the whole value in a dialog, where a long document
+/// can be read rather than clipped to its column. The coordinates are the cell
+/// the menu was opened on, which the right click pinned as the active one.
+#[derive(Clone, PartialEq, Eq, Deserialize, Action)]
+#[action(namespace = dbdelve, no_json)]
+pub(crate) struct ViewCell {
+    pub(crate) row: usize,
+    pub(crate) col: usize,
+}
+
+/// A filter bar aimed at a column, from that column's header menu. Only a
+/// relation has a filter the server runs, so only there is this offered; the
+/// column is named rather than indexed because that is what the bar's
+/// dropdown stores.
+#[derive(Clone, PartialEq, Eq, Deserialize, Action)]
+#[action(namespace = dbdelve, no_json)]
+pub(crate) struct FilterOnColumn {
+    pub(crate) column: String,
+}
+
 /// The column a filter bar narrows on, picked from the bar's dropdown. The bar
 /// is named by position in the stack, which is how every one of these reaches
 /// it: the stack is what the user is pointing at.
@@ -184,6 +204,10 @@ actions!(
         NewRow,
         ImportRows,
         ImportRowsFromClipboard,
+        FindInGrid,
+        FindNext,
+        FindPrevious,
+        CloseFind,
         // The File menu's, bound to nothing: macOS takes an action's binding as
         // its menu item's key equivalent, scope and all, and would answer a
         // `cmd-v` nothing else took -- in the sidebar, say -- by importing.

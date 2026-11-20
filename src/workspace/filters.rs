@@ -187,6 +187,52 @@ impl Workspace {
         cx.notify();
     }
 
+    /// A header's "Filter on this column": a bar aimed at it and ready for a
+    /// value.
+    ///
+    /// Nothing runs here for the reason [`Self::add_filter`] runs nothing: a
+    /// bar with no value narrows nothing, so re-asking would send the same
+    /// statement again. Enter in the box is what applies it.
+    pub(crate) fn filter_on_column(
+        &mut self,
+        action: &FilterOnColumn,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = self.active_object_id() else {
+            return;
+        };
+        // The row about to be added, by position: a push that added nothing
+        // must not aim the last bar the stack already had.
+        let row = self.filter_rows_mut(id).map_or(0, |filters| filters.len());
+        self.push_filter_row(id, window, cx);
+        let engine = self.engine();
+        let Some(filter) = self.filter_row_mut(id, row) else {
+            return;
+        };
+        filter.column = Some(action.column.clone());
+        // The bar is pushed raw so a value typed first runs on Enter; aimed at
+        // a column, it holds a value to compare against instead.
+        let was_raw = std::mem::replace(&mut filter.raw, false);
+        if was_raw {
+            filter.applied.clear();
+        }
+        // One the column does not take would leave the bar under an operator
+        // its dropdown no longer lists.
+        if !filter.operator.offered(engine, filter.column.as_deref()) {
+            filter.operator = Operator::default();
+        }
+        let (operator, input) = (filter.operator, filter.value.clone());
+        input.update(cx, |input, cx| {
+            if was_raw {
+                input.set_value("", window, cx);
+            }
+            shape_value(input, engine, false, operator, None, window, cx);
+        });
+        cx.notify();
+        self.focus_filter(window, cx);
+    }
+
     /// Take a bar away and ask again without it.
     pub(crate) fn remove_filter(
         &mut self,

@@ -347,6 +347,8 @@ pub enum Command {
     FormatQuery,
     /// Flip the results pane between the rows and the plan.
     ShowPlan(bool),
+    /// Flip it between the rows and the run's summary.
+    ShowSummary(bool),
     SaveQuery,
     RenameQuery,
     /// Put the palette back up over the saved queries, to delete one.
@@ -4055,6 +4057,21 @@ fn help_items(overrides: &HashMap<String, String>) -> Vec<Item> {
     ]
 }
 
+/// One of the results-pane view commands: named in the UI language, with the
+/// English name as a second way to find it. The rest of the palette's commands
+/// are English, so somebody reading a Chinese list should still be able to
+/// type either word.
+fn view_command(key: &str, english: &'static str, path: &'static str, action: Command) -> Item {
+    let label = t!(key).to_string();
+    let also = match label == english {
+        true => Vec::new(),
+        false => vec![english.to_string()],
+    };
+    Item::new(label, path, action)
+        .group(Group::Named(QUERY))
+        .also(also)
+}
+
 fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item> {
     let session = &profile.session;
     // Every cap here is the chord the action actually holds, so a rebind shows
@@ -4105,13 +4122,39 @@ fn command_items(workspace: &Workspace, profile: &Profile, cx: &App) -> Vec<Item
             command("Format query", icon::STRUCTURE, Command::FormatQuery, QUERY),
             "format_query",
         ));
-        if let Some(tab) = session.active_query_tab()
-            && tab.flips_to_plan()
-        {
-            items.push(match tab.plan_shown().is_some() {
-                true => command("Show data", icon::TABLE, Command::ShowPlan(false), QUERY),
-                false => command("Show plan", icon::PLAN, Command::ShowPlan(true), QUERY),
-            });
+        if let Some(tab) = session.active_query_tab() {
+            if tab.flips_to_plan() {
+                items.push(match tab.plan_shown().is_some() {
+                    true => view_command(
+                        "palette.view.data",
+                        "Show data",
+                        icon::TABLE,
+                        Command::ShowPlan(false),
+                    ),
+                    false => view_command(
+                        "palette.view.plan",
+                        "Show plan",
+                        icon::PLAN,
+                        Command::ShowPlan(true),
+                    ),
+                });
+            }
+            if tab.has_run() {
+                items.push(match tab.summary_shown() {
+                    true => view_command(
+                        "palette.view.data",
+                        "Show data",
+                        icon::TABLE,
+                        Command::ShowPlan(false),
+                    ),
+                    false => view_command(
+                        "palette.view.summary",
+                        "Show summary",
+                        icon::HISTORY,
+                        Command::ShowSummary(true),
+                    ),
+                });
+            }
         }
         if session
             .active_query_tab()
